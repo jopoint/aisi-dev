@@ -1,0 +1,22 @@
+{
+  "timestamp_iso": "2026-03-02T12:00:00Z",
+  "frame_id": 0,
+  "furniture": [
+    {"id": "t1", "kind": "table", "pose": {"x": 2.0, "y": 1.5, "theta": null}, "confidence": 1.0},
+    {"id": "t2", "kind": "table", "pose": {"x": 4.0, "y": 2.5, "theta": null}, "confidence": 1.0},
+    {"id": "c1", "kind": "chair", "pose": {"x": 1.8, "y": 1.4, "theta": null}, "confidence": 1.0},
+    {"id": "c2", "kind": "chair", "pose": {"x": 2.2, "y": 1.6, "theta": null}, "confidence": 1.0},
+    {"id": "c3", "kind": "chair", "pose": {"x": 3.8, "y": 2.4, "theta": null}, "confidence": 1.0},
+    {"id": "c4", "kind": "chair", "pose": {"x": 4.2, "y": 2.6, "theta": null}, "confidence": 1.0},
+    {"id": "s1", "kind": "screen", "pose": {"x": 0.5, "y": 2.0, "theta": null}, "confidence": 1.0}
+  ],
+  "people": [
+    {"id": "p1", "kind": "person", "pose": {"x": 2.0, "y": 1.8, "theta": null}, "confidence": 0.9},
+    {"id": "p2", "kind": "person", "pose": {"x": 2.1, "y": 1.9, "theta": null}, "confidence": 0.9},
+    {"id": "p3", "kind": "person", "pose": {"x": 2.2, "y": 2.0, "theta": null}, "confidence": 0.9}
+  ],
+  "world": {
+    "bounds": [0.0, 0.0, 6.0, 4.0],
+    "homography_id": "identity"
+  }
+}

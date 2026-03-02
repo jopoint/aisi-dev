@@ -1,0 +1,7 @@
+numpy
+pyyaml
+matplotlib
+opencv-python
+
+[vision]
+opencv-contrib-python

@@ -1,0 +1,7 @@
+# Example classifier and feature thresholds
+features:
+  clustering_distance_m: 1.0
+  k_nearest: 3
+  person_object_near_m: 1.2
+  circle_variance_threshold_m2: 0.2
+  row_alignment_tolerance_m: 0.25

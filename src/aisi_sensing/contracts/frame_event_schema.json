@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "FrameEvent",
+  "type": "object",
+  "required": ["timestamp_iso", "frame_id", "furniture", "people", "world"],
+  "properties": {
+    "timestamp_iso": {"type": "string"},
+    "frame_id": {"type": "integer"},
+    "furniture": {
+      "type": "array",
+      "items": {"$ref": "#/definitions/DetectedEntity"}
+    },
+    "people": {
+      "type": "array",
+      "items": {"$ref": "#/definitions/DetectedEntity"}
+    },
+    "world": {"type": "object"}
+  },
+  "definitions": {
+    "Pose2D": {
+      "type": "object",
+      "required": ["x", "y"],
+      "properties": {
+        "x": {"type": "number"},
+        "y": {"type": "number"},
+        "theta": {"type": ["number", "null"]}
+      }
+    },
+    "DetectedEntity": {
+      "type": "object",
+      "required": ["id", "kind", "pose"],
+      "properties": {
+        "id": {"type": "string"},
+        "kind": {"type": "string", "enum": ["table", "chair", "screen", "partition", "person"]},
+        "pose": {"$ref": "#/definitions/Pose2D"},
+        "confidence": {"type": ["number", "null"]}
+      }
+    }
+  }
+}

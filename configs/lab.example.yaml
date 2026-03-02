@@ -1,0 +1,12 @@
+# Example lab/world configuration
+lab:
+  # Bounds in meters (min_x, min_y, max_x, max_y)
+  bounds: [0.0, 0.0, 6.0, 4.0]
+  # Optional homography (3x3) mapping from pixels to meters; identity is placeholder
+  homography: [
+    [1.0, 0.0, 0.0],
+    [0.0, 1.0, 0.0],
+    [0.0, 0.0, 1.0]
+  ]
+  # For display scaling when no video is available
+  display_scale_px_per_m: 150

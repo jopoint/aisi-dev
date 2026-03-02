@@ -1,0 +1,18 @@
+{
+  "timestamp": "2026-03-02T15:47:04.611647",
+  "session_id": "2026-03-02_154704",
+  "args": {
+    "session_id": null,
+    "out_dir": "data/sessions",
+    "source": "dummy",
+    "num_frames": 120,
+    "fps": 10,
+    "seed": 42,
+    "lab_config": "configs/lab.example.yaml",
+    "classes_config": "configs/classes.example.yaml"
+  },
+  "python_version": "3.14.3 (tags/v3.14.3:323c59a, Feb  3 2026, 16:04:56) [MSC v.1944 64 bit (AMD64)]",
+  "platform": "Windows-10-10.0.19045-SP0",
+  "schema_version": "1.0",
+  "git_commit": null
+}

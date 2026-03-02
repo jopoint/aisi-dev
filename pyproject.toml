@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aisi-sensing"
+version = "0.1.0"
+description = "Sensing-first prototype for relational spatial configurations (AISI)."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "numpy",
+  "pyyaml",
+  "matplotlib",
+  "opencv-python"
+]
+
+[project.optional-dependencies]
+vision = ["opencv-contrib-python"]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
