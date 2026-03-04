@@ -18,13 +18,16 @@ def get_logger(name: Optional[str] = None, level: int = logging.INFO) -> logging
 
 import json
 from pathlib import Path
-from typing import Iterable, Dict, Any, Generator
+from typing import Iterable, Dict, Any, Generator, List
 
-def write_jsonl(path: Path, iterable_of_dicts: Iterable[Dict[str, Any]]) -> None:
-    """Write an iterable of dicts to a JSONL file."""
+def write_jsonl(path: Path, rows: Iterable[Dict[str, Any]]) -> None:
+    """Write dict rows to a JSONL file (overwrite).
+
+    Accepts any iterable of dicts (e.g., list[dict]).
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open('w', encoding='utf-8') as f:
-        for d in iterable_of_dicts:
+        for d in rows:
             f.write(json.dumps(d, ensure_ascii=False) + '\n')
 
 def iter_jsonl(path: Path) -> Generator[Dict[str, Any], None, None]:
@@ -33,3 +36,8 @@ def iter_jsonl(path: Path) -> Generator[Dict[str, Any], None, None]:
         for line in f:
             if line.strip():
                 yield json.loads(line)
+
+
+def read_jsonl(path: Path) -> List[Dict[str, Any]]:
+    """Read an entire JSONL file into a list of dicts."""
+    return list(iter_jsonl(path))

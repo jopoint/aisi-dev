@@ -1,7 +1,25 @@
 # Example classifier and feature thresholds
 features:
+  # General thresholds
   clustering_distance_m: 1.0
   k_nearest: 3
   person_object_near_m: 1.2
-  circle_variance_threshold_m2: 0.2
+
+  # Layout rules thresholds (tuned for dummy jitter)
+  circle_min_points: 8
+  circle_variance_threshold_m2: 0.15
   row_alignment_tolerance_m: 0.25
+  islands_table_cluster_distance_m: 1.2
+  islands_min_cluster_size: 2
+  islands_min_separation_m: 1.2
+  islands_avg_separation_m: 1.4
+  front_margin_m: 0.6
+
+  # Dummy generator noise
+  dummy_jitter_sigma_m: 0.08
+  dummy_random_walk_sigma_m: 0.02
+
+  # Gating and stricter rows
+  layout_min_confidence: 0.55
+  rows_min_tables: 4
+  rows_min_strength: 0.65

@@ -17,7 +17,7 @@ from ..feedback.floorplan_render import render_topdown
 
 
 from pathlib import Path
-from ..core.logging import iter_jsonl
+from ..core.logging import iter_jsonl, read_jsonl
 
 def load_events(path: str) -> Iterator[FrameEvent]:
     p = Path(path).expanduser().resolve()
@@ -84,6 +84,7 @@ def main() -> None:
                 "frame_id": ev.frame_id,
                 "layout": layout["label"],
                 "layout_score": layout["score"],
+                "layout_debug": {k: layout["debug"].get(k) for k in ("rule", "chosen_before_gate", "gated_to_unknown")},
                 "social": social["label"],
                 "social_score": social["score"],
             })
@@ -101,14 +102,58 @@ def main() -> None:
             import matplotlib.pyplot as plt
             plt.close('all')
         print("Stopped by user.")
+    # If session folder and labels present and no-gui: print accuracy report
+    events_path = Path(args.events)
+    if args.no_gui and events_path.is_dir():
+        labels_path = events_path / "labels.jsonl"
+        if labels_path.exists():
+            labels = read_jsonl(labels_path)
+            human = {int(r.get("frame_id")): r.get("human_layout", "unknown") for r in labels}
+            preds = {int(r["frame_id"]): r["layout"] for r in results}
+            common = sorted(set(human) & set(preds))
+            total_labeled = len(common)
+            correct = sum(1 for fid in common if preds[fid] == human[fid])
+            unknown_rate = sum(1 for fid in common if human[fid] == "unknown") / max(1, total_labeled)
+            # per-class accuracy when human==class
+            from collections import defaultdict
+            per_class_tot = defaultdict(int)
+            per_class_ok = defaultdict(int)
+            for fid in common:
+                hl = human[fid]
+                per_class_tot[hl] += 1
+                if preds[fid] == hl:
+                    per_class_ok[hl] += 1
+            logger.info("Labels found: %d | Overall acc: %.2f | Unknown rate: %.2f",
+                        total_labeled, (correct / max(1, total_labeled)), unknown_rate)
+            for lbl in sorted(per_class_tot.keys()):
+                acc = per_class_ok[lbl] / max(1, per_class_tot[lbl])
+                logger.info("Class %s: acc=%.2f (%d/%d)", lbl, acc, per_class_ok[lbl], per_class_tot[lbl])
+
     # Export summary if requested
     if args.export:
         from collections import Counter
+        def compute_transitions(labels):
+            transitions = Counter()
+            for prev, curr in zip(labels, labels[1:]):
+                transitions[f"{prev}->{curr}"] += 1
+            return dict(transitions)
+
+        layouts = [r["layout"] for r in results]
+        socials = [r["social"] for r in results]
         summary = {
             "frames": results,
-            "layout_counts": dict(Counter(r["layout"] for r in results)),
-            "social_counts": dict(Counter(r["social"] for r in results)),
+            "label_counts": {
+                "layout": dict(Counter(layouts)),
+                "social": dict(Counter(socials)),
+            },
+            "transitions": {
+                "layout": compute_transitions(layouts),
+                "social": compute_transitions(socials),
+            },
         }
+        # If events path is a session folder, add session_id
+        if events_path.is_dir():
+            summary["session_id"] = events_path.name
         with open(args.export, "w", encoding="utf-8") as f:
             json.dump(summary, f, indent=2)
         logger.info(f"Exported summary to {args.export}")

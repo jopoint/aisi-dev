@@ -37,3 +37,18 @@ data/exports/
 
 # Do NOT ignore source, configs, tests, README.md, pyproject.toml, or example contracts
 # (Handled by not listing them above)
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Data / outputs
+data/
+out_*/
+
+# Model weights / checkpoints
+checkpoints/
+*.pt
+
+# Local configs (falls nur lokal)
+configs/vision.yaml
