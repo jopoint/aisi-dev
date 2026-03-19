@@ -41,53 +41,485 @@ class VisionPipeline:
         table_max_area: float = 50000.0,
         chair_min_area: float = 2000.0,
         chair_max_area: float = 20000.0,
-        debug_dir: Optional[str] = None
+        debug_dir: Optional[str] = None,
+        proposals_mode: Optional[str] = None,
+        yolo_model: str = "runs/detect/train/weights/best_fixed.pt",
+        yolo_conf: float = 0.25,
+        yolo_iou: float = 0.45,
+        yolo_max_det: int = 80,
+        track_ttl_frames: int = 15,
+        conf_create: Optional[float] = None,
+        conf_keep: float = 0.15,
+        reacquire_max_age: Optional[int] = None,
+        reacquire_max_dist: float = 150.0,
+        reacquire_min_iou: float = 0.05,
+        chairs_no_ghost: bool = True,
+        no_ghosting: bool = False,
+        overlay_style: str = "debug",
+        table_dark_thresh: int = 80,
+        table_min_contour_area: float = 1500.0,
+        table_min_area_frac: float = 0.015,
+        table_min_w_frac: float = 0.08,
+        table_min_h_frac: float = 0.08,
+        person_min_conf: float = 0.60,
+        person_min_iou: float = 0.10,
+        person_max_dist: float = 180.0,
+        person_ttl: int = 60,
+        person_min_area: int = 1200,
+        person_max_area: int = 120000,
+        person_max_ar: float = 4.0,
+        person_min_height: int = 60,
+        person_min_ar_wh: float = 0.18,
+        person_max_ar_wh: float = 1.25,
+        person_excl_right_frac: float = 0.0,
+        person_excl_rb_right_frac: float = 0.0,
+        person_excl_rb_bottom_frac: float = 0.0,
+        person_conf_override: Optional[float] = None,
+        person_static_window: int = 30,
+        person_static_max_delta: float = 20.0,
+        person_filter_mode: str = "geom+static",
+        table_refine_every: int = 0,
+        table_refine_max: int = 4,
+        table_refine_margin: int = 12,
+        table_motion_shift_px: float = 18.0,
+        table_motion_iou_min: float = 0.78,
+        table_motion_area_change: float = 0.18,
+        table_stable_frames: int = 4,
+        table_min_bbox_area: int = 30000,
+        table_min_bbox_minside: int = 120,
     ):
         """
         Initialize vision pipeline.
-        
+
         Args:
             sam3_config_path: Path to SAM2.1 model config (defaults to configs/sam2/sam2.1_hiera_l.yaml)
             sam3_checkpoint_path: Path to SAM2.1 checkpoint (defaults to checkpoints/sam2.1_hiera_large.pt)
-            homography_matrix: 3x3 homography matrix (pixel → floor coords), or None
+            homography_matrix: 3x3 homography matrix (pixel -> floor coords), or None
             device: "cuda" or "cpu"
             table_min_area: Minimum table mask area in pixels
             table_max_area: Maximum table mask area in pixels
             chair_min_area: Minimum chair mask area in pixels
             chair_max_area: Maximum chair mask area in pixels
             debug_dir: Optional directory for debug overlays
+            proposals_mode: Auto-proposals mode ("bgsub", "dark", "yolo", or None).
+                When "yolo", SAM2 is NOT loaded and YOLODetector is used instead.
+            yolo_model: Path to YOLO weights (used when proposals_mode=="yolo").
+            yolo_conf: YOLO confidence threshold.
+            yolo_iou: YOLO IoU threshold for NMS.
+            yolo_max_det: Max detections kept per class per frame (top-k by confidence).
+            track_ttl_frames: Keep unmatched tracks alive for this many frames.
+            conf_create: Minimum confidence to create NEW tracks (defaults to yolo_conf).
+            conf_keep: Minimum confidence to update/reacquire EXISTING tracks.
+            reacquire_max_age: Max ghost age eligible for reacquire (defaults to track_ttl_frames).
+            reacquire_max_dist: Max center distance in px for active/reacquire matching.
+            reacquire_min_iou: Min IoU for active/reacquire matching.
+            chairs_no_ghost: Disable chair ghosting/reacquire and use conf_create-only for chairs.
+            no_ghosting: Disable ghosting/reacquire globally.
+            overlay_style: Overlay rendering style for saved overlays
+                ("debug", "projector", or "projector_on_frame").
+            table_dark_thresh: Grayscale threshold for dark-pixel extraction in table ROI.
+            table_min_contour_area: Minimum contour area (in ROI px) to accept rotated table fit.
+            table_min_area_frac: Minimum table bbox area fraction of full frame.
+            table_min_w_frac: Minimum table bbox width fraction of frame width.
+            table_min_h_frac: Minimum table bbox height fraction of frame height.
+            person_min_conf: Minimum confidence for person detections before tracking.
+            person_min_iou: Minimum IoU for person track-detection matching.
+            person_max_dist: Maximum center distance (px) for person matching.
+            person_ttl: TTL in frames for person tracks.
+            person_min_area: Min person bbox area in pixels.
+            person_max_area: Max person bbox area in pixels.
+            person_max_ar: Max person bbox aspect ratio max(w/h, h/w).
+            person_min_height: Min person bbox height in pixels.
+            person_min_ar_wh: Min allowed person bbox aspect ratio w/h.
+            person_max_ar_wh: Max allowed person bbox aspect ratio w/h.
+            person_excl_right_frac: Right-edge exclusion strip width fraction.
+            person_excl_rb_right_frac: Right-bottom exclusion zone width fraction.
+            person_excl_rb_bottom_frac: Right-bottom exclusion zone height fraction.
+            person_conf_override: Optional stricter confidence threshold for person only.
+            person_static_window: Window length for static person suppression.
+            person_static_max_delta: Max center delta over full window for static suppression.
+            person_filter_mode: Person filtering mode (none, geom, geom+static).
+            table_refine_every: Run SAM geometry refinement every N frames for tables (0 = disabled).
+            table_refine_max: Maximum number of tables to SAM-refine per refine frame.
+            table_refine_margin: Margin in pixels to expand YOLO bbox before SAM box prompt.
+            table_motion_shift_px: Center shift (px) above which table is considered moving.
+            table_motion_iou_min: Min IoU to previous bbox required to stay stable.
+            table_motion_area_change: Max relative bbox area change allowed to stay stable.
+            table_stable_frames: Consecutive non-moving frames required before table is stable.
+            table_min_bbox_area: Reject table detections with bbox area below this value (pixels²).
+            table_min_bbox_minside: Reject table detections with min(w,h) below this value (pixels).
         """
-        # Use SAM2.1 defaults if not provided
-        if sam3_config_path is None:
-            sam3_config_path = "configs/sam2/sam2.1_hiera_l.yaml"
-        if sam3_checkpoint_path is None:
-            sam3_checkpoint_path = "checkpoints/sam2.1_hiera_large.pt"
-        
-        self.segmenter = SAM3Segmenter(
-            config_path=sam3_config_path,
-            checkpoint_path=sam3_checkpoint_path,
-            device=device
-        )
-        
         self.H = homography_matrix
         self.table_min_area = table_min_area
         self.table_max_area = table_max_area
         self.chair_min_area = chair_min_area
         self.chair_max_area = chair_max_area
         self.debug_dir = debug_dir
-        
+        self._proposals_mode = proposals_mode
+        self._yolo_max_det = yolo_max_det
+        self.track_ttl_frames = int(track_ttl_frames)
+        self.conf_create = float(yolo_conf if conf_create is None else conf_create)
+        self.conf_keep = float(conf_keep)
+        self.reacquire_max_age = int(self.track_ttl_frames if reacquire_max_age is None else reacquire_max_age)
+        self.reacquire_max_dist = float(reacquire_max_dist)
+        self.reacquire_min_iou = float(reacquire_min_iou)
+        self.chairs_no_ghost = bool(chairs_no_ghost)
+        self.no_ghosting = bool(no_ghosting)
+        self.table_dark_thresh = int(table_dark_thresh)
+        self.table_min_contour_area = float(table_min_contour_area)
+        self.table_min_area_frac = float(table_min_area_frac)
+        self.table_min_w_frac = float(table_min_w_frac)
+        self.table_min_h_frac = float(table_min_h_frac)
+        self.person_min_conf = float(person_min_conf)
+        self.person_min_iou = float(person_min_iou)
+        self.person_max_dist = float(person_max_dist)
+        self.person_ttl = int(person_ttl)
+        self.person_min_area = int(person_min_area)
+        self.person_max_area = int(person_max_area)
+        self.person_max_ar = float(person_max_ar)
+        self.person_min_height = int(person_min_height)
+        self.person_min_ar_wh = float(person_min_ar_wh)
+        self.person_max_ar_wh = float(person_max_ar_wh)
+        self.person_excl_right_frac = float(person_excl_right_frac)
+        self.person_excl_rb_right_frac = float(person_excl_rb_right_frac)
+        self.person_excl_rb_bottom_frac = float(person_excl_rb_bottom_frac)
+        self.person_conf_override = None if person_conf_override is None else float(person_conf_override)
+        self.person_static_window = int(person_static_window)
+        self.person_static_max_delta = float(person_static_max_delta)
+        self.person_filter_mode = str(person_filter_mode)
+        self.table_refine_every = int(table_refine_every)
+        self.table_refine_max = int(table_refine_max)
+        self.table_refine_margin = int(table_refine_margin)
+        self.table_motion_shift_px = float(table_motion_shift_px)
+        self.table_motion_iou_min = float(table_motion_iou_min)
+        self.table_motion_area_change = float(table_motion_area_change)
+        self.table_stable_frames = int(max(1, table_stable_frames))
+        self.table_min_bbox_area = int(table_min_bbox_area)
+        self.table_min_bbox_minside = int(table_min_bbox_minside)
+        self.overlay_style = (
+            overlay_style
+            if overlay_style in ("debug", "projector", "projector_on_frame")
+            else "debug"
+        )
+        self._track_ttl_frames = int(self.track_ttl_frames)
+        self._track_ttl_frames_by_class = {
+            "chair": int(min(4, self.track_ttl_frames)),
+            "table": int(max(12, self.track_ttl_frames)),
+            "person": int(max(8, min(12, self.track_ttl_frames))),
+        }
+        self._track_debug_every = 10
+        self._emit_ghost_overlays = False
+        self._class_reacquire_max_age = {
+            "table": int(max(4, self.reacquire_max_age)),
+            "person": int(max(3, min(self.reacquire_max_age, self._track_ttl_frames_by_class["person"]))),
+            "chair": 0,
+        }
+        self._class_match_dist_px = {
+            "table": float(max(70.0, self.reacquire_max_dist * 0.80)),
+            "person": float(max(80.0, self.reacquire_max_dist * 0.95)),
+            "chair": float(max(55.0, self.reacquire_max_dist * 0.75)),
+        }
+        self._class_match_iou_min = {
+            "table": float(max(0.12, self.reacquire_min_iou)),
+            "person": float(max(0.08, self.reacquire_min_iou)),
+            "chair": float(max(0.05, self.reacquire_min_iou)),
+        }
+        self._track_match_threshold_px = {
+            "chair": float(self.reacquire_max_dist),
+            "table": float(self.reacquire_max_dist),
+            "person": float(self.reacquire_max_dist),
+        }
+        self._yolo_conf_min = {
+            "chair": float(self.conf_keep),
+            "table": float(self.conf_keep),
+            "person": float(self.conf_keep),
+        }
+        self._match_gate_cfg = {
+            "chair": {"iou_min": float(self.reacquire_min_iou), "area_ratio_min": 0.3, "area_ratio_max": 3.5},
+            "person": {"iou_min": float(self.reacquire_min_iou), "area_ratio_min": 0.3, "area_ratio_max": 3.5},
+            "table": {"iou_min": float(self.reacquire_min_iou), "area_ratio_min": 0.3, "area_ratio_max": 3.5},
+        }
+        self._bbox_ema_alpha = {
+            "chair": 0.30,
+            "person": 0.30,
+            "table": 0.20,
+        }
+        self._hard_jump_px = {
+            "chair": 90.0,
+            "person": 90.0,
+            "table": 130.0,
+        }
+        self._center_smooth_alpha = 0.20
+        self._tracks: Dict[str, Dict[str, Dict]] = {
+            "chair": {},
+            "table": {},
+            "person": {},
+        }
+        self._next_id: Dict[str, int] = {
+            "chair": 0,
+            "table": 0,
+            "person": 0,
+        }
+        self._person_new_ids_since_log = 0
+
         self.frame_id = 0
+        self._last_render_frame_id = -1
         self._last_overlay_items = []  # Storage for visualization items
         self.state_by_id = {}  # State management: {id: {"label":..., "bbox_px":..., "center_px":..., "shape":...}}
-        
-        print(f"\n=== VisionPipeline Initialized ===")
-        print(f"SAM2.1 Config: {sam3_config_path}")
-        print(f"SAM2.1 Checkpoint: {sam3_checkpoint_path}")
-        print(f"Device: {device}")
-        print(f"Homography: {'enabled' if self.H is not None else 'disabled'}")
-        print(f"Table area filter: [{table_min_area}, {table_max_area}] px")
-        print(f"Chair area filter: [{chair_min_area}, {chair_max_area}] px")
-        print(f"===================================\n")
+
+        if proposals_mode == "yolo":
+            # YOLO mode: init detector; optionally load SAM for table geometry refinement
+            self._yolo_detector = None  # lazily set below to allow lazy import
+            from src.vision.detection.yolo_detector import YOLODetector
+            self._yolo_detector = YOLODetector(
+                model=yolo_model,
+                device=device,
+                conf=yolo_conf,
+                iou=yolo_iou,
+            )
+            if table_refine_every > 0:
+                _refine_cfg = sam3_config_path or "configs/sam2/sam2.1_hiera_l.yaml"
+                _refine_ckpt = sam3_checkpoint_path or "checkpoints/sam2.1_hiera_large.pt"
+                try:
+                    self.segmenter = SAM3Segmenter(
+                        config_path=_refine_cfg,
+                        checkpoint_path=_refine_ckpt,
+                        device=device,
+                    )
+                except Exception as exc:
+                    raise RuntimeError(
+                        "Table refinement requested (--table-refine-every > 0), but SAM2/SAM3Segmenter could not be initialised. "
+                        "Install SAM2 or disable refinement with --table-refine-every 0."
+                    ) from exc
+                print(f"SAM table refine: every={table_refine_every} frames, max={table_refine_max} tables")
+            else:
+                self.segmenter = None
+            print(f"\n=== VisionPipeline Initialized (YOLO mode) ===")
+            print(f"YOLO model:  {yolo_model}")
+            print(f"YOLO conf: {yolo_conf}  iou: {yolo_iou}  max_det: {yolo_max_det}")
+            print(
+                f"Tracking: ttl={self.track_ttl_frames} conf_create={self.conf_create} conf_keep={self.conf_keep} "
+                f"reacquire_age={self.reacquire_max_age} reacquire_dist={self.reacquire_max_dist} "
+                f"reacquire_iou={self.reacquire_min_iou} chairs_no_ghost={self.chairs_no_ghost}"
+            )
+            print(
+                f"Table motion gate: shift_px>{self.table_motion_shift_px} iou<{self.table_motion_iou_min} "
+                f"area_change>{self.table_motion_area_change} stable_frames={self.table_stable_frames}"
+            )
+            print("Overlay ghosting: disabled (internal short-term reacquire only)")
+            if self.no_ghosting:
+                print("Ghosting: disabled")
+            print(f"Device: {device}")
+            print(f"Homography: {'enabled' if self.H is not None else 'disabled'}")
+            print(f"Table refine: {'every ' + str(table_refine_every) + ' frames' if table_refine_every > 0 else 'disabled'}")
+            print(f"===================================\n")
+        else:
+            # SAM2 mode: load segmenter
+            self._yolo_detector = None
+            if sam3_config_path is None:
+                sam3_config_path = "configs/sam2/sam2.1_hiera_l.yaml"
+            if sam3_checkpoint_path is None:
+                sam3_checkpoint_path = "checkpoints/sam2.1_hiera_large.pt"
+            self.segmenter = SAM3Segmenter(
+                config_path=sam3_config_path,
+                checkpoint_path=sam3_checkpoint_path,
+                device=device
+            )
+            print(f"\n=== VisionPipeline Initialized ===")
+            print(f"SAM2.1 Config: {sam3_config_path}")
+            print(f"SAM2.1 Checkpoint: {sam3_checkpoint_path}")
+            print(f"Device: {device}")
+            print(f"Homography: {'enabled' if self.H is not None else 'disabled'}")
+            print(f"Table area filter: [{table_min_area}, {table_max_area}] px")
+            print(f"Chair area filter: [{chair_min_area}, {chair_max_area}] px")
+            print(f"===================================\n")
+
+    def reset_tracks(self):
+        """Reset YOLO tracking state (tracks and id counters)."""
+        self._tracks = {
+            "chair": {},
+            "table": {},
+            "person": {},
+        }
+        self._next_id = {
+            "chair": 0,
+            "table": 0,
+            "person": 0,
+        }
+        self._person_new_ids_since_log = 0
+
+    @staticmethod
+    def _bbox_area(bbox: List[int]) -> float:
+        """Compute bbox area in pixels (clamped to non-negative extents)."""
+        x1, y1, x2, y2 = [int(v) for v in bbox]
+        w = max(0, x2 - x1)
+        h = max(0, y2 - y1)
+        return float(w * h)
+
+    @staticmethod
+    def _bbox_iou(box_a: List[int], box_b: List[int]) -> float:
+        """Compute IoU between two [x1,y1,x2,y2] boxes."""
+        ax1, ay1, ax2, ay2 = [int(v) for v in box_a]
+        bx1, by1, bx2, by2 = [int(v) for v in box_b]
+
+        ix1 = max(ax1, bx1)
+        iy1 = max(ay1, by1)
+        ix2 = min(ax2, bx2)
+        iy2 = min(ay2, by2)
+
+        iw = max(0, ix2 - ix1)
+        ih = max(0, iy2 - iy1)
+        inter = float(iw * ih)
+        if inter <= 0:
+            return 0.0
+
+        area_a = VisionPipeline._bbox_area(box_a)
+        area_b = VisionPipeline._bbox_area(box_b)
+        union = area_a + area_b - inter
+        if union <= 0:
+            return 0.0
+        return inter / union
+
+    @staticmethod
+    def _bbox_center(bbox: List[int]) -> Tuple[float, float]:
+        """Compute bbox center for [x1,y1,x2,y2]."""
+        x1, y1, x2, y2 = [float(v) for v in bbox]
+        return (0.5 * (x1 + x2), 0.5 * (y1 + y2))
+
+    @staticmethod
+    def _center_dist(c1: Tuple[float, float], c2: Tuple[float, float]) -> float:
+        """Euclidean distance between two 2D points."""
+        return float(np.hypot(float(c1[0]) - float(c2[0]), float(c1[1]) - float(c2[1])))
+
+    def _greedy_track_match(
+        self,
+        detections: List[Dict],
+        class_tracks: Dict[str, Dict],
+        track_ids: List[str],
+        available_det_indices: set,
+        label: str,
+    ) -> Dict[str, int]:
+        """Greedy one-to-one match: 0.7*IoU + 0.3*(1 - normalized center distance)."""
+        if not detections or not track_ids or not available_det_indices:
+            return {}
+
+        candidates: List[Tuple[float, float, float, str, int]] = []
+        max_dist = max(1e-6, float(self._class_match_dist_px.get(label, self.reacquire_max_dist)))
+        min_iou = float(self._class_match_iou_min.get(label, self.reacquire_min_iou))
+
+        for tid in track_ids:
+            track = class_tracks.get(tid)
+            if not track:
+                continue
+            tbbox = track.get("bbox")
+            if not tbbox or len(tbbox) != 4:
+                continue
+            tcenter = self._bbox_center(tbbox)
+            for det_idx in list(available_det_indices):
+                det = detections[det_idx]
+                dbbox = det.get("bbox_px", [0, 0, 0, 0])
+                if len(dbbox) != 4:
+                    continue
+                iou_val = self._bbox_iou(tbbox, dbbox)
+                if iou_val < min_iou:
+                    continue
+                dcenter = self._bbox_center(dbbox)
+                dist = self._center_dist(tcenter, dcenter)
+                if dist > max_dist:
+                    continue
+                norm_dist = min(1.0, dist / max_dist)
+                match_score = (0.7 * float(iou_val)) + (0.3 * (1.0 - norm_dist))
+                candidates.append((match_score, float(iou_val), -dist, tid, det_idx))
+
+        candidates.sort(key=lambda x: (x[0], x[1], x[2]), reverse=True)
+        matches: Dict[str, int] = {}
+        used_tracks = set()
+        used_dets = set()
+        for _, _, _, tid, det_idx in candidates:
+            if tid in used_tracks or det_idx in used_dets:
+                continue
+            matches[tid] = det_idx
+            used_tracks.add(tid)
+            used_dets.add(det_idx)
+
+        return matches
+
+    @staticmethod
+    def _ema_bbox(old_bbox: List[int], det_bbox: List[int], alpha_new: float) -> List[int]:
+        """Exponential moving average update for bbox coordinates."""
+        return [
+            int(round((1.0 - alpha_new) * float(old_bbox[i]) + alpha_new * float(det_bbox[i])))
+            for i in range(4)
+        ]
+
+    def _update_table_motion_state(self, track: Dict, old_bbox: List[int], det_bbox: List[int]) -> None:
+        """Update per-table moving/stable state from bbox dynamics."""
+        old_center = self._bbox_center(old_bbox)
+        det_center = self._bbox_center(det_bbox)
+        center_shift_px = self._center_dist(old_center, det_center)
+        iou_prev = self._bbox_iou(old_bbox, det_bbox)
+        old_area = max(1.0, self._bbox_area(old_bbox))
+        det_area = self._bbox_area(det_bbox)
+        area_change = abs(det_area - old_area) / old_area
+
+        moving_now = (
+            center_shift_px > float(self.table_motion_shift_px)
+            or iou_prev < float(self.table_motion_iou_min)
+            or area_change > float(self.table_motion_area_change)
+        )
+        stable_count = int(track.get("table_stable_count", 0))
+        if moving_now:
+            stable_count = 0
+            track["table_motion_state"] = "moving"
+            # Prevent stale SAM geometry from being reused while object moves.
+            track["last_corners_px"] = None
+        else:
+            stable_count += 1
+            if stable_count >= int(self.table_stable_frames):
+                track["table_motion_state"] = "stable"
+            else:
+                track["table_motion_state"] = "moving"
+
+        track["table_stable_count"] = stable_count
+        track["table_center_shift_px"] = float(center_shift_px)
+        track["table_prev_iou"] = float(iou_prev)
+        track["table_area_change"] = float(area_change)
+
+    @staticmethod
+    def _get_monitor_layout_windows() -> List[Tuple[int, int, int, int]]:
+        """Return monitor rectangles as (x, y, w, h) on Windows; fallback to primary origin."""
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            class RECT(ctypes.Structure):
+                _fields_ = [
+                    ("left", wintypes.LONG),
+                    ("top", wintypes.LONG),
+                    ("right", wintypes.LONG),
+                    ("bottom", wintypes.LONG),
+                ]
+
+            monitors: List[Tuple[int, int, int, int]] = []
+
+            MONITORENUMPROC = ctypes.WINFUNCTYPE(
+                ctypes.c_int,
+                wintypes.HMONITOR,
+                wintypes.HDC,
+                ctypes.POINTER(RECT),
+                wintypes.LPARAM,
+            )
+
+            def _callback(hmonitor, hdc, lprc_monitor, lparam):  # noqa: ANN001
+                rc = lprc_monitor.contents
+                monitors.append((int(rc.left), int(rc.top), int(rc.right - rc.left), int(rc.bottom - rc.top)))
+                return 1
+
+            cb = MONITORENUMPROC(_callback)
+            ctypes.windll.user32.EnumDisplayMonitors(0, 0, cb, 0)
+            return monitors if monitors else [(0, 0, 0, 0)]
+        except Exception:
+            return [(0, 0, 0, 0)]
     
     def process_frame(self, frame_bgr: np.ndarray, timestamp_iso: Optional[str] = None) -> FrameEvent:
         """
@@ -239,6 +671,8 @@ class VisionPipeline:
         camera_index: int = 0,
         output_jsonl: Optional[str] = None,
         display: bool = True,
+        projector_display: bool = False,
+        projector_monitor: int = 1,
         flush_every: int = 10,
     ):
         """
@@ -248,6 +682,8 @@ class VisionPipeline:
             camera_index: Camera device index
             output_jsonl: Optional path to write JSONL output
             display: Whether to show live display window
+            projector_display: Whether to show a fullscreen projector overlay window
+            projector_monitor: Monitor index for projector window (0=primary, 1=second, ...)
             flush_every: Flush/fsync every N frames (based on frame_id)
         """
         cap = cv2.VideoCapture(camera_index)
@@ -259,6 +695,21 @@ class VisionPipeline:
             output_path = Path(output_jsonl)
             output_path.parent.mkdir(parents=True, exist_ok=True)
             jsonl_file = open(output_path, "w")
+
+        projector_window_name = "Projector"
+        if projector_display:
+            cv2.namedWindow(projector_window_name, cv2.WINDOW_NORMAL)
+            monitor_layout = self._get_monitor_layout_windows()
+            if projector_monitor < 0:
+                projector_monitor = 0
+            if projector_monitor >= len(monitor_layout):
+                projector_monitor = max(0, len(monitor_layout) - 1)
+            mon_x, mon_y, mon_w, mon_h = monitor_layout[projector_monitor]
+            cv2.moveWindow(projector_window_name, mon_x, mon_y)
+            cv2.setWindowProperty(projector_window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+            print(f"Projector window on monitor {projector_monitor} at ({mon_x}, {mon_y}) size {mon_w}x{mon_h}")
+
+        live_frame_id = 0
         
         try:
             while True:
@@ -266,8 +717,17 @@ class VisionPipeline:
                 if not ret:
                     print("Failed to read frame from camera")
                     break
-                
-                frame_event = self.process_frame(frame)
+
+                timestamp_iso = now_iso()
+                if self._proposals_mode == "yolo":
+                    frame_event = self._process_frame_yolo(
+                        frame_bgr=frame,
+                        frame_id=live_frame_id,
+                        timestamp_iso=timestamp_iso,
+                    )
+                else:
+                    frame_event = self.process_frame(frame, timestamp_iso=timestamp_iso)
+                live_frame_id += 1
                 
                 if jsonl_file is not None:
                     jsonl_file.write(json.dumps(frame_event.to_dict()) + "\n")
@@ -279,8 +739,18 @@ class VisionPipeline:
                     # Draw detections on frame
                     display_frame = self._draw_detections(frame, frame_event)
                     cv2.imshow("Vision Pipeline", display_frame)
-                    
+
+                if projector_display:
+                    # Always render projector style for projector output window
+                    projector_items = self._last_overlay_items if self._last_overlay_items else []
+                    projector_frame = self._render_overlay_projector(frame, projector_items)
+                    cv2.imshow(projector_window_name, projector_frame)
+
+                if display or projector_display:
                     key = cv2.waitKey(1) & 0xFF
+                    if key == ord('r'):
+                        self.reset_tracks()
+                        print("tracks reset")
                     if key == ord('q') or key == 27:  # q or ESC
                         break
         
@@ -288,7 +758,7 @@ class VisionPipeline:
             cap.release()
             if jsonl_file is not None:
                 jsonl_file.close()
-            if display:
+            if display or projector_display:
                 cv2.destroyAllWindows()
     
     def _draw_detections(self, frame: np.ndarray, frame_event: FrameEvent) -> np.ndarray:
@@ -352,6 +822,24 @@ class VisionPipeline:
         Returns:
             Overlay frame with visualized masks and geometries
         """
+        frame_id = getattr(self, "_dbg_frame_id", None)
+        if frame_id in (0, 11):
+            for _item in overlay_items:
+                if _item.get("label") != "table":
+                    continue
+                _shape = _item.get("shape", {})
+                _has_bbox = _shape.get("bbox_px") is not None
+                _has_corners = _shape.get("corners_px") is not None
+                print(
+                    f"[render_overlay dbg] frame={frame_id} table_id={_item.get('id')} "
+                    f"has_bbox_px={_has_bbox} has_corners_px={_has_corners}"
+                )
+
+        if self.overlay_style == "projector":
+            return self._render_overlay_projector(frame_bgr, overlay_items)
+        if self.overlay_style == "projector_on_frame":
+            return self._render_overlay_projector_on_frame(frame_bgr, overlay_items)
+
         overlay = frame_bgr.copy()
         h, w = overlay.shape[:2]
         
@@ -360,6 +848,7 @@ class VisionPipeline:
             "table": (0, 255, 255),    # Cyan
             "chair": (255, 0, 255),    # Magenta
             "person": (0, 255, 0),     # Green
+            "table_reject": (0, 165, 255),  # Orange
         }
         
         for item in overlay_items:
@@ -367,6 +856,7 @@ class VisionPipeline:
             mask = item.get("mask")
             obj_id = item.get("id", "")
             score = item.get("score", 0.0)
+            is_ghost = bool(item.get("ghost", False))
             shape = item.get("shape", {})
             
             # Get color for this label
@@ -377,7 +867,7 @@ class VisionPipeline:
             if has_mask:
                 mask_uint8 = (mask.astype(np.uint8) * 255)
 
-                alpha = 0.35
+                alpha = 0.18 if is_ghost else 0.35
                 mask_indices = mask > 0
                 overlay[mask_indices] = (
                     overlay[mask_indices] * (1 - alpha) +
@@ -386,21 +876,22 @@ class VisionPipeline:
 
                 contours, _ = cv2.findContours(mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
                 if contours:
-                    cv2.drawContours(overlay, contours, -1, color, 2)
+                    cv2.drawContours(overlay, contours, -1, color, 1 if is_ghost else 2)
 
-            # Draw bbox fallback if available (works even without mask)
+            # tables: prefer rotated corners over bbox to avoid double box
             bbox = shape.get("bbox_px")
-            if bbox and len(bbox) == 4:
+            table_has_corners = label == "table" and bool(shape.get("corners_px"))
+            if not table_has_corners and bbox and len(bbox) == 4:
                 x1, y1, x2, y2 = [int(v) for v in bbox]
-                cv2.rectangle(overlay, (x1, y1), (x2, y2), color, 2)
-            
+                cv2.rectangle(overlay, (x1, y1), (x2, y2), color, 1 if is_ghost else 2)
+
             # Draw geometry shapes
-            if label == "table" and "corners_px" in shape:
+            if label == "table" and table_has_corners:
                 corners = shape["corners_px"]
-                if corners and len(corners) >= 3:
+                if len(corners) >= 3:
                     pts = np.array(corners, dtype=np.int32)
-                    cv2.polylines(overlay, [pts], True, color, 2)
-            
+                    cv2.polylines(overlay, [pts], True, color, 1 if is_ghost else 2)
+
             if label == "table" and "center_px" in shape:
                 center = shape["center_px"]
                 if center:
@@ -420,10 +911,18 @@ class VisionPipeline:
                 bbox = shape["bbox_px"]
                 if bbox:
                     x1, y1, x2, y2 = [int(v) for v in bbox]
-                    cv2.rectangle(overlay, (x1, y1), (x2, y2), color, 2)
+                    cv2.rectangle(overlay, (x1, y1), (x2, y2), color, 1 if is_ghost else 2)
                     if "center_px" in shape:
                         cx, cy = int(shape["center_px"][0]), int(shape["center_px"][1])
                         cv2.circle(overlay, (cx, cy), 4, color, -1)
+
+            if label == "table_reject" and "bbox_px" in shape:
+                bbox = shape["bbox_px"]
+                if bbox:
+                    x1, y1, x2, y2 = [int(v) for v in bbox]
+                    cv2.rectangle(overlay, (x1, y1), (x2, y2), color, 2)
+                    reject_reason = str(shape.get("reject_reason", "table_reject_small"))
+                    cv2.putText(overlay, reject_reason, (x1, max(16, y1 - 4)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1, cv2.LINE_AA)
             
             # Draw ID and score text
             text = f"{obj_id} ({score:.2f})"
@@ -455,6 +954,441 @@ class VisionPipeline:
             cv2.putText(overlay, text, (text_x, text_y), font, font_scale, (255, 255, 255), thickness)
         
         return overlay
+
+    def _render_overlay_projector(self, frame_bgr: np.ndarray, overlay_items: List[Dict]) -> np.ndarray:
+        """Render high-contrast projector overlay: white geometry on black background."""
+        h, w = frame_bgr.shape[:2]
+        overlay = np.zeros((h, w, 3), dtype=np.uint8)
+
+        for item in overlay_items:
+            label = item.get("label", "unknown")
+            shape = item.get("shape", {})
+            bbox = shape.get("bbox_px")
+            if not bbox or len(bbox) != 4:
+                continue
+
+            x1, y1, x2, y2 = [int(v) for v in bbox]
+            x1 = max(0, min(w - 1, x1))
+            y1 = max(0, min(h - 1, y1))
+            x2 = max(0, min(w - 1, x2))
+            y2 = max(0, min(h - 1, y2))
+            if x2 <= x1 or y2 <= y1:
+                continue
+
+            if label == "table":
+                poly_px = shape.get("poly_px")
+                table_poly = None
+                if poly_px is not None and len(poly_px) == 4:
+                    table_poly = np.array(poly_px, dtype=np.int32)
+                if table_poly is not None:
+                    cv2.fillConvexPoly(overlay, table_poly, (255, 255, 255))
+                    cv2.polylines(overlay, [table_poly.reshape(-1, 1, 2)], True, (0, 255, 0), 2)
+                else:
+                    cv2.rectangle(overlay, (x1, y1), (x2, y2), (255, 255, 255), -1)
+                    cv2.rectangle(overlay, (x1, y1), (x2, y2), (0, 0, 255), 2)
+            elif label == "table_reject":
+                cv2.rectangle(overlay, (x1, y1), (x2, y2), (0, 165, 255), 2)
+                reject_reason = str(shape.get("reject_reason", "table_reject_small"))
+                cv2.putText(overlay, reject_reason, (x1, max(16, y1 - 4)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 165, 255), 1, cv2.LINE_AA)
+            elif label in ("chair", "person"):
+                center = shape.get("center_px")
+                if center and len(center) >= 2:
+                    cx = int(round(float(center[0])))
+                    cy = int(round(float(center[1])))
+                else:
+                    cx = int(round((x1 + x2) / 2.0))
+                    cy = int(round((y1 + y2) / 2.0))
+                radius = int(round(0.5 * min(x2 - x1, y2 - y1)))
+                if radius > 0:
+                    color = (255, 0, 0) if label == "chair" else (0, 0, 255)
+                    thickness = 2 if label == "chair" else 3
+                    cv2.circle(overlay, (cx, cy), radius, color, thickness)
+                    cv2.circle(overlay, (cx, cy), 3, color, -1)
+
+        return overlay
+
+    def _render_overlay_projector_on_frame(self, frame_bgr: np.ndarray, overlay_items: List[Dict]) -> np.ndarray:
+        """Render projector alignment overlay: white geometry alpha-blended onto source frame."""
+        h, w = frame_bgr.shape[:2]
+        alpha = 0.6
+
+        table_layer = frame_bgr.copy()
+        circle_draw_ops: List[Tuple[int, int, int, Tuple[int, int, int], int]] = []
+        table_ok = 0
+        table_fallback = 0
+        table_angles: List[float] = []
+        table_areas: List[float] = []
+        first_table_mask_saved = False
+        first_table_logged = False
+
+        for item in overlay_items:
+            label = item.get("label", "unknown")
+            shape = item.get("shape", {})
+            bbox = shape.get("bbox_px")
+            if not bbox or len(bbox) != 4:
+                continue
+
+            x1, y1, x2, y2 = [int(v) for v in bbox]
+            x1 = max(0, min(w - 1, x1))
+            y1 = max(0, min(h - 1, y1))
+            x2 = max(0, min(w - 1, x2))
+            y2 = max(0, min(h - 1, y2))
+            if x2 <= x1 or y2 <= y1:
+                continue
+
+            if label == "table_reject":
+                cv2.rectangle(table_layer, (x1, y1), (x2, y2), (0, 165, 255), 2)
+                reject_reason = str(shape.get("reject_reason", "table_reject_small"))
+                cv2.putText(
+                    table_layer,
+                    reject_reason,
+                    (x1, max(16, y1 - 4)),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.45,
+                    (0, 165, 255),
+                    1,
+                    cv2.LINE_AA,
+                )
+            elif label == "table":
+                used_fallback = bool(shape.get("used_fallback", True))
+                poly_px = shape.get("poly_px")
+                table_poly = None
+                if poly_px is not None and len(poly_px) == 4:
+                    table_poly = np.array(poly_px, dtype=np.int32)
+
+                if table_poly is not None:
+                    cv2.fillConvexPoly(table_layer, table_poly, (255, 255, 255))
+                else:
+                    cv2.rectangle(table_layer, (x1, y1), (x2, y2), (255, 255, 255), -1)
+
+                # Explicit debug outline: red for fallback, green for oriented rect
+                if used_fallback or table_poly is None:
+                    table_fallback += 1
+                    cv2.rectangle(table_layer, (x1, y1), (x2, y2), (0, 0, 255), 2)
+                    reason = str(shape.get("fallback_reason", ""))
+                    if reason:
+                        text_y = max(12, y1 - 4)
+                        cv2.putText(
+                            table_layer,
+                            reason,
+                            (x1, text_y),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.4,
+                            (0, 0, 255),
+                            1,
+                            cv2.LINE_AA,
+                        )
+                else:
+                    table_ok += 1
+                    cv2.polylines(table_layer, [table_poly.reshape(-1, 1, 2)], True, (0, 255, 0), 2)
+                    table_angles.append(float(shape.get("rect_angle", 0.0)))
+                    table_areas.append(float(shape.get("best_area", 0.0)))
+
+                if not first_table_logged:
+                    frame_idx = max(0, int(self._last_render_frame_id))
+                    print(
+                        f"table_orient_table: frame_id={frame_idx} "
+                        f"used_fallback={used_fallback} "
+                        f"fallback_reason={shape.get('fallback_reason', '')} "
+                        f"best_area={float(shape.get('best_area', 0.0)):.1f} "
+                        f"rect_w={float(shape.get('rect_w', 0.0)):.1f} "
+                        f"rect_h={float(shape.get('rect_h', 0.0)):.1f} "
+                        f"rect_angle={float(shape.get('rect_angle', 0.0)):.2f}"
+                    )
+                    first_table_logged = True
+
+                if bool(shape.get("theta_rejected", False)):
+                    theta_txt_y = min(h - 6, max(18, y1 + 16))
+                    theta_txt = f"theta={float(shape.get('rect_angle', 0.0)):.2f} (rejected)"
+                    cv2.putText(
+                        table_layer,
+                        theta_txt,
+                        (x1, theta_txt_y),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.45,
+                        (0, 255, 255),
+                        1,
+                        cv2.LINE_AA,
+                    )
+
+                if not first_table_mask_saved and self.debug_dir:
+                    mask_img = shape.get("roi_mask")
+                    if mask_img is not None:
+                        debug_path = Path(self.debug_dir)
+                        debug_path.mkdir(parents=True, exist_ok=True)
+                        frame_idx = max(0, int(self._last_render_frame_id))
+                        out_mask = debug_path / f"table_roi_mask_frame_{frame_idx:05d}.png"
+                        cv2.imwrite(str(out_mask), mask_img)
+                        first_table_mask_saved = True
+            elif label in ("chair", "person"):
+                center = shape.get("center_px")
+                if center and len(center) >= 2:
+                    cx = int(round(float(center[0])))
+                    cy = int(round(float(center[1])))
+                else:
+                    cx = int(round((x1 + x2) / 2.0))
+                    cy = int(round((y1 + y2) / 2.0))
+                radius = int(round(0.5 * min(x2 - x1, y2 - y1)))
+                if radius > 0:
+                    color = (255, 0, 0) if label == "chair" else (0, 0, 255)
+                    thickness = 2 if label == "chair" else 3
+                    circle_draw_ops.append((cx, cy, radius, color, thickness))
+
+        frame_idx = int(self._last_render_frame_id)
+        if frame_idx >= 0 and frame_idx % 10 == 0:
+            avg_angle_str = "n/a"
+            avg_area_str = "n/a"
+            if table_angles:
+                avg_angle_str = f"{(sum(table_angles) / len(table_angles)):.2f}"
+            if table_areas:
+                avg_area_str = f"{(sum(table_areas) / len(table_areas)):.1f}"
+            print(f"table_orient: ok={table_ok} fallback={table_fallback} avg_angle={avg_angle_str} avg_area={avg_area_str}")
+
+        blended = cv2.addWeighted(table_layer, alpha, frame_bgr, 1.0 - alpha, 0.0)
+
+        # Draw class-colored circles directly on blended frame (no extra alpha).
+        for cx, cy, radius, color, thickness in circle_draw_ops:
+            cv2.circle(blended, (cx, cy), radius, color, thickness)
+            cv2.circle(blended, (cx, cy), 3, color, -1)
+
+        return blended
+
+    def _extract_table_orientation_debug(self, frame_bgr: np.ndarray, bbox_px: List[int], frame_id: int = 0, track_id: object = None) -> Dict:
+        """
+        Estimate a table yaw from Hough line segments inside an expanded ROI.
+
+        Returns dict with keys:
+          - poly: Optional 4-point int32 polygon in image coordinates
+          - used_fallback: bool
+          - fallback_reason: str
+          - n_contours: Number of Hough line segments retained for voting
+          - best_area: Dominant angle support length in pixels
+          - rect_w: Rotated rectangle width in pixels
+          - rect_h: Rotated rectangle height in pixels
+          - rect_angle: Dominant angle in degrees
+          - mask: Optional[np.ndarray] (edge debug image)
+          - yaw_rad: Dominant angle in radians
+        """
+        result = {
+            "poly": None,
+            "used_fallback": True,
+            "fallback_reason": "no_lines",
+            "n_contours": 0,
+            "best_area": 0.0,
+            "rect_w": 0.0,
+            "rect_h": 0.0,
+            "rect_angle": 0.0,
+            "mask": None,
+            "yaw_rad": None,
+        }
+
+        try:
+            h, w = frame_bgr.shape[:2]
+            x1, y1, x2, y2 = [int(v) for v in bbox_px]
+            x1 = max(0, min(w - 1, x1))
+            y1 = max(0, min(h - 1, y1))
+            x2 = max(0, min(w - 1, x2))
+            y2 = max(0, min(h - 1, y2))
+            if x2 <= x1 or y2 <= y1:
+                result["fallback_reason"] = "invalid_bbox"
+                return result
+
+            bbox_w = float(x2 - x1)
+            bbox_h = float(y2 - y1)
+            if bbox_w <= 1.0 or bbox_h <= 1.0:
+                result["fallback_reason"] = "invalid_bbox"
+                return result
+
+            margin = 20
+            rx1 = max(0, x1 - margin)
+            ry1 = max(0, y1 - margin)
+            rx2 = min(w, x2 + margin)
+            ry2 = min(h, y2 + margin)
+            if rx2 <= rx1 or ry2 <= ry1:
+                result["fallback_reason"] = "invalid_roi"
+                return result
+
+            roi = frame_bgr[ry1:ry2, rx1:rx2]
+            if roi.size == 0:
+                result["fallback_reason"] = "invalid_roi"
+                return result
+
+            roi_h, roi_w = roi.shape[:2]
+            inner_trim = 20
+            ix1 = inner_trim
+            iy1 = inner_trim
+            ix2 = roi_w - inner_trim
+            iy2 = roi_h - inner_trim
+            if ix2 <= ix1 or iy2 <= iy1:
+                result["fallback_reason"] = "invalid_inner_roi"
+                return result
+
+            inner_roi = roi[iy1:iy2, ix1:ix2]
+            if inner_roi.size == 0:
+                result["fallback_reason"] = "invalid_inner_roi"
+                return result
+
+            gray = cv2.cvtColor(inner_roi, cv2.COLOR_BGR2GRAY)
+            gray_blur = cv2.GaussianBlur(gray, (5, 5), 0)
+            edges_inner = cv2.Canny(gray_blur, 50, 150)
+            edges = np.zeros((roi_h, roi_w), dtype=np.uint8)
+            edges[iy1:iy2, ix1:ix2] = edges_inner
+            result["mask"] = edges
+
+            debug_path = None
+            debug_tag = f"f{frame_id:05d}_tid{track_id}"
+            if self.debug_dir:
+                debug_path = Path(self.debug_dir)
+                debug_path.mkdir(parents=True, exist_ok=True)
+                roi_rgb = roi.copy()
+                edge_overlay = roi_rgb.copy()
+                edge_pixels = edges > 0
+                if np.any(edge_pixels):
+                    green_overlay = np.zeros_like(edge_overlay)
+                    green_overlay[:, :] = (0, 255, 0)
+                    blended = cv2.addWeighted(edge_overlay, 0.5, green_overlay, 0.5, 0.0)
+                    edge_overlay[edge_pixels] = blended[edge_pixels]
+                cv2.imwrite(str(debug_path / f"table_roi_rgb_{debug_tag}.png"), roi_rgb)
+                cv2.imwrite(str(debug_path / f"table_roi_overlay_{debug_tag}.png"), edge_overlay)
+                cv2.imwrite(str(debug_path / f"table_mask_bin_{debug_tag}.png"), edges)
+
+            # Tight Hough input for table yaw stability.
+            hough_min_line_length = 100
+            hough_max_line_gap = 10
+            hough_threshold = 80
+
+            lines = cv2.HoughLinesP(
+                edges_inner,
+                rho=1,
+                theta=np.pi / 180.0,
+                threshold=hough_threshold,
+                minLineLength=hough_min_line_length,
+                maxLineGap=hough_max_line_gap,
+            )
+
+            if lines is None or len(lines) == 0:
+                result["fallback_reason"] = "no_lines"
+                if debug_path is not None:
+                    hough_vis = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
+                    cv2.putText(hough_vis, "kept=0 dropped=0 chosen_angle=n/a", (8, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 255), 1, cv2.LINE_AA)
+                    cv2.putText(hough_vis, "top_bin_weight=0.0", (8, 36), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 255), 1, cv2.LINE_AA)
+                    cv2.imwrite(str(debug_path / f"table_roi_hough_{debug_tag}.png"), hough_vis)
+                return result
+
+            kept_segments: List[Tuple[float, float, float, Tuple[int, int, int, int]]] = []
+            dropped_segments: List[Tuple[int, int, int, int]] = []
+            for line in lines.reshape(-1, 4):
+                x_ai, y_ai, x_bi, y_bi = [int(v) for v in line]
+                x_a = x_ai + ix1
+                y_a = y_ai + iy1
+                x_b = x_bi + ix1
+                y_b = y_bi + iy1
+
+                dx = float(x_b - x_a)
+                dy = float(y_b - y_a)
+                seg_len = float(np.hypot(dx, dy))
+                if seg_len < float(hough_min_line_length):
+                    dropped_segments.append((x_a, y_a, x_b, y_b))
+                    continue
+
+                angle_deg = float(np.degrees(np.arctan2(dy, dx)))
+                while angle_deg <= -90.0:
+                    angle_deg += 180.0
+                while angle_deg > 90.0:
+                    angle_deg -= 180.0
+
+                vote_weight = seg_len
+                kept_segments.append((angle_deg, seg_len, vote_weight, (x_a, y_a, x_b, y_b)))
+
+            result["n_contours"] = len(kept_segments)
+            if not kept_segments:
+                result["fallback_reason"] = "no_valid_lines"
+                if debug_path is not None:
+                    hough_vis = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
+                    for x_a, y_a, x_b, y_b in dropped_segments:
+                        cv2.line(hough_vis, (x_a, y_a), (x_b, y_b), (60, 60, 60), 1, cv2.LINE_AA)
+                    cv2.putText(hough_vis, f"kept=0 dropped={len(dropped_segments)} chosen_angle=n/a", (8, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 255), 1, cv2.LINE_AA)
+                    cv2.putText(hough_vis, "top_bin_weight=0.0", (8, 36), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 0, 255), 1, cv2.LINE_AA)
+                    cv2.imwrite(str(debug_path / f"table_roi_hough_{debug_tag}.png"), hough_vis)
+                return result
+
+            bin_centers = np.arange(-90.0, 95.0, 5.0, dtype=np.float32)
+            weights = np.zeros_like(bin_centers, dtype=np.float32)
+            for angle_deg, _seg_len, vote_weight, _segment in kept_segments:
+                bin_idx = int(np.clip(np.round((angle_deg + 90.0) / 5.0), 0, len(bin_centers) - 1))
+                weights[bin_idx] += float(vote_weight)
+
+            best_idx = int(np.argmax(weights))
+            dominant_angle_deg = float(bin_centers[best_idx])
+            top_bin_weight = float(weights[best_idx])
+            result["best_area"] = top_bin_weight
+
+            # Resolve 90-degree ambiguity using bbox aspect preference.
+            def _norm_half_pi(theta_rad: float) -> float:
+                t = float(theta_rad)
+                while t <= -0.5 * np.pi:
+                    t += np.pi
+                while t > 0.5 * np.pi:
+                    t -= np.pi
+                return t
+
+            theta = _norm_half_pi(float(np.deg2rad(dominant_angle_deg)))
+            theta2 = _norm_half_pi(theta + (0.5 * np.pi))
+            if bbox_w >= bbox_h:
+                score_theta = abs(theta)
+                score_theta2 = abs(theta2)
+            else:
+                score_theta = abs(abs(theta) - (0.5 * np.pi))
+                score_theta2 = abs(abs(theta2) - (0.5 * np.pi))
+
+            theta_final = theta if score_theta <= score_theta2 else theta2
+            chosen_label = "theta" if score_theta <= score_theta2 else "theta2"
+            chosen_angle_deg = float(np.degrees(theta_final))
+
+            result["rect_w"] = bbox_w
+            result["rect_h"] = bbox_h
+            result["rect_angle"] = chosen_angle_deg
+            result["yaw_rad"] = float(theta_final)
+
+            rect_center = ((x1 + x2) / 2.0, (y1 + y2) / 2.0)
+            rect = (rect_center, (bbox_w, bbox_h), chosen_angle_deg)
+            box = cv2.boxPoints(rect)
+            if np.any(box[:, 0] < 0) or np.any(box[:, 0] > (w - 1)) or np.any(box[:, 1] < 0) or np.any(box[:, 1] > (h - 1)):
+                result["fallback_reason"] = "polygon_out_of_bounds"
+                if debug_path is not None:
+                    hough_vis = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
+                    for x_a, y_a, x_b, y_b in dropped_segments:
+                        cv2.line(hough_vis, (x_a, y_a), (x_b, y_b), (60, 60, 60), 1, cv2.LINE_AA)
+                    for _angle_deg, _seg_len, _vote_weight, (x_a, y_a, x_b, y_b) in kept_segments:
+                        cv2.line(hough_vis, (x_a, y_a), (x_b, y_b), (0, 255, 0), 2, cv2.LINE_AA)
+                    cv2.putText(hough_vis, f"kept={len(kept_segments)} dropped={len(dropped_segments)} chosen_angle={chosen_angle_deg:.1f}", (8, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 0, 255), 1, cv2.LINE_AA)
+                    cv2.putText(hough_vis, f"top_bin_weight={top_bin_weight:.1f} OOB", (8, 36), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 0, 255), 1, cv2.LINE_AA)
+                    cv2.putText(hough_vis, f"cands: th={np.degrees(theta):.1f} th2={np.degrees(theta2):.1f} pick={chosen_label}", (8, 54), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 0, 255), 1, cv2.LINE_AA)
+                    cv2.imwrite(str(debug_path / f"table_roi_hough_{debug_tag}.png"), hough_vis)
+                return result
+
+            result["poly"] = np.round(box).astype(np.int32)
+            result["used_fallback"] = False
+            result["fallback_reason"] = ""
+
+            if debug_path is not None:
+                hough_vis = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
+                for x_a, y_a, x_b, y_b in dropped_segments:
+                    cv2.line(hough_vis, (x_a, y_a), (x_b, y_b), (60, 60, 60), 1, cv2.LINE_AA)
+                for _angle_deg, _seg_len, _vote_weight, (x_a, y_a, x_b, y_b) in kept_segments:
+                    cv2.line(hough_vis, (x_a, y_a), (x_b, y_b), (0, 255, 0), 2, cv2.LINE_AA)
+                roi_box = np.round(box - np.array([[rx1, ry1]], dtype=np.float32)).astype(np.int32)
+                cv2.polylines(hough_vis, [roi_box.reshape(-1, 1, 2)], True, (0, 255, 255), 2)
+                cv2.putText(hough_vis, f"kept={len(kept_segments)} dropped={len(dropped_segments)} chosen_angle={chosen_angle_deg:.1f}", (8, 18), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 255, 0), 1, cv2.LINE_AA)
+                cv2.putText(hough_vis, f"top_bin_weight={top_bin_weight:.1f}", (8, 36), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 255, 0), 1, cv2.LINE_AA)
+                cv2.putText(hough_vis, f"cands: th={np.degrees(theta):.1f} th2={np.degrees(theta2):.1f} pick={chosen_label}", (8, 54), cv2.FONT_HERSHEY_SIMPLEX, 0.42, (0, 255, 0), 1, cv2.LINE_AA)
+                cv2.imwrite(str(debug_path / f"table_roi_hough_{debug_tag}.png"), hough_vis)
+
+            return result
+
+        except Exception as exc:
+            result["fallback_reason"] = f"exception:{str(exc)}"
+            return result
     
     def _select_boxes_interactive(self, frame_bgr: np.ndarray) -> List[List[int]]:
         """
@@ -1329,6 +2263,7 @@ class VisionPipeline:
                 
                 # Save overlay if requested and at the right interval
                 if overlay_path and (frame_count % overlay_every == 0):
+                    self._last_render_frame_id = frame_count
                     # Use render_overlay if we have overlay items (box-based mode)
                     if hasattr(self, '_last_overlay_items') and self._last_overlay_items:
                         overlay = self.render_overlay(frame, self._last_overlay_items)
@@ -1378,6 +2313,716 @@ class VisionPipeline:
             overlay_count = (frame_count + overlay_every - 1) // overlay_every
             print(f"Saved {overlay_count} overlay frames to {overlay_path}")
 
+    def _refine_tables_with_sam(self, frame_bgr: np.ndarray, frame_id: int) -> None:
+        """
+        Run SAM2.1 box-prompt refinement on active table tracks.
+
+        For each stable candidate table track (up to table_refine_max, sorted by bbox area desc):
+          - Expand YOLO bbox by table_refine_margin, call SAM with box prompt
+          - Find largest mask contour, compute minAreaRect -> corners + theta
+          - EMA-smooth theta with previous, store in track state
+        """
+        table_tracks = self._tracks.get("table", {})
+        if not table_tracks:
+            return
+
+        h, w = frame_bgr.shape[:2]
+
+        # Select stable candidates active this frame, sorted by bbox area descending
+        candidates = []
+        for tid, track in table_tracks.items():
+            if track.get("last_seen") != frame_id:
+                continue
+            if str(track.get("table_motion_state", "moving")) != "stable":
+                continue
+            bbox = track.get("bbox", [0, 0, 0, 0])
+            area = self._bbox_area(bbox)
+            candidates.append((tid, bbox, area))
+
+        if not candidates:
+            return
+
+        candidates.sort(key=lambda x: x[2], reverse=True)
+        candidates = candidates[: self.table_refine_max]
+
+        margin = self.table_refine_margin
+        boxes_for_sam = []
+        for tid, bbox, _ in candidates:
+            x1, y1, x2, y2 = [int(v) for v in bbox]
+            boxes_for_sam.append([
+                max(0, x1 - margin),
+                max(0, y1 - margin),
+                min(w, x2 + margin),
+                min(h, y2 + margin),
+            ])
+
+        try:
+            results = self.segmenter.segment_with_boxes(frame_bgr, boxes=boxes_for_sam)
+        except Exception as exc:
+            print(f"[TableRefine][frame {frame_id}] SAM call failed: {exc}")
+            for tid, _, _ in candidates:
+                track = table_tracks.get(tid)
+                if track is None:
+                    continue
+                track["last_corners_px"] = None
+                track["last_refined_frame"] = frame_id
+                track["last_refine_failed"] = True
+            return
+
+        debug_path = Path(self.debug_dir) if self.debug_dir else None
+        if debug_path is not None:
+            debug_path.mkdir(parents=True, exist_ok=True)
+
+        for i, (tid, bbox, _) in enumerate(candidates):
+            res = results[i] if i < len(results) else None
+            track = table_tracks[tid]
+            prev_theta = track.get("last_theta") if track.get("last_theta") is not None else track.get("prev_theta")
+
+            def _mark_refine_failed(reason: str) -> None:
+                track["last_corners_px"] = None
+                track["last_refined_frame"] = frame_id
+                track["last_refine_failed"] = True
+                if self.debug_dir:
+                    print(f"[TableRefine][frame {frame_id}] id={tid} {reason} (fallback_yolo)")
+
+            if res is None:
+                _mark_refine_failed("no result")
+                continue
+
+            mask = res.get("mask")
+            sam_score = float(res.get("score", 0.0))
+
+            if mask is None or not mask.any():
+                _mark_refine_failed(f"empty mask sam_score={sam_score:.3f}")
+                continue
+
+            mask_u8 = mask.astype(np.uint8) * 255
+
+            # --- mask cleaning: erode to detach thin protrusions, keep largest CC, light re-dilation ---
+            px_raw = int(np.count_nonzero(mask_u8))
+            _clean_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (7, 7))
+            mask_eroded = cv2.erode(mask_u8, _clean_kernel, iterations=2)
+            # keep only the largest connected component
+            _n_labels, _labels, _stats, _ = cv2.connectedComponentsWithStats(mask_eroded, connectivity=8)
+            if _n_labels > 1:
+                # label 0 = background; find largest foreground label
+                _fg_sizes = _stats[1:, cv2.CC_STAT_AREA]
+                _best_label = int(np.argmax(_fg_sizes)) + 1
+                mask_clean = np.where(_labels == _best_label, np.uint8(255), np.uint8(0))
+            else:
+                mask_clean = mask_eroded
+            # light re-dilation to partially restore original size after erosion
+            mask_clean = cv2.dilate(mask_clean, _clean_kernel, iterations=1)
+            px_clean = int(np.count_nonzero(mask_clean))
+            if px_raw > 0 and (px_raw - px_clean) / px_raw > 0.10:
+                print(
+                    f"[TableRefine][frame {frame_id}] id={tid} "
+                    f"mask cleaned: {px_raw}px -> {px_clean}px "
+                    f"(-{100.0*(px_raw-px_clean)/px_raw:.1f}%)"
+                )
+
+            if debug_path is not None:
+                cv2.imwrite(str(debug_path / f"table_f{frame_id:05d}_{tid}_mask_raw.png"), mask_u8)
+                cv2.imwrite(str(debug_path / f"table_f{frame_id:05d}_{tid}_mask_clean.png"), mask_clean)
+                _vis_contours = cv2.cvtColor(mask_clean, cv2.COLOR_GRAY2BGR)
+                _dbg_contours, _ = cv2.findContours(mask_clean, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                cv2.drawContours(_vis_contours, _dbg_contours, -1, (0, 255, 0), 2)
+                cv2.imwrite(str(debug_path / f"table_f{frame_id:05d}_{tid}_contours_clean.png"), _vis_contours)
+
+            contours, _ = cv2.findContours(mask_clean, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if not contours:
+                _mark_refine_failed("no contours after cleaning")
+                continue
+
+            best_contour = max(contours, key=cv2.contourArea)
+            contour_area = float(cv2.contourArea(best_contour))
+            if contour_area < 1000.0:
+                _mark_refine_failed(f"contour_area={contour_area:.0f} too small")
+                continue
+
+            rect = cv2.minAreaRect(best_contour)
+            rect_center, rect_size, rect_angle_deg = rect
+            rw, rh = rect_size
+
+            # Derive long-edge theta; OpenCV rect angle is for the width side
+            if rw < rh:
+                angle_deg = rect_angle_deg + 90.0
+            else:
+                angle_deg = float(rect_angle_deg)
+
+            theta_new = float(angle_deg * np.pi / 180.0)
+            while theta_new <= -0.5 * np.pi:
+                theta_new += np.pi
+            while theta_new > 0.5 * np.pi:
+                theta_new -= np.pi
+
+            # EMA smoothing with previous theta (smallest-angle-diff)
+            if prev_theta is not None:
+                diff = theta_new - float(prev_theta)
+                while diff <= -0.5 * np.pi:
+                    diff += np.pi
+                while diff > 0.5 * np.pi:
+                    diff -= np.pi
+                theta_used = float(prev_theta) + 0.2 * diff
+                while theta_used <= -0.5 * np.pi:
+                    theta_used += np.pi
+                while theta_used > 0.5 * np.pi:
+                    theta_used -= np.pi
+            else:
+                theta_used = theta_new
+
+            corners_float = cv2.boxPoints(rect)
+            corners_int = np.round(corners_float).astype(np.int32)
+
+            track["last_corners_px"] = corners_int
+            track["last_theta"] = theta_used
+            track["last_refined_frame"] = frame_id
+            track["last_bbox_px"] = [int(v) for v in bbox]
+            track["last_refine_failed"] = False
+
+            print(
+                f"[TableRefine][frame {frame_id}] id={tid} "
+                f"bbox_area={self._bbox_area(bbox):.0f} "
+                f"sam_score={sam_score:.3f} "
+                f"contour_area={contour_area:.0f} "
+                f"theta_new={float(np.degrees(theta_new)):.2f}deg "
+                f"theta_used={float(np.degrees(theta_used)):.2f}deg ok"
+            )
+
+            if debug_path is not None:
+                # mask_raw/mask_clean/contours_clean already saved above; here save the minAreaRect viz
+                x1, y1, x2, y2 = [int(v) for v in bbox]
+                rx1 = max(0, x1 - margin)
+                ry1 = max(0, y1 - margin)
+                rx2 = min(w, x2 + margin)
+                ry2 = min(h, y2 + margin)
+                roi_vis = frame_bgr[ry1:ry2, rx1:rx2].copy()
+                mask_roi = mask_clean[ry1:ry2, rx1:rx2]
+                if mask_roi.shape[:2] == roi_vis.shape[:2]:
+                    mask_color = np.zeros_like(roi_vis)
+                    mask_color[:, :, 1] = mask_roi
+                    roi_vis = cv2.addWeighted(roi_vis, 0.7, mask_color, 0.3, 0.0)
+                corners_roi = corners_int.copy()
+                corners_roi[:, 0] -= rx1
+                corners_roi[:, 1] -= ry1
+                cv2.drawContours(roi_vis, [corners_roi.reshape(-1, 1, 2)], 0, (0, 255, 0), 2)
+                cv2.imwrite(str(debug_path / f"table_minarearect_f{frame_id:05d}_{tid}.png"), roi_vis)
+
+    def _process_frame_yolo(
+        self,
+        frame_bgr: np.ndarray,
+        frame_id: int,
+        timestamp_iso: str,
+    ) -> FrameEvent:
+        """
+        Process a single frame using YOLO detections directly (no SAM2).
+
+        Uses greedy nearest-center matching per class with extra IoU/area gates,
+        class-specific confidence filtering, and EMA bbox smoothing for stability.
+        """
+        from collections import Counter, defaultdict, deque
+
+        raw_detections = self._yolo_detector.detect(frame_bgr)
+        frame_h, frame_w = frame_bgr.shape[:2]
+        frame_area = float(frame_w * frame_h) if frame_w > 0 and frame_h > 0 else 1.0
+        raw_table_dets = sum(1 for det in raw_detections if det.get("label") == "table")
+        rejected_small_table_dets = 0
+        rejected_geom_person_dets = 0
+        min_table_area_px = float(self.table_min_bbox_area)
+        min_table_dim_px = self.table_min_bbox_minside
+        use_min_table_dim_filter = True
+        rejected_table_overlay_items: List[Dict] = []
+
+        # Group by label and apply class-specific confidence filtering
+        by_label: Dict[str, List[Dict]] = defaultdict(list)
+        for det in raw_detections:
+            label = det.get("label")
+            if label not in ("chair", "table", "person"):
+                continue
+            score = float(det.get("score", 0.0))
+            if self.no_ghosting:
+                conf_thresh = float(self.conf_create)
+            else:
+                conf_thresh = float(self.conf_create) if (label == "chair" and self.chairs_no_ghost) else float(self._yolo_conf_min[label])
+            if label == "person" and self.person_conf_override is not None:
+                conf_thresh = max(conf_thresh, float(self.person_conf_override))
+            if score < conf_thresh:
+                continue
+
+            if label == "person" and self.person_filter_mode in ("geom", "geom+static"):
+                bbox = det.get("bbox_px", [0, 0, 0, 0])
+                if len(bbox) != 4:
+                    rejected_geom_person_dets += 1
+                    continue
+                x1, y1, x2, y2 = [int(v) for v in bbox]
+                bw = max(0, x2 - x1)
+                bh = max(0, y2 - y1)
+                area = float(bw * bh)
+                if bw <= 0 or bh <= 0:
+                    rejected_geom_person_dets += 1
+                    continue
+                cx_det = 0.5 * float(x1 + x2)
+                cy_det = 0.5 * float(y1 + y2)
+                ar = max(float(bw) / float(max(1, bh)), float(bh) / float(max(1, bw)))
+                ar_wh = float(bw) / float(max(1, bh))
+
+                # Exclusion zones (right strip and right-bottom box) are person-only.
+                in_right_strip = False
+                if self.person_excl_right_frac > 0.0:
+                    right_strip_x = float(frame_w) * (1.0 - float(self.person_excl_right_frac))
+                    in_right_strip = cx_det >= right_strip_x
+
+                in_right_bottom_zone = False
+                if self.person_excl_rb_right_frac > 0.0 and self.person_excl_rb_bottom_frac > 0.0:
+                    rb_x = float(frame_w) * (1.0 - float(self.person_excl_rb_right_frac))
+                    rb_y = float(frame_h) * (1.0 - float(self.person_excl_rb_bottom_frac))
+                    in_right_bottom_zone = (cx_det >= rb_x) and (cy_det >= rb_y)
+
+                if (
+                    area < float(self.person_min_area)
+                    or area > float(self.person_max_area)
+                    or bh < int(self.person_min_height)
+                    or ar > float(self.person_max_ar)
+                    or ar_wh < float(self.person_min_ar_wh)
+                    or ar_wh > float(self.person_max_ar_wh)
+                    or in_right_strip
+                    or in_right_bottom_zone
+                ):
+                    rejected_geom_person_dets += 1
+                    if self.debug_dir:
+                        print(
+                            f"[PersonFilter] drop geom area={area:.1f} h={bh} ar_sym={ar:.2f} ar_wh={ar_wh:.2f} "
+                            f"right={in_right_strip} rb={in_right_bottom_zone}"
+                        )
+                    continue
+
+            # Size-based table filter to avoid chair-sized false positives.
+            if label == "table":
+                bbox = det.get("bbox_px", [0, 0, 0, 0])
+                if len(bbox) != 4:
+                    rejected_small_table_dets += 1
+                    continue
+                x1, y1, x2, y2 = [int(v) for v in bbox]
+                bw = max(0, x2 - x1)
+                bh = max(0, y2 - y1)
+                bbox_area = float(bw * bh)
+
+                too_small_area = bbox_area < (self.table_min_area_frac * frame_area)
+                too_small_w = self.table_min_w_frac > 0 and bw < (self.table_min_w_frac * frame_w)
+                too_small_h = self.table_min_h_frac > 0 and bh < (self.table_min_h_frac * frame_h)
+                too_small_abs = bbox_area < min_table_area_px
+                too_small_dim = use_min_table_dim_filter and min(bw, bh) < min_table_dim_px
+
+                reject_reason = ""
+                if too_small_dim:
+                    reject_reason = "table_reject_dims"
+                elif too_small_abs or too_small_area or too_small_w or too_small_h:
+                    reject_reason = "table_reject_small"
+
+                if reject_reason:
+                    rejected_small_table_dets += 1
+                    if self.debug_dir:
+                        rejected_table_overlay_items.append({
+                            "id": f"table_reject_{rejected_small_table_dets:03d}",
+                            "label": "table_reject",
+                            "mask": None,
+                            "score": score,
+                            "shape": {
+                                "bbox_px": [x1, y1, x2, y2],
+                                "reject_reason": reject_reason,
+                            },
+                        })
+                    continue
+
+            by_label[label].append(det)
+
+        # Keep top-k by confidence per class
+        per_class_cap = int(self._yolo_max_det)
+        for lbl in by_label:
+            ranked = sorted(by_label[lbl], key=lambda d: d["score"], reverse=True)
+            by_label[lbl] = ranked if per_class_cap <= 0 else ranked[:per_class_cap]
+
+        kept_counts = {label: len(by_label.get(label, [])) for label in ("chair", "table", "person")}
+        kept_table_dets = kept_counts["table"]
+
+        furniture_entities: List[DetectedEntity] = []
+        people_entities: List[DetectedEntity] = []
+        overlay_items: List[Dict] = []
+        theta_gate_rad = float(np.deg2rad(20.0))
+
+        def _normalize_theta_half_pi(theta_rad: float) -> float:
+            theta = float(theta_rad)
+            while theta <= -0.5 * np.pi:
+                theta += np.pi
+            while theta > 0.5 * np.pi:
+                theta -= np.pi
+            return theta
+
+        def _smallest_theta_diff(theta_a: float, theta_b: float) -> float:
+            diff = float(theta_a - theta_b)
+            while diff <= -0.5 * np.pi:
+                diff += np.pi
+            while diff > 0.5 * np.pi:
+                diff -= np.pi
+            return diff
+
+        for label in ("chair", "table", "person"):
+            class_tracks = self._tracks[label]
+            alpha_new = float(self._bbox_ema_alpha[label])
+            if self.no_ghosting:
+                ttl_frames = 0
+                reacquire_max_age_label = 0
+            elif label == "chair" and self.chairs_no_ghost:
+                ttl_frames = 0
+                reacquire_max_age_label = 0
+            else:
+                ttl_frames = int(self._track_ttl_frames_by_class.get(label, self._track_ttl_frames))
+                reacquire_max_age_label = int(self._class_reacquire_max_age.get(label, self.reacquire_max_age))
+
+            # Detections are already filtered with conf_keep and class rules above.
+            detections = sorted(by_label.get(label, []), key=lambda d: float(d["score"]), reverse=True)
+            available_det_idxs = set(range(len(detections)))
+
+            active_track_ids = [tid for tid, t in class_tracks.items() if int(t.get("miss_count", 0)) == 0]
+            ghost_track_ids = [
+                tid
+                for tid, t in class_tracks.items()
+                if 0 < int(t.get("miss_count", 0)) <= reacquire_max_age_label
+            ]
+
+            # Phase 1: active tracks
+            matches = self._greedy_track_match(detections, class_tracks, active_track_ids, available_det_idxs, label)
+            for _tid, _didx in matches.items():
+                available_det_idxs.discard(_didx)
+
+            # Phase 2: recently missed ghost tracks (ID reacquire)
+            if not self.no_ghosting and reacquire_max_age_label > 0:
+                reacquire_matches = self._greedy_track_match(detections, class_tracks, ghost_track_ids, available_det_idxs, label)
+                for _tid, _didx in reacquire_matches.items():
+                    available_det_idxs.discard(_didx)
+                matches.update(reacquire_matches)
+
+            # Update matched tracks
+            matched_track_ids = set(matches.keys())
+            for track_id, det_idx in matches.items():
+                det = detections[det_idx]
+                bbox = [int(v) for v in det["bbox_px"]]
+                score = float(det["score"])
+                old_track = class_tracks[track_id]
+                old_bbox = old_track.get("bbox", bbox)
+                old_center = old_track.get("center", self._bbox_center(old_bbox))
+                old_center_smoothed = old_track.get("center_smoothed", old_center)
+
+                updated_bbox = self._ema_bbox(old_bbox, bbox, alpha_new)
+                ucx, ucy = self._bbox_center(updated_bbox)
+                det_center = self._bbox_center(bbox)
+                center_smoothed = (
+                    (1.0 - self._center_smooth_alpha) * float(old_center_smoothed[0]) + self._center_smooth_alpha * float(det_center[0]),
+                    (1.0 - self._center_smooth_alpha) * float(old_center_smoothed[1]) + self._center_smooth_alpha * float(det_center[1]),
+                )
+
+                class_tracks[track_id]["bbox"] = updated_bbox
+                class_tracks[track_id]["center"] = (ucx, ucy)
+                class_tracks[track_id]["center_smoothed"] = center_smoothed
+                class_tracks[track_id]["score"] = score
+                class_tracks[track_id]["last_seen"] = frame_id
+                class_tracks[track_id]["last_seen_frame"] = frame_id
+                class_tracks[track_id]["miss_count"] = 0
+                class_tracks[track_id]["age"] = int(class_tracks[track_id].get("age", 0)) + 1
+                class_tracks[track_id]["kind"] = label
+                class_tracks[track_id]["id"] = track_id
+                if label == "table":
+                    self._update_table_motion_state(class_tracks[track_id], old_bbox, bbox)
+                if label == "person":
+                    _hist = class_tracks[track_id].get("person_center_hist")
+                    if _hist is None:
+                        _hist = deque(maxlen=max(1, int(self.person_static_window)))
+                    _hist.append((float(center_smoothed[0]), float(center_smoothed[1])))
+                    class_tracks[track_id]["person_center_hist"] = _hist
+
+            # Unmatched tracks become ghosts or expire
+            stale_ids = []
+            for tid, track in class_tracks.items():
+                if tid in matched_track_ids:
+                    continue
+                if self.no_ghosting:
+                    stale_ids.append(tid)
+                    continue
+                miss_count = int(track.get("miss_count", 0)) + 1
+                track["miss_count"] = miss_count
+                track["age"] = int(track.get("age", 0)) + 1
+                if miss_count > ttl_frames:
+                    stale_ids.append(tid)
+            for tid in stale_ids:
+                del class_tracks[tid]
+
+            # New track creation from unmatched detections uses conf_create.
+            for det_idx in sorted(list(available_det_idxs)):
+                det = detections[det_idx]
+                score = float(det["score"])
+                if score < float(self.conf_create):
+                    continue
+                bbox = [int(v) for v in det["bbox_px"]]
+                ucx, ucy = self._bbox_center(bbox)
+                track_id = f"{label}_{self._next_id[label]:02d}"
+                self._next_id[label] += 1
+                class_tracks[track_id] = {
+                    "id": track_id,
+                    "kind": label,
+                    "bbox": bbox,
+                    "center": (ucx, ucy),
+                    "center_smoothed": (ucx, ucy),
+                    "score": score,
+                    "last_seen": frame_id,
+                    "last_seen_frame": frame_id,
+                    "miss_count": 0,
+                    "age": 1,
+                    "prev_theta": class_tracks.get(track_id, {}).get("prev_theta"),
+                }
+                if label == "table":
+                    class_tracks[track_id]["table_motion_state"] = "moving"
+                    class_tracks[track_id]["table_stable_count"] = 0
+                    class_tracks[track_id]["table_center_shift_px"] = 0.0
+                    class_tracks[track_id]["table_prev_iou"] = 1.0
+                    class_tracks[track_id]["table_area_change"] = 0.0
+                if label == "person":
+                    _hist = deque(maxlen=max(1, int(self.person_static_window)))
+                    _hist.append((float(ucx), float(ucy)))
+                    class_tracks[track_id]["person_center_hist"] = _hist
+                if label == "person":
+                    self._person_new_ids_since_log += 1
+
+            # Build outputs for both active and ghost tracks.
+            for track_id, track in class_tracks.items():
+                updated_bbox = [int(v) for v in track.get("bbox", [0, 0, 0, 0])]
+                center_smoothed = track.get("center_smoothed", self._bbox_center(updated_bbox))
+                prev_theta_track = track.get("prev_theta")
+                is_ghost = int(track.get("miss_count", 0)) > 0
+                score = float(track.get("score", 0.0))
+
+                # Keep ghost tracks only internally for short-term re-association.
+                if is_ghost and not self._emit_ghost_overlays:
+                    continue
+
+                if self.H is not None:
+                    cx_f, cy_f = apply_homography([center_smoothed[0], center_smoothed[1]], self.H)
+                else:
+                    cx_f, cy_f = float(center_smoothed[0]), float(center_smoothed[1])
+
+                table_shape_extras: Dict = {}
+                table_yaw_rad = None
+                if label == "table":
+                    poly = None
+                    theta_rejected = False
+                    table_motion_state = str(track.get("table_motion_state", "moving"))
+                    if not is_ghost:
+                        orient_dbg = self._extract_table_orientation_debug(frame_bgr, updated_bbox, frame_id=frame_id, track_id=track_id)
+                        poly = orient_dbg.get("poly")
+                        raw_theta = orient_dbg.get("yaw_rad")
+                        if raw_theta is not None:
+                            theta_now = _normalize_theta_half_pi(float(raw_theta))
+                            if prev_theta_track is None:
+                                table_yaw_rad = theta_now
+                            else:
+                                prev_theta_norm = _normalize_theta_half_pi(float(prev_theta_track))
+                                d_theta = _smallest_theta_diff(theta_now, prev_theta_norm)
+                                if abs(d_theta) > theta_gate_rad:
+                                    table_yaw_rad = prev_theta_norm
+                                    theta_rejected = True
+                                else:
+                                    table_yaw_rad = _normalize_theta_half_pi((0.8 * prev_theta_norm) + (0.2 * theta_now))
+                        elif prev_theta_track is not None:
+                            table_yaw_rad = _normalize_theta_half_pi(float(prev_theta_track))
+
+                        if table_yaw_rad is not None:
+                            bx1, by1, bx2, by2 = [float(v) for v in updated_bbox]
+                            bw = max(1.0, bx2 - bx1)
+                            bh = max(1.0, by2 - by1)
+                            bcx = 0.5 * (bx1 + bx2)
+                            bcy = 0.5 * (by1 + by2)
+                            gated_rect = ((bcx, bcy), (bw, bh), float(np.degrees(table_yaw_rad)))
+                            poly = np.round(cv2.boxPoints(gated_rect)).astype(np.int32)
+
+                        table_shape_extras = {
+                            "poly_px": poly.tolist() if poly is not None else None,
+                            "used_fallback": poly is None,
+                            "fallback_reason": "" if poly is not None else "no_orientation",
+                            "motion_state": table_motion_state,
+                            "n_contours": int(orient_dbg.get("n_contours", 0)),
+                            "best_area": float(orient_dbg.get("best_area", 0.0)),
+                            "rect_w": float(orient_dbg.get("rect_w", 0.0)),
+                            "rect_h": float(orient_dbg.get("rect_h", 0.0)),
+                            "rect_angle": float(np.degrees(table_yaw_rad)) if table_yaw_rad is not None else float(orient_dbg.get("rect_angle", 0.0)),
+                            "yaw_rad": float(table_yaw_rad) if table_yaw_rad is not None else None,
+                            "theta_rejected": bool(theta_rejected),
+                            "roi_mask": orient_dbg.get("mask"),
+                        }
+                    else:
+                        if prev_theta_track is not None:
+                            table_yaw_rad = _normalize_theta_half_pi(float(prev_theta_track))
+                            bx1, by1, bx2, by2 = [float(v) for v in updated_bbox]
+                            bw = max(1.0, bx2 - bx1)
+                            bh = max(1.0, by2 - by1)
+                            bcx = 0.5 * (bx1 + bx2)
+                            bcy = 0.5 * (by1 + by2)
+                            gated_rect = ((bcx, bcy), (bw, bh), float(np.degrees(table_yaw_rad)))
+                            poly = np.round(cv2.boxPoints(gated_rect)).astype(np.int32)
+                        else:
+                            poly = None
+                        table_shape_extras = {
+                            "poly_px": poly.tolist() if poly is not None else None,
+                            "used_fallback": poly is None,
+                            "fallback_reason": "ghost_hold",
+                            "motion_state": table_motion_state,
+                            "n_contours": 0,
+                            "best_area": 0.0,
+                            "rect_w": float(max(1, updated_bbox[2] - updated_bbox[0])),
+                            "rect_h": float(max(1, updated_bbox[3] - updated_bbox[1])),
+                            "rect_angle": float(np.degrees(table_yaw_rad)) if table_yaw_rad is not None else 0.0,
+                            "yaw_rad": float(table_yaw_rad) if table_yaw_rad is not None else None,
+                            "theta_rejected": False,
+                            "roi_mask": None,
+                        }
+
+                    track["prev_theta"] = float(table_yaw_rad) if table_yaw_rad is not None else prev_theta_track
+
+                pose = Pose2D(
+                    x=float(cx_f),
+                    y=float(cy_f),
+                    theta=float(table_yaw_rad) if label == "table" and table_yaw_rad is not None else None,
+                )
+                entity = DetectedEntity(id=track_id, kind=label, pose=pose, confidence=score)
+                if label == "person" and self.person_filter_mode == "geom+static" and not is_ghost:
+                    _hist = track.get("person_center_hist")
+                    if _hist is not None and len(_hist) >= max(1, int(self.person_static_window)):
+                        _old = _hist[0]
+                        _new = _hist[-1]
+                        _delta = self._center_dist(_old, _new)
+                        if _delta < float(self.person_static_max_delta):
+                            if self.debug_dir:
+                                print(f"[PersonFilter] drop static id={track_id} delta={_delta:.1f}")
+                            continue
+                if label == "person":
+                    people_entities.append(entity)
+                else:
+                    furniture_entities.append(entity)
+
+                overlay_items.append({
+                    "id": track_id,
+                    "label": label,
+                    "mask": None,
+                    "score": score,
+                    "ghost": bool(is_ghost),
+                    "shape": {
+                        "bbox_px": updated_bbox,
+                        "center_px": [float(center_smoothed[0]), float(center_smoothed[1])],
+                        **table_shape_extras,
+                    },
+                })
+
+        # SAM table geometry refinement (only on refine frames)
+        if self.table_refine_every > 0 and self.segmenter is not None and (frame_id % self.table_refine_every == 0):
+            self._refine_tables_with_sam(frame_bgr, frame_id)
+
+        # Patch overlay_items with SAM-refined corners where available
+        if self.table_refine_every > 0 and self.segmenter is not None:
+            _table_tracks = self._tracks.get("table", {})
+            for _oi in overlay_items:
+                if _oi.get("label") != "table":
+                    continue
+                _tid = _oi.get("id")
+                if not _tid or _tid not in _table_tracks:
+                    continue
+                _track = _table_tracks[_tid]
+                _motion_state = str(_track.get("table_motion_state", "moving"))
+                _oi["shape"]["motion_state"] = _motion_state
+                if _motion_state != "stable":
+                    _oi["shape"]["used_fallback"] = True
+                    _oi["shape"]["fallback_reason"] = "moving_use_yolo"
+                    continue
+                _last_corners = _track.get("last_corners_px")
+                if _last_corners is None:
+                    if bool(_track.get("last_refine_failed", False)):
+                        _oi["shape"]["used_fallback"] = True
+                        _oi["shape"]["fallback_reason"] = "sam_failed_use_yolo"
+                    continue
+                _corners_list = _last_corners.tolist() if isinstance(_last_corners, np.ndarray) else list(_last_corners)
+                _oi["shape"]["poly_px"] = _corners_list
+                _oi["shape"]["corners_px"] = _corners_list
+                _oi["shape"]["used_fallback"] = False
+                _oi["shape"]["fallback_reason"] = ""
+                _refined_theta = _track.get("last_theta")
+                if _refined_theta is not None:
+                    _oi["shape"]["yaw_rad"] = float(_refined_theta)
+                    _oi["shape"]["rect_angle"] = float(np.degrees(_refined_theta))
+
+        if self._track_debug_every > 0 and (frame_id % self._track_debug_every == 0):
+            ghost_counts = {
+                _lbl: sum(1 for _t in self._tracks[_lbl].values() if int(_t.get("miss_count", 0)) > 0)
+                for _lbl in ("chair", "table", "person")
+            }
+            table_motion_counts = {
+                "moving": sum(1 for _t in self._tracks["table"].values() if str(_t.get("table_motion_state", "moving")) == "moving"),
+                "stable": sum(1 for _t in self._tracks["table"].values() if str(_t.get("table_motion_state", "moving")) == "stable"),
+            }
+            print(
+                f"[YOLO track] frame={frame_id} "
+                f"det(chair={kept_counts['chair']},table={kept_counts['table']},person={kept_counts['person']}) "
+                f"tracks(chair={len(self._tracks['chair'])},table={len(self._tracks['table'])},person={len(self._tracks['person'])}) "
+                f"ghosts(chair={ghost_counts['chair']},table={ghost_counts['table']},person={ghost_counts['person']})"
+            )
+            print(
+                f"[YOLO table motion] frame={frame_id} "
+                f"moving={table_motion_counts['moving']} stable={table_motion_counts['stable']}"
+            )
+            print(
+                f"[YOLO table size] frame={frame_id} "
+                f"raw_table_dets={raw_table_dets} "
+                f"kept_table_dets={kept_table_dets} "
+                f"rejected_small_table_dets={rejected_small_table_dets}"
+            )
+            print(
+                f"[YOLO person] frame={frame_id} "
+                f"active_person_tracks={len(self._tracks['person'])} "
+                f"new_person_ids_created={self._person_new_ids_since_log} "
+                f"geom_filtered_person_dets={rejected_geom_person_dets}"
+            )
+            self._person_new_ids_since_log = 0
+
+        if self.debug_dir and rejected_table_overlay_items:
+            overlay_items.extend(rejected_table_overlay_items)
+
+        self._dbg_frame_id = frame_id
+
+        if frame_id in (0, 11):
+            kind_counts = Counter(str(_item.get("label", "unknown")) for _item in overlay_items)
+            table_items = [_item for _item in overlay_items if _item.get("label") == "table"]
+            print(f"[YOLO overlay dbg] frame={frame_id} total_overlay_items={len(overlay_items)}")
+            print(f"[YOLO overlay dbg] frame={frame_id} counts_by_kind={dict(kind_counts)}")
+            print(f"[YOLO overlay dbg] frame={frame_id} table_items={len(table_items)}")
+
+            for _item in table_items:
+                _shape = _item.get("shape", {})
+                _bbox = _shape.get("bbox_px")
+                _corners = _shape.get("corners_px")
+                if _corners is None:
+                    _corners = _shape.get("poly_px")
+                _theta = _shape.get("yaw_rad")
+                print(
+                    f"[YOLO overlay dbg] frame={frame_id} table_id={_item.get('id')} "
+                    f"item_keys={list(_item.keys())} bbox_px={_bbox} corners_px={_corners} theta={_theta}"
+                )
+
+        self._last_overlay_items = overlay_items
+
+        return FrameEvent(
+            timestamp_iso=timestamp_iso,
+            frame_id=frame_id,
+            furniture=furniture_entities,
+            people=people_entities,
+            world={"homography_applied": self.H is not None, "auto_proposals": "yolo"},
+        )
+
     def process_image_dir_with_proposals(
         self,
         image_dir: str,
@@ -1424,14 +3069,23 @@ class VisionPipeline:
 
         # Select proposer from mode
         normalized_mode = "bgsub" if proposal_mode == "furniture" else proposal_mode
-        if normalized_mode not in ["bgsub", "dark"]:
+        if normalized_mode not in ["bgsub", "dark", "yolo"]:
             raise ValueError(f"Unsupported auto-proposals mode: {proposal_mode}")
 
         cfg = proposal_config or {}
         bgsub_cfg = cfg.get("bgsub", {})
         dark_cfg = cfg.get("dark", {})
 
-        if normalized_mode == "dark":
+        proposer = None  # used by bgsub/dark paths only
+        mode_max_proposals = 0
+
+        if normalized_mode == "yolo":
+            if self._yolo_detector is None:
+                raise RuntimeError("YOLO detector not initialised. Pass proposals_mode='yolo' to VisionPipeline.__init__.")
+            print(f"Found {len(image_files)} images in {image_dir}")
+            print(f"Using auto-proposals mode: yolo")
+            print(f"  Max det per class: {self._yolo_max_det}")
+        elif normalized_mode == "dark":
             from src.vision.detection.proposals_dark import DarkObjectProposer
 
             proposer = DarkObjectProposer(
@@ -1452,6 +3106,13 @@ class VisionPipeline:
                 debug_every=dark_cfg.get("debug_every", 5),
             )
             mode_max_proposals = int(dark_cfg.get("max_proposals_per_frame", 10))
+            print(f"Found {len(image_files)} images in {image_dir}")
+            print(f"Using auto-proposals mode:")
+            print(f"  Proposer mode: {normalized_mode}")
+            print(f"  Max proposals per frame: {mode_max_proposals}")
+            print(f"  Table area threshold: {table_area_threshold} px")
+            print(f"  Rectangularity threshold: {rectangularity_threshold}")
+            print(f"  Max tracking distance: {max_tracking_distance} px")
         else:
             from src.vision.detection.proposals_bgsub import BGSubProposer
 
@@ -1463,14 +3124,13 @@ class VisionPipeline:
                 max_area=bgsub_cfg.get("max_area", 200000),
             )
             mode_max_proposals = int(bgsub_cfg.get("max_proposals_per_frame", 50))
-        
-        print(f"Found {len(image_files)} images in {image_dir}")
-        print(f"Using auto-proposals mode:")
-        print(f"  Proposer mode: {normalized_mode}")
-        print(f"  Max proposals per frame: {mode_max_proposals}")
-        print(f"  Table area threshold: {table_area_threshold} px")
-        print(f"  Rectangularity threshold: {rectangularity_threshold}")
-        print(f"  Max tracking distance: {max_tracking_distance} px")
+            print(f"Found {len(image_files)} images in {image_dir}")
+            print(f"Using auto-proposals mode:")
+            print(f"  Proposer mode: {normalized_mode}")
+            print(f"  Max proposals per frame: {mode_max_proposals}")
+            print(f"  Table area threshold: {table_area_threshold} px")
+            print(f"  Rectangularity threshold: {rectangularity_threshold}")
+            print(f"  Max tracking distance: {max_tracking_distance} px")
         
         output_path = Path(output_jsonl)
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1484,6 +3144,7 @@ class VisionPipeline:
         
         # Reset state
         self.state_by_id = {}
+        self.reset_tracks()
         
         # Process images
         base_time = time.time()
@@ -1507,39 +3168,48 @@ class VisionPipeline:
                                              time.gmtime(base_time + frame_count * frame_duration))
                 
                 # Process frame with proposals
-                frame_event = self.process_frame_with_proposals(
-                    frame_bgr=frame,
-                    proposer=proposer,
-                    proposal_mode=normalized_mode,
-                    timestamp_iso=timestamp_iso,
-                    frame_id=frame_count,
-                    max_proposals_per_frame=mode_max_proposals,
-                    table_area_threshold=table_area_threshold,
-                    rectangularity_threshold=rectangularity_threshold,
-                    max_tracking_distance=max_tracking_distance,
-                    debug=debug,
-                )
-                
+                if normalized_mode == "yolo":
+                    frame_event = self._process_frame_yolo(
+                        frame_bgr=frame,
+                        frame_id=frame_count,
+                        timestamp_iso=timestamp_iso,
+                    )
+                else:
+                    frame_event = self.process_frame_with_proposals(
+                        frame_bgr=frame,
+                        proposer=proposer,
+                        proposal_mode=normalized_mode,
+                        timestamp_iso=timestamp_iso,
+                        frame_id=frame_count,
+                        max_proposals_per_frame=mode_max_proposals,
+                        table_area_threshold=table_area_threshold,
+                        rectangularity_threshold=rectangularity_threshold,
+                        max_tracking_distance=max_tracking_distance,
+                        debug=debug,
+                    )
+
                 f.write(json.dumps(frame_event.to_dict()) + "\n")
                 if flush_every > 0 and (frame_event.frame_id % flush_every == 0):
                     f.flush()
                     os.fsync(f.fileno())
-                
+
                 # Save overlay if requested and at the right interval
                 if overlay_path and (frame_count % overlay_every == 0):
-                    if hasattr(self, '_last_overlay_items') and self._last_overlay_items:
+                    self._last_render_frame_id = frame_count
+                    if self._last_overlay_items:
                         overlay = self.render_overlay(frame, self._last_overlay_items)
                     else:
                         overlay = self._draw_detections_with_boxes(frame, frame_event)
-                    
+
                     out_name = f"frame_{frame_count:05d}_{img_path.stem}.png"
                     cv2.imwrite(str(overlay_path / out_name), overlay)
-                
+
                 frame_count += 1
-                
+
                 if frame_count % 10 == 0:
                     entities_count = len(frame_event.furniture)
-                    print(f"Processed {frame_count}/{len(image_files)} images... (detected: {entities_count} furniture)")
+                    people_count = len(frame_event.people)
+                    print(f"Processed {frame_count}/{len(image_files)} images... (furniture: {entities_count}, people: {people_count})")
         
         print(f"Wrote {frame_count} FrameEvents to {output_path}")
         if overlay_path:

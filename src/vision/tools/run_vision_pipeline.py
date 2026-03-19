@@ -377,13 +377,58 @@ def main():
     # Auto-proposals
     parser.add_argument(
         "--auto-proposals",
-        choices=["bgsub", "dark", "furniture"],
+        choices=["bgsub", "dark", "furniture", "yolo"],
         help=(
             "Enable automatic region proposals mode. "
-            "Modes: bgsub, dark, furniture (alias for bgsub)."
+            "Modes: bgsub, dark, furniture (alias for bgsub), yolo."
         ),
     )
-    
+
+    # YOLO proposer options (used when --auto-proposals yolo)
+    parser.add_argument("--yolo-model", default="runs/detect/train/weights/best_fixed.pt", help="YOLO weights path (default: runs/detect/train/weights/best_fixed.pt).")
+    parser.add_argument("--yolo-conf", type=float, default=0.25, help="YOLO confidence threshold (default: 0.25).")
+    parser.add_argument("--yolo-iou", type=float, default=0.45, help="YOLO IoU threshold for NMS (default: 0.45).")
+    parser.add_argument("--yolo-max-det", type=int, default=80, help="Max YOLO detections kept per frame (default: 80).")
+    parser.add_argument("--track-ttl-frames", type=int, default=15, help="Keep unmatched tracks alive for this many frames (default: 15).")
+    parser.add_argument("--conf-create", type=float, default=None, help="Min detection confidence to create a NEW track (default: --yolo-conf).")
+    parser.add_argument("--conf-keep", type=float, default=0.15, help="Min detection confidence to update/reacquire EXISTING tracks (default: 0.15).")
+    parser.add_argument("--reacquire-max-age", type=int, default=None, help="Max ghost age in frames eligible for ID reacquire (default: --track-ttl-frames).")
+    parser.add_argument("--reacquire-max-dist", type=float, default=150.0, help="Max center distance in px for active/reacquire matching (default: 150).")
+    parser.add_argument("--reacquire-min-iou", type=float, default=0.05, help="Min IoU for active/reacquire matching (default: 0.05).")
+    parser.add_argument("--chairs-no-ghost", type=lambda v: str(v).lower() in ("1", "true", "yes", "y", "on"), default=True, help="If true (default), disable chair ghosting/reacquire and use conf_create-only for chairs.")
+    parser.add_argument("--no-ghosting", action="store_true", help="Disable ghosting/reacquire globally (output only matched/new tracks per frame).")
+    parser.add_argument("--table-min-area-frac", type=float, default=0.015, help="Reject YOLO table boxes smaller than this fraction of frame area (default: 0.015).")
+    parser.add_argument("--table-min-w-frac", type=float, default=0.08, help="Reject YOLO table boxes narrower than this fraction of frame width (default: 0.08).")
+    parser.add_argument("--table-min-h-frac", type=float, default=0.08, help="Reject YOLO table boxes shorter than this fraction of frame height (default: 0.08).")
+    parser.add_argument("--person-min-conf", type=float, default=0.60, help="Minimum confidence for person detections before tracking (default: 0.60).")
+    parser.add_argument("--person-min-iou", type=float, default=0.10, help="Minimum IoU for person track matching (default: 0.10).")
+    parser.add_argument("--person-max-dist", type=float, default=180.0, help="Maximum center distance in pixels for person matching (default: 180).")
+    parser.add_argument("--person-ttl", type=int, default=60, help="Person track TTL in frames (default: 60).")
+    parser.add_argument("--person-min-area", type=int, default=1200, help="Min person bbox area in px (default: 1200).")
+    parser.add_argument("--person-max-area", type=int, default=120000, help="Max person bbox area in px (default: 120000).")
+    parser.add_argument("--person-max-ar", type=float, default=4.0, help="Max person bbox aspect ratio max(w/h, h/w) (default: 4.0).")
+    parser.add_argument("--person-min-height", type=int, default=60, help="Min person bbox height in px (default: 60).")
+    parser.add_argument("--person-min-ar-wh", type=float, default=0.18, help="Min allowed person bbox ratio w/h (default: 0.18).")
+    parser.add_argument("--person-max-ar-wh", type=float, default=1.25, help="Max allowed person bbox ratio w/h (default: 1.25).")
+    parser.add_argument("--person-excl-right-frac", type=float, default=0.0, help="Exclude person detections with center in the right edge strip (fraction of frame width, default: 0.0).")
+    parser.add_argument("--person-excl-rb-right-frac", type=float, default=0.0, help="Right-bottom exclusion zone width fraction from right edge (default: 0.0).")
+    parser.add_argument("--person-excl-rb-bottom-frac", type=float, default=0.0, help="Right-bottom exclusion zone height fraction from bottom edge (default: 0.0).")
+    parser.add_argument("--person-conf-override", type=float, default=None, help="Optional stricter confidence threshold applied only to person detections before tracking.")
+    parser.add_argument("--person-static-window", type=int, default=30, help="Window size for static person suppression (default: 30).")
+    parser.add_argument("--person-static-max-delta", type=float, default=20.0, help="Max center delta (px) over full window to consider static (default: 20.0).")
+    parser.add_argument("--person-filter-mode", choices=["none", "geom", "geom+static"], default="geom+static", help="Person filter mode (default: geom+static).")
+
+    # SAM table geometry refinement (YOLO mode only)
+    parser.add_argument("--table-refine-every", type=int, default=3, help="Run SAM table geometry refinement every N frames (0 = disabled, default: 3).")
+    parser.add_argument("--table-refine-max", type=int, default=4, help="Max tables to SAM-refine per refine frame (default: 4).")
+    parser.add_argument("--table-refine-margin", type=int, default=12, help="Margin in px to expand YOLO bbox before SAM box prompt (default: 12).")
+    parser.add_argument("--table-motion-shift-px", type=float, default=18.0, help="Mark table as moving if center shift exceeds this many px (default: 18).")
+    parser.add_argument("--table-motion-iou-min", type=float, default=0.78, help="Mark table as moving if IoU to previous bbox is below this value (default: 0.78).")
+    parser.add_argument("--table-motion-area-change", type=float, default=0.18, help="Mark table as moving if relative bbox area change exceeds this value (default: 0.18).")
+    parser.add_argument("--table-stable-frames", type=int, default=4, help="Consecutive non-moving frames required before table is stable (default: 4).")
+    parser.add_argument("--table-min-bbox-area", type=int, default=30000, help="Reject table detections with bbox area < this px\u00b2 (default: 30000).")
+    parser.add_argument("--table-min-bbox-minside", type=int, default=120, help="Reject table detections with min(w,h) < this px (default: 120).")
+
     # Dark proposer options
     parser.add_argument("--dark-fixed-thresh", type=int, default=None, help="HSV V-channel threshold for dark objects (0-255).")
     parser.add_argument("--dark-max-area-frac", type=float, default=None, help="Max component area as fraction of frame area.")
@@ -393,6 +438,7 @@ def main():
     # Processing options (image-dir)
     parser.add_argument("--fps-sim", type=float, default=10.0, help="Simulated FPS for timestamps (image-dir mode).")
     parser.add_argument("--overlay-out-dir", help="Optional directory to save overlay frames (image-dir only).")
+    parser.add_argument("--overlay-style", choices=["debug", "projector", "projector_on_frame"], default="debug", help="Overlay style for saved overlays (default: debug).")
     parser.add_argument("--overlay-every", type=int, default=10, help="Save overlay every N frames (default 10).")
     parser.add_argument("--debug-dump", action="store_true", help="Save segmentation masks as individual PNGs (image-dir only).")
     parser.add_argument("--refine-every", type=int, default=10, help="Re-segment every N frames (default 10, 0 = no refinement).")
@@ -403,6 +449,8 @@ def main():
     parser.add_argument("--max-frames", type=int, help="Maximum frames to process.")
     parser.add_argument("--flush-every", type=int, default=10, help="Flush and fsync JSONL output every N frames (default 10).")
     parser.add_argument("--no-display", action="store_true", help="Disable live display (camera only).")
+    parser.add_argument("--projector-display", action="store_true", help="Show fullscreen projector overlay window (camera mode).")
+    parser.add_argument("--projector-monitor", type=int, default=1, help="Monitor index for projector window (0=primary, 1=second).")
     
     args = parser.parse_args()
     
@@ -441,15 +489,52 @@ def main():
         print("WARNING: CUDA requested but not available. Falling back to CPU.")
         device = "cpu"
     
+    if args.conf_create is None:
+        args.conf_create = float(args.yolo_conf)
+    if args.reacquire_max_age is None:
+        args.reacquire_max_age = int(args.track_ttl_frames)
+
     # Print startup configuration
+    is_yolo_mode = getattr(args, "auto_proposals", None) == "yolo"
     print(f"\n=== Vision Pipeline Configuration ===")
-    print(f"SAM2.1 Config: {args.sam_config}")
-    print(f"SAM2.1 Checkpoint: {args.sam_checkpoint}")
+    if is_yolo_mode:
+        print(f"Mode: YOLO proposals")
+        print(f"YOLO model: {args.yolo_model}")
+        print(f"YOLO conf: {args.yolo_conf}  iou: {args.yolo_iou}  max_det: {args.yolo_max_det}")
+        print(
+            f"Tracking: ttl={args.track_ttl_frames} conf_create={args.conf_create} conf_keep={args.conf_keep} "
+            f"reacquire_age={args.reacquire_max_age} reacquire_dist={args.reacquire_max_dist} reacquire_iou={args.reacquire_min_iou} "
+            f"chairs_no_ghost={args.chairs_no_ghost}"
+        )
+        print(
+            f"Person filter: mode={args.person_filter_mode} area=[{args.person_min_area},{args.person_max_area}] "
+            f"h_min={args.person_min_height} ar_wh=[{args.person_min_ar_wh},{args.person_max_ar_wh}] "
+            f"max_ar_sym={args.person_max_ar} excl_right={args.person_excl_right_frac} "
+            f"excl_rb=({args.person_excl_rb_right_frac},{args.person_excl_rb_bottom_frac}) "
+            f"person_conf_override={args.person_conf_override} static_window={args.person_static_window} "
+            f"static_max_delta={args.person_static_max_delta}"
+        )
+        if args.table_refine_every > 0:
+            print(
+                f"Table SAM Refinement: ENABLED every {args.table_refine_every} frames "
+                f"(max_tables={args.table_refine_max}, margin={args.table_refine_margin}px)"
+            )
+        else:
+            print("Table SAM Refinement: DISABLED (--table-refine-every 0)")
+        print(
+            f"Table motion state: shift_px>{args.table_motion_shift_px} iou<{args.table_motion_iou_min} "
+            f"area_change>{args.table_motion_area_change} stable_frames={args.table_stable_frames}"
+        )
+        if args.no_ghosting:
+            print("Ghosting: disabled")
+    else:
+        print(f"SAM2.1 Config: {args.sam_config}")
+        print(f"SAM2.1 Checkpoint: {args.sam_checkpoint}")
     print(f"Device: {device}")
-    print(f"Table area filter: [{args.table_min_area}, {args.table_max_area}] px²")
-    print(f"Chair area filter: [{args.chair_min_area}, {args.chair_max_area}] px²")
+    print(f"Table area filter: [{args.table_min_area}, {args.table_max_area}] px")
+    print(f"Chair area filter: [{args.chair_min_area}, {args.chair_max_area}] px")
     print(f"Output: {args.out}")
-    print(f"=====================================\n")
+    print(f"=====================================")
     pipeline = VisionPipeline(
         sam3_config_path=args.sam_config,
         sam3_checkpoint_path=args.sam_checkpoint,
@@ -459,7 +544,50 @@ def main():
         table_max_area=args.table_max_area,
         chair_min_area=args.chair_min_area,
         chair_max_area=args.chair_max_area,
-        debug_dir=args.debug_dir
+        debug_dir=args.debug_dir,
+        proposals_mode=args.auto_proposals,
+        yolo_model=args.yolo_model,
+        yolo_conf=args.yolo_conf,
+        yolo_iou=args.yolo_iou,
+        yolo_max_det=args.yolo_max_det,
+        track_ttl_frames=args.track_ttl_frames,
+        conf_create=args.conf_create,
+        conf_keep=args.conf_keep,
+        reacquire_max_age=args.reacquire_max_age,
+        reacquire_max_dist=args.reacquire_max_dist,
+        reacquire_min_iou=args.reacquire_min_iou,
+        chairs_no_ghost=args.chairs_no_ghost,
+        no_ghosting=args.no_ghosting,
+        table_min_area_frac=args.table_min_area_frac,
+        table_min_w_frac=args.table_min_w_frac,
+        table_min_h_frac=args.table_min_h_frac,
+        person_min_conf=args.person_min_conf,
+        person_min_iou=args.person_min_iou,
+        person_max_dist=args.person_max_dist,
+        person_ttl=args.person_ttl,
+        person_min_area=args.person_min_area,
+        person_max_area=args.person_max_area,
+        person_max_ar=args.person_max_ar,
+        person_min_height=args.person_min_height,
+        person_min_ar_wh=args.person_min_ar_wh,
+        person_max_ar_wh=args.person_max_ar_wh,
+        person_excl_right_frac=args.person_excl_right_frac,
+        person_excl_rb_right_frac=args.person_excl_rb_right_frac,
+        person_excl_rb_bottom_frac=args.person_excl_rb_bottom_frac,
+        person_conf_override=args.person_conf_override,
+        person_static_window=args.person_static_window,
+        person_static_max_delta=args.person_static_max_delta,
+        person_filter_mode=args.person_filter_mode,
+        overlay_style=args.overlay_style,
+        table_refine_every=args.table_refine_every,
+        table_refine_max=args.table_refine_max,
+        table_refine_margin=args.table_refine_margin,
+        table_motion_shift_px=args.table_motion_shift_px,
+        table_motion_iou_min=args.table_motion_iou_min,
+        table_motion_area_change=args.table_motion_area_change,
+        table_stable_frames=args.table_stable_frames,
+        table_min_bbox_area=args.table_min_bbox_area,
+        table_min_bbox_minside=args.table_min_bbox_minside,
     )
     
     # Process input
@@ -477,6 +605,8 @@ def main():
             camera_index=args.camera,
             output_jsonl=args.out,
             display=not args.no_display,
+            projector_display=args.projector_display,
+            projector_monitor=args.projector_monitor,
             flush_every=args.flush_every,
         )
     else:  # image-dir
@@ -493,7 +623,7 @@ def main():
             # Load proposal/classification config
             bgsub_config = vision_config.get("bgsub", {})
             classification_config = vision_config.get("classification", {})
-            
+
             # Build dark proposer config from CLI arguments
             dark_config = vision_config.get("dark", {})
             if args.dark_fixed_thresh is not None:
