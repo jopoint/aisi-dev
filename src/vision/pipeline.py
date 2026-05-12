@@ -46,6 +46,11 @@ class VisionPipeline:
         yolo_model: str = "runs/detect/train/weights/best_fixed.pt",
         yolo_conf: float = 0.25,
         yolo_iou: float = 0.45,
+        table_obb_model: Optional[str] = None,
+        table_obb_conf: Optional[float] = None,
+        table_obb_iou: Optional[float] = None,
+        table_obb_max_det: int = 0,
+        table_obb_raw_min_conf: Optional[float] = None,
         yolo_max_det: int = 80,
         track_ttl_frames: int = 15,
         conf_create: Optional[float] = None,
@@ -87,6 +92,36 @@ class VisionPipeline:
         table_stable_frames: int = 4,
         table_min_bbox_area: int = 30000,
         table_min_bbox_minside: int = 120,
+        table_new_conf_create: Optional[float] = None,
+        table_new_min_bbox_area: Optional[int] = None,
+        table_new_min_bbox_minside: Optional[int] = None,
+        table_new_confirm_frames: int = 1,
+        table_new_suppress_iou: float = 0.0,
+        table_new_suppress_center_dist_px: float = 0.0,
+        table_protect_existing_tracks: bool = False,
+        table_recover_lost_tracks: bool = False,
+        table_lost_track_ttl: int = 15,
+        table_birth_block_near_lost_dist: float = 0.0,
+        table_birth_block_near_lost_frames: int = 0,
+        table_angle_deadband_deg: float = 0.0,
+        table_render_grace_frames: int = 0,
+        table_static_hold_frames: int = 0,
+        table_static_hold_center_px: float = 0.0,
+        table_static_hold_angle_deg: float = 0.0,
+        table_static_hold_area_frac: float = 0.0,
+        table_obb_debug_raw_overlay: bool = False,
+        table_obb_debug_jsonl: Optional[str] = None,
+        crop_x: Optional[int] = None,
+        crop_y: Optional[int] = None,
+        crop_w: Optional[int] = None,
+        crop_h: Optional[int] = None,
+        camera_rotate: int = 0,
+        display_rotate: int = 0,
+        camera_width: Optional[int] = None,
+        camera_height: Optional[int] = None,
+        save_live_frame_path: Optional[str] = None,
+        exit_after_saving_live_frame: bool = False,
+        show_table_ids: bool = False,
     ):
         """
         Initialize vision pipeline.
@@ -106,6 +141,11 @@ class VisionPipeline:
             yolo_model: Path to YOLO weights (used when proposals_mode=="yolo").
             yolo_conf: YOLO confidence threshold.
             yolo_iou: YOLO IoU threshold for NMS.
+            table_obb_model: Optional OBB model path for table-only detections.
+            table_obb_conf: Confidence threshold for table OBB model (defaults to yolo_conf).
+            table_obb_iou: IoU threshold for table OBB model (defaults to yolo_iou).
+            table_obb_max_det: Optional cap for raw table OBB detections before merge/tracking (0=off).
+            table_obb_raw_min_conf: Optional min confidence for raw table OBB detections before merge/tracking.
             yolo_max_det: Max detections kept per class per frame (top-k by confidence).
             track_ttl_frames: Keep unmatched tracks alive for this many frames.
             conf_create: Minimum confidence to create NEW tracks (defaults to yolo_conf).
@@ -148,6 +188,36 @@ class VisionPipeline:
             table_stable_frames: Consecutive non-moving frames required before table is stable.
             table_min_bbox_area: Reject table detections with bbox area below this value (pixels²).
             table_min_bbox_minside: Reject table detections with min(w,h) below this value (pixels).
+            table_new_conf_create: Optional stricter min confidence for creating new table tracks.
+            table_new_min_bbox_area: Optional stricter min bbox area for creating new table tracks.
+            table_new_min_bbox_minside: Optional stricter min short-side for creating new table tracks.
+            table_new_confirm_frames: Frames required before a new table track becomes visible (1=off).
+            table_new_suppress_iou: Suppress creating new table tracks if IoU with existing table is above this value.
+            table_new_suppress_center_dist_px: Suppress creating new table tracks if center too close to existing table.
+            table_protect_existing_tracks: Prefer table continuity by suppressing new births while recoverable lost tracks remain.
+            table_recover_lost_tracks: Enable table-specific lost-track recovery before allowing new births.
+            table_lost_track_ttl: Max miss_count for table tracks to remain recoverable when recovery mode is enabled.
+            table_birth_block_near_lost_dist: Suppress new table birth near recoverable lost table tracks within this center distance (px, 0=off).
+            table_birth_block_near_lost_frames: Optional max miss_count age for near-lost suppression (0=all recoverable).
+            table_angle_deadband_deg: Table-only angle hysteresis deadband in degrees for final rendered yaw (0=off).
+            table_render_grace_frames: Keep rendering last final table geometry for this many missing frames (0=off).
+            table_static_hold_frames: Consecutive static candidate frames required before hold activates (0=off).
+            table_static_hold_center_px: Static hold center threshold in px (0=off).
+            table_static_hold_angle_deg: Static hold angle threshold in degrees (0=off).
+            table_static_hold_area_frac: Static hold relative area threshold (0=off).
+            table_obb_debug_raw_overlay: Show raw OBB table detections as debug overlay items.
+            table_obb_debug_jsonl: Optional JSONL path for per-frame raw OBB vs final table track debug output.
+            crop_x: Optional input crop X offset in pixels.
+            crop_y: Optional input crop Y offset in pixels.
+            crop_w: Optional input crop width in pixels.
+            crop_h: Optional input crop height in pixels.
+            camera_rotate: Optional camera frame rotation in degrees (0, 90, 180, 270).
+            display_rotate: Optional output/display frame rotation in degrees (0, 90, 180, 270).
+            camera_width: Optional requested camera capture width in pixels.
+            camera_height: Optional requested camera capture height in pixels.
+            save_live_frame_path: Optional path to save first rotated live frame before crop/detection.
+            exit_after_saving_live_frame: Exit camera loop after saving first frame.
+            show_table_ids: Show table track IDs near final table overlays (rendering only).
         """
         self.H = homography_matrix
         self.table_min_area = table_min_area
@@ -156,6 +226,11 @@ class VisionPipeline:
         self.chair_max_area = chair_max_area
         self.debug_dir = debug_dir
         self._proposals_mode = proposals_mode
+        self.table_obb_model = str(table_obb_model).strip() if table_obb_model else None
+        self.table_obb_conf = float(yolo_conf if table_obb_conf is None else table_obb_conf)
+        self.table_obb_iou = float(yolo_iou if table_obb_iou is None else table_obb_iou)
+        self.table_obb_max_det = int(table_obb_max_det)
+        self.table_obb_raw_min_conf = None if table_obb_raw_min_conf is None else float(table_obb_raw_min_conf)
         self._yolo_max_det = yolo_max_det
         self.track_ttl_frames = int(track_ttl_frames)
         self.conf_create = float(yolo_conf if conf_create is None else conf_create)
@@ -196,6 +271,60 @@ class VisionPipeline:
         self.table_stable_frames = int(max(1, table_stable_frames))
         self.table_min_bbox_area = int(table_min_bbox_area)
         self.table_min_bbox_minside = int(table_min_bbox_minside)
+        self.table_new_conf_create = (
+            float(table_new_conf_create) if table_new_conf_create is not None else float(self.conf_create)
+        )
+        self.table_new_min_bbox_area = int(
+            self.table_min_bbox_area if table_new_min_bbox_area is None else table_new_min_bbox_area
+        )
+        self.table_new_min_bbox_minside = int(
+            self.table_min_bbox_minside if table_new_min_bbox_minside is None else table_new_min_bbox_minside
+        )
+        self.table_new_confirm_frames = int(max(1, table_new_confirm_frames))
+        self.table_new_suppress_iou = float(max(0.0, table_new_suppress_iou))
+        self.table_new_suppress_center_dist_px = float(max(0.0, table_new_suppress_center_dist_px))
+        self.table_protect_existing_tracks = bool(table_protect_existing_tracks)
+        self.table_recover_lost_tracks = bool(table_recover_lost_tracks)
+        self.table_lost_track_ttl = int(max(1, table_lost_track_ttl))
+        self.table_birth_block_near_lost_dist = float(max(0.0, table_birth_block_near_lost_dist))
+        self.table_birth_block_near_lost_frames = int(max(0, table_birth_block_near_lost_frames))
+        self.table_angle_deadband_deg = float(max(0.0, table_angle_deadband_deg))
+        self.table_angle_deadband_rad = float(np.deg2rad(self.table_angle_deadband_deg))
+        self.table_render_grace_frames = int(max(0, table_render_grace_frames))
+        self.table_static_hold_frames = int(max(0, table_static_hold_frames))
+        self.table_static_hold_center_px = float(max(0.0, table_static_hold_center_px))
+        self.table_static_hold_angle_deg = float(max(0.0, table_static_hold_angle_deg))
+        self.table_static_hold_area_frac = float(max(0.0, table_static_hold_area_frac))
+        self.table_static_hold_angle_rad = float(np.deg2rad(self.table_static_hold_angle_deg))
+        self.table_static_hold_enabled = bool(
+            self.table_static_hold_frames > 0
+            and self.table_static_hold_center_px > 0.0
+            and self.table_static_hold_angle_deg > 0.0
+            and self.table_static_hold_area_frac > 0.0
+        )
+        self.table_obb_debug_raw_overlay = bool(table_obb_debug_raw_overlay)
+        self.table_obb_debug_jsonl = str(table_obb_debug_jsonl).strip() if table_obb_debug_jsonl else None
+        if crop_x is None and crop_y is None and crop_w is None and crop_h is None:
+            self._input_crop = None
+        else:
+            self._input_crop = (
+                int(crop_x or 0),
+                int(crop_y or 0),
+                int(crop_w or 0),
+                int(crop_h or 0),
+            )
+        self._input_crop_warned = False
+        self.camera_rotate = int(camera_rotate) if camera_rotate in (0, 90, 180, 270) else 0
+        self.display_rotate = int(display_rotate) if display_rotate in (0, 90, 180, 270) else 0
+        self.camera_width = None if camera_width is None else int(camera_width)
+        self.camera_height = None if camera_height is None else int(camera_height)
+        self.save_live_frame_path = str(save_live_frame_path).strip() if save_live_frame_path else None
+        self.exit_after_saving_live_frame = bool(exit_after_saving_live_frame)
+        self.show_table_ids = bool(show_table_ids)
+        if self.table_obb_model and self.table_refine_every > 0:
+            # Keep table geometry source consistent when OBB table mode is enabled.
+            print("Table OBB model enabled: disabling SAM table refinement (--table-refine-every forced to 0).")
+            self.table_refine_every = 0
         self.overlay_style = (
             overlay_style
             if overlay_style in ("debug", "projector", "projector_on_frame")
@@ -261,6 +390,7 @@ class VisionPipeline:
             "person": 0,
         }
         self._person_new_ids_since_log = 0
+        self._table_obb_detector = None
 
         self.frame_id = 0
         self._last_render_frame_id = -1
@@ -270,14 +400,24 @@ class VisionPipeline:
         if proposals_mode == "yolo":
             # YOLO mode: init detector; optionally load SAM for table geometry refinement
             self._yolo_detector = None  # lazily set below to allow lazy import
-            from src.vision.detection.yolo_detector import YOLODetector
+            from src.vision.detection.yolo_detector import YOLODetector, YOLOTableOBBDetector
             self._yolo_detector = YOLODetector(
                 model=yolo_model,
                 device=device,
                 conf=yolo_conf,
                 iou=yolo_iou,
             )
-            if table_refine_every > 0:
+            if self.table_obb_model:
+                self._table_obb_detector = YOLOTableOBBDetector(
+                    model=self.table_obb_model,
+                    device=device,
+                    conf=self.table_obb_conf,
+                    iou=self.table_obb_iou,
+                    max_det=yolo_max_det,
+                    raw_max_det=self.table_obb_max_det,
+                    raw_min_conf=self.table_obb_raw_min_conf,
+                )
+            if self.table_refine_every > 0:
                 _refine_cfg = sam3_config_path or "configs/sam2/sam2.1_hiera_l.yaml"
                 _refine_ckpt = sam3_checkpoint_path or "checkpoints/sam2.1_hiera_large.pt"
                 try:
@@ -291,12 +431,58 @@ class VisionPipeline:
                         "Table refinement requested (--table-refine-every > 0), but SAM2/SAM3Segmenter could not be initialised. "
                         "Install SAM2 or disable refinement with --table-refine-every 0."
                     ) from exc
-                print(f"SAM table refine: every={table_refine_every} frames, max={table_refine_max} tables")
+                print(f"SAM table refine: every={self.table_refine_every} frames, max={table_refine_max} tables")
             else:
                 self.segmenter = None
             print(f"\n=== VisionPipeline Initialized (YOLO mode) ===")
             print(f"YOLO model:  {yolo_model}")
             print(f"YOLO conf: {yolo_conf}  iou: {yolo_iou}  max_det: {yolo_max_det}")
+            if self.table_obb_model:
+                print(
+                    f"Table OBB model: {self.table_obb_model} "
+                    f"(conf={self.table_obb_conf}, iou={self.table_obb_iou})"
+                )
+                if self.table_obb_max_det > 0 or self.table_obb_raw_min_conf is not None:
+                    print(
+                        f"Table OBB raw filter: top_k={self.table_obb_max_det} "
+                        f"min_conf={self.table_obb_raw_min_conf}"
+                    )
+                print(
+                    f"Table anti-phantom: new_conf>={self.table_new_conf_create} "
+                    f"new_min_area={self.table_new_min_bbox_area} "
+                    f"new_min_minside={self.table_new_min_bbox_minside} "
+                    f"confirm_frames={self.table_new_confirm_frames} "
+                    f"suppress_iou>={self.table_new_suppress_iou} "
+                    f"suppress_center_dist<={self.table_new_suppress_center_dist_px}px"
+                )
+                if self.table_protect_existing_tracks or self.table_recover_lost_tracks:
+                    print(
+                        f"Table continuity: protect_existing={self.table_protect_existing_tracks} "
+                        f"recover_lost={self.table_recover_lost_tracks} "
+                        f"lost_ttl={self.table_lost_track_ttl}"
+                    )
+                if self.table_recover_lost_tracks and self.table_birth_block_near_lost_dist > 0.0:
+                    _lost_age_gate = self.table_birth_block_near_lost_frames if self.table_birth_block_near_lost_frames > 0 else "recoverable_ttl"
+                    print(
+                        f"Table birth suppression near lost: dist<={self.table_birth_block_near_lost_dist}px "
+                        f"lost_age<={_lost_age_gate}"
+                    )
+                if self.table_angle_deadband_deg > 0.0:
+                    print(
+                        f"Table angle hysteresis: deadband={self.table_angle_deadband_deg}deg"
+                    )
+                if self.table_static_hold_enabled:
+                    print(
+                        f"Table static hold: frames>={self.table_static_hold_frames} "
+                        f"center<{self.table_static_hold_center_px}px "
+                        f"angle<{self.table_static_hold_angle_deg}deg "
+                        f"area<{self.table_static_hold_area_frac}"
+                    )
+                if self.table_obb_debug_raw_overlay or self.table_obb_debug_jsonl:
+                    print(
+                        f"Table OBB debug: raw_overlay={self.table_obb_debug_raw_overlay} "
+                        f"jsonl={self.table_obb_debug_jsonl}"
+                    )
             print(
                 f"Tracking: ttl={self.track_ttl_frames} conf_create={self.conf_create} conf_keep={self.conf_keep} "
                 f"reacquire_age={self.reacquire_max_age} reacquire_dist={self.reacquire_max_dist} "
@@ -311,11 +497,12 @@ class VisionPipeline:
                 print("Ghosting: disabled")
             print(f"Device: {device}")
             print(f"Homography: {'enabled' if self.H is not None else 'disabled'}")
-            print(f"Table refine: {'every ' + str(table_refine_every) + ' frames' if table_refine_every > 0 else 'disabled'}")
+            print(f"Table refine: {'every ' + str(self.table_refine_every) + ' frames' if self.table_refine_every > 0 else 'disabled'}")
             print(f"===================================\n")
         else:
             # SAM2 mode: load segmenter
             self._yolo_detector = None
+            self._table_obb_detector = None
             if sam3_config_path is None:
                 sam3_config_path = "configs/sam2/sam2.1_hiera_l.yaml"
             if sam3_checkpoint_path is None:
@@ -347,6 +534,62 @@ class VisionPipeline:
             "person": 0,
         }
         self._person_new_ids_since_log = 0
+
+    def _apply_input_crop(self, frame_bgr: np.ndarray) -> np.ndarray:
+        """Apply optional fixed input crop, clamped to frame bounds."""
+        if self._input_crop is None:
+            return frame_bgr
+
+        fh, fw = frame_bgr.shape[:2]
+        if fw <= 1 or fh <= 1:
+            return frame_bgr
+
+        crop_x, crop_y, crop_w, crop_h = self._input_crop
+        x1 = max(0, min(fw - 1, int(crop_x)))
+        y1 = max(0, min(fh - 1, int(crop_y)))
+        x2 = max(0, min(fw, int(crop_x + crop_w)))
+        y2 = max(0, min(fh, int(crop_y + crop_h)))
+
+        if x2 <= x1 or y2 <= y1:
+            if not self._input_crop_warned:
+                print(
+                    f"WARNING: invalid input crop ({crop_x},{crop_y},{crop_w},{crop_h}) "
+                    f"for frame size {fw}x{fh}; using full frame."
+                )
+                self._input_crop_warned = True
+            return frame_bgr
+
+        cropped = frame_bgr[y1:y2, x1:x2]
+        if cropped.size == 0:
+            if not self._input_crop_warned:
+                print(
+                    f"WARNING: empty input crop ({crop_x},{crop_y},{crop_w},{crop_h}) "
+                    f"for frame size {fw}x{fh}; using full frame."
+                )
+                self._input_crop_warned = True
+            return frame_bgr
+
+        return cropped
+
+    def _apply_camera_rotation(self, frame_bgr: np.ndarray) -> np.ndarray:
+        """Apply optional camera frame rotation (0/90/180/270)."""
+        if self.camera_rotate == 90:
+            return cv2.rotate(frame_bgr, cv2.ROTATE_90_CLOCKWISE)
+        if self.camera_rotate == 180:
+            return cv2.rotate(frame_bgr, cv2.ROTATE_180)
+        if self.camera_rotate == 270:
+            return cv2.rotate(frame_bgr, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        return frame_bgr
+
+    def _apply_display_rotation(self, frame_bgr: np.ndarray) -> np.ndarray:
+        """Apply optional display rotation for live output windows only."""
+        if self.display_rotate == 90:
+            return cv2.rotate(frame_bgr, cv2.ROTATE_90_CLOCKWISE)
+        if self.display_rotate == 180:
+            return cv2.rotate(frame_bgr, cv2.ROTATE_180)
+        if self.display_rotate == 270:
+            return cv2.rotate(frame_bgr, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        return frame_bgr
 
     @staticmethod
     def _bbox_area(bbox: List[int]) -> float:
@@ -649,6 +892,7 @@ class VisionPipeline:
                 ret, frame = cap.read()
                 if not ret:
                     break
+                frame = self._apply_input_crop(frame)
                 
                 frame_event = self.process_frame(frame)
                 f.write(json.dumps(frame_event.to_dict()) + "\n")
@@ -689,6 +933,19 @@ class VisionPipeline:
         cap = cv2.VideoCapture(camera_index)
         if not cap.isOpened():
             raise RuntimeError(f"Could not open camera {camera_index}")
+
+        if self.camera_width is not None:
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, float(self.camera_width))
+        if self.camera_height is not None:
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, float(self.camera_height))
+
+        actual_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        actual_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        print(
+            f"Camera capture setup: requested={self.camera_width}x{self.camera_height} "
+            f"actual={actual_width}x{actual_height} rotate={self.camera_rotate} "
+            f"display_rotate={self.display_rotate} crop={'on' if self._input_crop is not None else 'off'}"
+        )
         
         jsonl_file = None
         if output_jsonl is not None:
@@ -710,6 +967,8 @@ class VisionPipeline:
             print(f"Projector window on monitor {projector_monitor} at ({mon_x}, {mon_y}) size {mon_w}x{mon_h}")
 
         live_frame_id = 0
+        _logged_first_frame = False
+        _saved_live_frame = False
         
         try:
             while True:
@@ -717,6 +976,32 @@ class VisionPipeline:
                 if not ret:
                     print("Failed to read frame from camera")
                     break
+
+                raw_h, raw_w = frame.shape[:2]
+                frame = self._apply_camera_rotation(frame)
+                rot_h, rot_w = frame.shape[:2]
+
+                if self.save_live_frame_path and not _saved_live_frame:
+                    _save_path = Path(self.save_live_frame_path)
+                    _save_path.parent.mkdir(parents=True, exist_ok=True)
+                    _ok = cv2.imwrite(str(_save_path), frame)
+                    if _ok:
+                        print(f"Saved rotated live frame (pre-crop) to {_save_path}")
+                    else:
+                        print(f"WARNING: failed to save rotated live frame to {_save_path}")
+                    _saved_live_frame = True
+                    if self.exit_after_saving_live_frame:
+                        print("Exiting after saving first live frame (--exit-after-saving-live-frame).")
+                        break
+
+                frame = self._apply_input_crop(frame)
+
+                if not _logged_first_frame:
+                    print(
+                        f"Camera first frame: raw={raw_w}x{raw_h} rotate={self.camera_rotate} "
+                        f"after_rotate={rot_w}x{rot_h} crop={'on' if self._input_crop is not None else 'off'}"
+                    )
+                    _logged_first_frame = True
 
                 timestamp_iso = now_iso()
                 if self._proposals_mode == "yolo":
@@ -736,14 +1021,19 @@ class VisionPipeline:
                         os.fsync(jsonl_file.fileno())
                 
                 if display:
-                    # Draw detections on frame
-                    display_frame = self._draw_detections(frame, frame_event)
+                    if self._last_overlay_items:
+                        display_frame = self.render_overlay(frame, self._last_overlay_items)
+                    else:
+                        # Fallback if no overlay items are available.
+                        display_frame = self._draw_detections(frame, frame_event)
+                    display_frame = self._apply_display_rotation(display_frame)
                     cv2.imshow("Vision Pipeline", display_frame)
 
                 if projector_display:
-                    # Always render projector style for projector output window
+                    # Render using configured overlay style (projector/projector_on_frame/debug).
                     projector_items = self._last_overlay_items if self._last_overlay_items else []
-                    projector_frame = self._render_overlay_projector(frame, projector_items)
+                    projector_frame = self.render_overlay(frame, projector_items)
+                    projector_frame = self._apply_display_rotation(projector_frame)
                     cv2.imshow(projector_window_name, projector_frame)
 
                 if display or projector_display:
@@ -849,6 +1139,7 @@ class VisionPipeline:
             "chair": (255, 0, 255),    # Magenta
             "person": (0, 255, 0),     # Green
             "table_reject": (0, 165, 255),  # Orange
+            "table_obb_raw": (255, 200, 0),  # Light blue/orange mix for raw OBB debug
         }
         
         for item in overlay_items:
@@ -878,19 +1169,19 @@ class VisionPipeline:
                 if contours:
                     cv2.drawContours(overlay, contours, -1, color, 1 if is_ghost else 2)
 
-            # tables: prefer rotated corners over bbox to avoid double box
+            # tables: prefer corners, then poly, and use bbox only as last fallback.
             bbox = shape.get("bbox_px")
-            table_has_corners = label == "table" and bool(shape.get("corners_px"))
-            if not table_has_corners and bbox and len(bbox) == 4:
-                x1, y1, x2, y2 = [int(v) for v in bbox]
-                cv2.rectangle(overlay, (x1, y1), (x2, y2), color, 1 if is_ghost else 2)
+            if label == "table":
+                table_poly_like = shape.get("corners_px")
+                if not table_poly_like:
+                    table_poly_like = shape.get("poly_px")
 
-            # Draw geometry shapes
-            if label == "table" and table_has_corners:
-                corners = shape["corners_px"]
-                if len(corners) >= 3:
-                    pts = np.array(corners, dtype=np.int32)
+                if table_poly_like and len(table_poly_like) >= 3:
+                    pts = np.array(table_poly_like, dtype=np.int32)
                     cv2.polylines(overlay, [pts], True, color, 1 if is_ghost else 2)
+                elif bbox and len(bbox) == 4:
+                    x1, y1, x2, y2 = [int(v) for v in bbox]
+                    cv2.rectangle(overlay, (x1, y1), (x2, y2), color, 1 if is_ghost else 2)
 
             if label == "table" and "center_px" in shape:
                 center = shape["center_px"]
@@ -923,23 +1214,46 @@ class VisionPipeline:
                     cv2.rectangle(overlay, (x1, y1), (x2, y2), color, 2)
                     reject_reason = str(shape.get("reject_reason", "table_reject_small"))
                     cv2.putText(overlay, reject_reason, (x1, max(16, y1 - 4)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1, cv2.LINE_AA)
+
+            if label == "table_obb_raw":
+                poly_px = shape.get("poly_px")
+                if poly_px is not None and len(poly_px) == 4:
+                    pts = np.array(poly_px, dtype=np.int32)
+                    cv2.polylines(overlay, [pts], True, color, 1)
+                elif bbox and len(bbox) == 4:
+                    x1, y1, x2, y2 = [int(v) for v in bbox]
+                    cv2.rectangle(overlay, (x1, y1), (x2, y2), color, 1)
+                center = shape.get("center_px")
+                if center and len(center) >= 2:
+                    cx, cy = int(center[0]), int(center[1])
+                    cv2.circle(overlay, (cx, cy), 3, color, -1)
             
-            # Draw ID and score text
-            text = f"{obj_id} ({score:.2f})"
-            
-            # Find text position near centroid
-            if has_mask:
-                y_coords, x_coords = np.where(mask)
-                text_x = int(np.mean(x_coords))
-                text_y = int(np.mean(y_coords))
-            elif "center_px" in shape and shape.get("center_px") is not None:
-                text_x = int(shape["center_px"][0])
-                text_y = int(shape["center_px"][1])
-            elif bbox and len(bbox) == 4:
-                text_x = int(bbox[0])
-                text_y = max(20, int(bbox[1]))
+            # Draw ID/score text. With show_table_ids, constrain text overlays to final table tracks.
+            if self.show_table_ids:
+                if label != "table" or not obj_id:
+                    continue
+                text = f"T{obj_id}"
+                if bbox and len(bbox) == 4:
+                    text_x = max(2, int(bbox[0]) + 6)
+                    text_y = max(16, int(bbox[1]) - 6)
+                else:
+                    text_x, text_y = 10, 30
             else:
-                text_x, text_y = 10, 30
+                text = f"{obj_id} ({score:.2f})"
+
+                # Find text position near centroid
+                if has_mask:
+                    y_coords, x_coords = np.where(mask)
+                    text_x = int(np.mean(x_coords))
+                    text_y = int(np.mean(y_coords))
+                elif "center_px" in shape and shape.get("center_px") is not None:
+                    text_x = int(shape["center_px"][0])
+                    text_y = int(shape["center_px"][1])
+                elif bbox and len(bbox) == 4:
+                    text_x = int(bbox[0])
+                    text_y = max(20, int(bbox[1]))
+                else:
+                    text_x, text_y = 10, 30
             
             # Draw background rectangle for text
             font = cv2.FONT_HERSHEY_SIMPLEX
@@ -959,10 +1273,19 @@ class VisionPipeline:
         """Render high-contrast projector overlay: white geometry on black background."""
         h, w = frame_bgr.shape[:2]
         overlay = np.zeros((h, w, 3), dtype=np.uint8)
+        chair_target_radius = int(np.clip(round(min(w, h) * 0.042), 30, 54))
+
+        def _inset_polygon_pts(poly_pts: np.ndarray, inset_ratio: float = 0.08) -> np.ndarray:
+            if poly_pts.shape[0] < 3:
+                return poly_pts
+            center = np.mean(poly_pts.astype(np.float32), axis=0)
+            shifted = center + (poly_pts.astype(np.float32) - center) * float(max(0.0, 1.0 - inset_ratio))
+            return np.round(shifted).astype(np.int32)
 
         for item in overlay_items:
             label = item.get("label", "unknown")
             shape = item.get("shape", {})
+            obj_id = item.get("id", "")
             bbox = shape.get("bbox_px")
             if not bbox or len(bbox) != 4:
                 continue
@@ -976,20 +1299,35 @@ class VisionPipeline:
                 continue
 
             if label == "table":
-                poly_px = shape.get("poly_px")
+                poly_px = shape.get("corners_px")
+                if poly_px is None:
+                    poly_px = shape.get("poly_px")
                 table_poly = None
                 if poly_px is not None and len(poly_px) == 4:
                     table_poly = np.array(poly_px, dtype=np.int32)
                 if table_poly is not None:
-                    cv2.fillConvexPoly(overlay, table_poly, (255, 255, 255))
-                    cv2.polylines(overlay, [table_poly.reshape(-1, 1, 2)], True, (0, 255, 0), 2)
+                    inset_poly = _inset_polygon_pts(table_poly, inset_ratio=0.12)
+                    cv2.polylines(overlay, [inset_poly.reshape(-1, 1, 2)], True, (255, 255, 255), 2)
                 else:
-                    cv2.rectangle(overlay, (x1, y1), (x2, y2), (255, 255, 255), -1)
-                    cv2.rectangle(overlay, (x1, y1), (x2, y2), (0, 0, 255), 2)
+                    inset_px = max(1, int(round(0.08 * min(x2 - x1, y2 - y1))))
+                    ix1 = min(x2 - 1, x1 + inset_px)
+                    iy1 = min(y2 - 1, y1 + inset_px)
+                    ix2 = max(ix1 + 1, x2 - inset_px)
+                    iy2 = max(iy1 + 1, y2 - inset_px)
+                    cv2.rectangle(overlay, (ix1, iy1), (ix2, iy2), (255, 255, 255), 2)
+
+                if self.show_table_ids and obj_id:
+                    text = f"T{obj_id}"
+                    tx = max(2, min(w - 2, x1 + 6))
+                    ty = max(16, min(h - 2, y1 - 6))
+                    cv2.putText(overlay, text, (tx, ty), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
             elif label == "table_reject":
                 cv2.rectangle(overlay, (x1, y1), (x2, y2), (0, 165, 255), 2)
                 reject_reason = str(shape.get("reject_reason", "table_reject_small"))
                 cv2.putText(overlay, reject_reason, (x1, max(16, y1 - 4)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (0, 165, 255), 1, cv2.LINE_AA)
+            elif label == "table_obb_raw":
+                # Keep projector overlays focused on final tracks only.
+                continue
             elif label in ("chair", "person"):
                 center = shape.get("center_px")
                 if center and len(center) >= 2:
@@ -1000,10 +1338,16 @@ class VisionPipeline:
                     cy = int(round((y1 + y2) / 2.0))
                 radius = int(round(0.5 * min(x2 - x1, y2 - y1)))
                 if radius > 0:
-                    color = (255, 0, 0) if label == "chair" else (0, 0, 255)
-                    thickness = 2 if label == "chair" else 3
+                    color = (255, 0, 0) if label == "chair" else (0, 200, 0)
+                    if label == "chair":
+                        radius = int(np.clip(radius, int(chair_target_radius * 0.8), int(chair_target_radius * 1.2)))
+                        thickness = 2
+                    else:
+                        radius = max(8, radius)
+                        thickness = 4
                     cv2.circle(overlay, (cx, cy), radius, color, thickness)
-                    cv2.circle(overlay, (cx, cy), 3, color, -1)
+                    if label == "chair":
+                        cv2.circle(overlay, (cx, cy), 2, color, -1)
 
         return overlay
 
@@ -1013,17 +1357,20 @@ class VisionPipeline:
         alpha = 0.6
 
         table_layer = frame_bgr.copy()
-        circle_draw_ops: List[Tuple[int, int, int, Tuple[int, int, int], int]] = []
-        table_ok = 0
-        table_fallback = 0
-        table_angles: List[float] = []
-        table_areas: List[float] = []
-        first_table_mask_saved = False
-        first_table_logged = False
+        circle_draw_ops: List[Tuple[int, int, int, Tuple[int, int, int], int, str]] = []
+        chair_target_radius = int(np.clip(round(min(w, h) * 0.042), 30, 54))
+
+        def _inset_polygon_pts(poly_pts: np.ndarray, inset_ratio: float = 0.08) -> np.ndarray:
+            if poly_pts.shape[0] < 3:
+                return poly_pts
+            center = np.mean(poly_pts.astype(np.float32), axis=0)
+            shifted = center + (poly_pts.astype(np.float32) - center) * float(max(0.0, 1.0 - inset_ratio))
+            return np.round(shifted).astype(np.int32)
 
         for item in overlay_items:
             label = item.get("label", "unknown")
             shape = item.get("shape", {})
+            obj_id = item.get("id", "")
             bbox = shape.get("bbox_px")
             if not bbox or len(bbox) != 4:
                 continue
@@ -1037,89 +1384,33 @@ class VisionPipeline:
                 continue
 
             if label == "table_reject":
-                cv2.rectangle(table_layer, (x1, y1), (x2, y2), (0, 165, 255), 2)
-                reject_reason = str(shape.get("reject_reason", "table_reject_small"))
-                cv2.putText(
-                    table_layer,
-                    reject_reason,
-                    (x1, max(16, y1 - 4)),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.45,
-                    (0, 165, 255),
-                    1,
-                    cv2.LINE_AA,
-                )
+                continue
+            elif label == "table_obb_raw":
+                # Keep projector overlays focused on final tracks only.
+                continue
             elif label == "table":
-                used_fallback = bool(shape.get("used_fallback", True))
-                poly_px = shape.get("poly_px")
+                poly_px = shape.get("corners_px")
+                if poly_px is None:
+                    poly_px = shape.get("poly_px")
                 table_poly = None
                 if poly_px is not None and len(poly_px) == 4:
                     table_poly = np.array(poly_px, dtype=np.int32)
-
                 if table_poly is not None:
-                    cv2.fillConvexPoly(table_layer, table_poly, (255, 255, 255))
+                    inset_poly = _inset_polygon_pts(table_poly, inset_ratio=0.12)
+                    cv2.polylines(table_layer, [inset_poly.reshape(-1, 1, 2)], True, (255, 255, 255), 2)
                 else:
-                    cv2.rectangle(table_layer, (x1, y1), (x2, y2), (255, 255, 255), -1)
+                    inset_px = max(1, int(round(0.08 * min(x2 - x1, y2 - y1))))
+                    ix1 = min(x2 - 1, x1 + inset_px)
+                    iy1 = min(y2 - 1, y1 + inset_px)
+                    ix2 = max(ix1 + 1, x2 - inset_px)
+                    iy2 = max(iy1 + 1, y2 - inset_px)
+                    cv2.rectangle(table_layer, (ix1, iy1), (ix2, iy2), (255, 255, 255), 2)
 
-                # Explicit debug outline: red for fallback, green for oriented rect
-                if used_fallback or table_poly is None:
-                    table_fallback += 1
-                    cv2.rectangle(table_layer, (x1, y1), (x2, y2), (0, 0, 255), 2)
-                    reason = str(shape.get("fallback_reason", ""))
-                    if reason:
-                        text_y = max(12, y1 - 4)
-                        cv2.putText(
-                            table_layer,
-                            reason,
-                            (x1, text_y),
-                            cv2.FONT_HERSHEY_SIMPLEX,
-                            0.4,
-                            (0, 0, 255),
-                            1,
-                            cv2.LINE_AA,
-                        )
-                else:
-                    table_ok += 1
-                    cv2.polylines(table_layer, [table_poly.reshape(-1, 1, 2)], True, (0, 255, 0), 2)
-                    table_angles.append(float(shape.get("rect_angle", 0.0)))
-                    table_areas.append(float(shape.get("best_area", 0.0)))
-
-                if not first_table_logged:
-                    frame_idx = max(0, int(self._last_render_frame_id))
-                    print(
-                        f"table_orient_table: frame_id={frame_idx} "
-                        f"used_fallback={used_fallback} "
-                        f"fallback_reason={shape.get('fallback_reason', '')} "
-                        f"best_area={float(shape.get('best_area', 0.0)):.1f} "
-                        f"rect_w={float(shape.get('rect_w', 0.0)):.1f} "
-                        f"rect_h={float(shape.get('rect_h', 0.0)):.1f} "
-                        f"rect_angle={float(shape.get('rect_angle', 0.0)):.2f}"
-                    )
-                    first_table_logged = True
-
-                if bool(shape.get("theta_rejected", False)):
-                    theta_txt_y = min(h - 6, max(18, y1 + 16))
-                    theta_txt = f"theta={float(shape.get('rect_angle', 0.0)):.2f} (rejected)"
-                    cv2.putText(
-                        table_layer,
-                        theta_txt,
-                        (x1, theta_txt_y),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.45,
-                        (0, 255, 255),
-                        1,
-                        cv2.LINE_AA,
-                    )
-
-                if not first_table_mask_saved and self.debug_dir:
-                    mask_img = shape.get("roi_mask")
-                    if mask_img is not None:
-                        debug_path = Path(self.debug_dir)
-                        debug_path.mkdir(parents=True, exist_ok=True)
-                        frame_idx = max(0, int(self._last_render_frame_id))
-                        out_mask = debug_path / f"table_roi_mask_frame_{frame_idx:05d}.png"
-                        cv2.imwrite(str(out_mask), mask_img)
-                        first_table_mask_saved = True
+                if self.show_table_ids and obj_id:
+                    text = f"T{obj_id}"
+                    tx = max(2, min(w - 2, x1 + 6))
+                    ty = max(16, min(h - 2, y1 - 6))
+                    cv2.putText(table_layer, text, (tx, ty), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1, cv2.LINE_AA)
             elif label in ("chair", "person"):
                 center = shape.get("center_px")
                 if center and len(center) >= 2:
@@ -1130,26 +1421,22 @@ class VisionPipeline:
                     cy = int(round((y1 + y2) / 2.0))
                 radius = int(round(0.5 * min(x2 - x1, y2 - y1)))
                 if radius > 0:
-                    color = (255, 0, 0) if label == "chair" else (0, 0, 255)
-                    thickness = 2 if label == "chair" else 3
-                    circle_draw_ops.append((cx, cy, radius, color, thickness))
-
-        frame_idx = int(self._last_render_frame_id)
-        if frame_idx >= 0 and frame_idx % 10 == 0:
-            avg_angle_str = "n/a"
-            avg_area_str = "n/a"
-            if table_angles:
-                avg_angle_str = f"{(sum(table_angles) / len(table_angles)):.2f}"
-            if table_areas:
-                avg_area_str = f"{(sum(table_areas) / len(table_areas)):.1f}"
-            print(f"table_orient: ok={table_ok} fallback={table_fallback} avg_angle={avg_angle_str} avg_area={avg_area_str}")
+                    color = (255, 0, 0) if label == "chair" else (0, 200, 0)
+                    if label == "chair":
+                        radius = int(np.clip(radius, int(chair_target_radius * 0.8), int(chair_target_radius * 1.2)))
+                        thickness = 2
+                    else:
+                        radius = max(10, radius)
+                        thickness = 4
+                    circle_draw_ops.append((cx, cy, radius, color, thickness, label))
 
         blended = cv2.addWeighted(table_layer, alpha, frame_bgr, 1.0 - alpha, 0.0)
 
         # Draw class-colored circles directly on blended frame (no extra alpha).
-        for cx, cy, radius, color, thickness in circle_draw_ops:
+        for cx, cy, radius, color, thickness, kind in circle_draw_ops:
             cv2.circle(blended, (cx, cy), radius, color, thickness)
-            cv2.circle(blended, (cx, cy), 3, color, -1)
+            if kind == "chair":
+                cv2.circle(blended, (cx, cy), 2, color, -1)
 
         return blended
 
@@ -2174,6 +2461,7 @@ class VisionPipeline:
             first_img = cv2.imread(str(image_files[0]))
             if first_img is None:
                 raise RuntimeError(f"Could not load first image: {image_files[0]}")
+            first_img = self._apply_input_crop(first_img)
             first_frame_boxes = self._select_boxes_interactive(first_img)
         elif boxes_init is not None:
             first_frame_boxes = boxes_init
@@ -2226,6 +2514,7 @@ class VisionPipeline:
                 if frame is None:
                     print(f"Warning: Could not load {img_path}, skipping.")
                     continue
+                frame = self._apply_input_crop(frame)
                 
                 # Calculate timestamp
                 timestamp_iso = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", 
@@ -2523,6 +2812,12 @@ class VisionPipeline:
         from collections import Counter, defaultdict, deque
 
         raw_detections = self._yolo_detector.detect(frame_bgr)
+        raw_table_obb_detections: List[Dict] = []
+        if self._table_obb_detector is not None:
+            table_obb_detections = self._table_obb_detector.detect_tables(frame_bgr)
+            raw_table_obb_detections = list(table_obb_detections)
+            raw_detections = [det for det in raw_detections if det.get("label") != "table"]
+            raw_detections.extend(table_obb_detections)
         frame_h, frame_w = frame_bgr.shape[:2]
         frame_area = float(frame_w * frame_h) if frame_w > 0 and frame_h > 0 else 1.0
         raw_table_dets = sum(1 for det in raw_detections if det.get("label") == "table")
@@ -2644,6 +2939,12 @@ class VisionPipeline:
 
         kept_counts = {label: len(by_label.get(label, [])) for label in ("chair", "table", "person")}
         kept_table_dets = kept_counts["table"]
+        dbg_raw_table_obb_count = len(raw_table_obb_detections)
+        dbg_matched_active_table_tracks = 0
+        dbg_matched_lost_table_tracks = 0
+        dbg_new_table_tracks_created = 0
+        dbg_recoverable_lost_table_track_count = 0
+        dbg_blocked_new_table_births_near_lost = 0
 
         furniture_entities: List[DetectedEntity] = []
         people_entities: List[DetectedEntity] = []
@@ -2666,6 +2967,19 @@ class VisionPipeline:
                 diff -= np.pi
             return diff
 
+        def _table_shape_area_px(bbox_px: List[int], poly_px: Optional[List]) -> float:
+            if poly_px is not None and len(poly_px) == 4:
+                try:
+                    _pts = np.asarray(poly_px, dtype=np.float32)
+                    _area = float(abs(cv2.contourArea(_pts)))
+                    if _area > 0.0:
+                        return _area
+                except Exception:
+                    pass
+            _bw = max(1, int(bbox_px[2]) - int(bbox_px[0]))
+            _bh = max(1, int(bbox_px[3]) - int(bbox_px[1]))
+            return float(_bw * _bh)
+
         for label in ("chair", "table", "person"):
             class_tracks = self._tracks[label]
             alpha_new = float(self._bbox_ema_alpha[label])
@@ -2679,6 +2993,10 @@ class VisionPipeline:
                 ttl_frames = int(self._track_ttl_frames_by_class.get(label, self._track_ttl_frames))
                 reacquire_max_age_label = int(self._class_reacquire_max_age.get(label, self.reacquire_max_age))
 
+            # Table continuity/recovery can override lost-track TTL without affecting other classes.
+            if label == "table" and self.table_recover_lost_tracks and not self.no_ghosting:
+                reacquire_max_age_label = int(self.table_lost_track_ttl)
+
             # Detections are already filtered with conf_keep and class rules above.
             detections = sorted(by_label.get(label, []), key=lambda d: float(d["score"]), reverse=True)
             available_det_idxs = set(range(len(detections)))
@@ -2689,15 +3007,21 @@ class VisionPipeline:
                 for tid, t in class_tracks.items()
                 if 0 < int(t.get("miss_count", 0)) <= reacquire_max_age_label
             ]
+            if label == "table":
+                dbg_recoverable_lost_table_track_count = len(ghost_track_ids)
 
             # Phase 1: active tracks
             matches = self._greedy_track_match(detections, class_tracks, active_track_ids, available_det_idxs, label)
+            if label == "table":
+                dbg_matched_active_table_tracks += len(matches)
             for _tid, _didx in matches.items():
                 available_det_idxs.discard(_didx)
 
             # Phase 2: recently missed ghost tracks (ID reacquire)
             if not self.no_ghosting and reacquire_max_age_label > 0:
                 reacquire_matches = self._greedy_track_match(detections, class_tracks, ghost_track_ids, available_det_idxs, label)
+                if label == "table":
+                    dbg_matched_lost_table_tracks += len(reacquire_matches)
                 for _tid, _didx in reacquire_matches.items():
                     available_det_idxs.discard(_didx)
                 matches.update(reacquire_matches)
@@ -2733,6 +3057,14 @@ class VisionPipeline:
                 class_tracks[track_id]["id"] = track_id
                 if label == "table":
                     self._update_table_motion_state(class_tracks[track_id], old_bbox, bbox)
+                    class_tracks[track_id]["obb_poly_px"] = det.get("obb_poly_px")
+                    class_tracks[track_id]["obb_center_px"] = det.get("obb_center_px")
+                    class_tracks[track_id]["obb_yaw_rad"] = det.get("obb_yaw_rad")
+                    _confirm_count = int(class_tracks[track_id].get("table_confirm_count", 1))
+                    _confirm_count += 1
+                    class_tracks[track_id]["table_confirm_count"] = _confirm_count
+                    if _confirm_count >= self.table_new_confirm_frames:
+                        class_tracks[track_id]["table_confirmed"] = True
                 if label == "person":
                     _hist = class_tracks[track_id].get("person_center_hist")
                     if _hist is None:
@@ -2751,6 +3083,9 @@ class VisionPipeline:
                 miss_count = int(track.get("miss_count", 0)) + 1
                 track["miss_count"] = miss_count
                 track["age"] = int(track.get("age", 0)) + 1
+                if label == "table" and not bool(track.get("table_confirmed", True)) and miss_count > 0:
+                    stale_ids.append(tid)
+                    continue
                 if miss_count > ttl_frames:
                     stale_ids.append(tid)
             for tid in stale_ids:
@@ -2760,10 +3095,72 @@ class VisionPipeline:
             for det_idx in sorted(list(available_det_idxs)):
                 det = detections[det_idx]
                 score = float(det["score"])
-                if score < float(self.conf_create):
-                    continue
                 bbox = [int(v) for v in det["bbox_px"]]
                 ucx, ucy = self._bbox_center(bbox)
+
+                if label == "table":
+                    # Continuity-first mode: do not spawn a new table while recoverable lost IDs still exist.
+                    if self.table_protect_existing_tracks and dbg_recoverable_lost_table_track_count > 0:
+                        continue
+
+                    # Optional: suppress new table births close to recoverable lost table tracks.
+                    if self.table_recover_lost_tracks and self.table_birth_block_near_lost_dist > 0.0:
+                        suppress_near_lost = False
+                        for _lost_id in ghost_track_ids:
+                            _lost_track = class_tracks.get(_lost_id)
+                            if not _lost_track:
+                                continue
+                            _lost_miss_count = int(_lost_track.get("miss_count", 0))
+                            if _lost_miss_count <= 0 or _lost_miss_count > int(reacquire_max_age_label):
+                                continue
+                            if self.table_birth_block_near_lost_frames > 0 and _lost_miss_count > int(self.table_birth_block_near_lost_frames):
+                                continue
+                            _lost_bbox = [int(v) for v in _lost_track.get("bbox", [0, 0, 0, 0])]
+                            _lost_center = self._bbox_center(_lost_bbox)
+                            _lost_dist = self._center_dist((float(ucx), float(ucy)), _lost_center)
+                            if _lost_dist <= float(self.table_birth_block_near_lost_dist):
+                                suppress_near_lost = True
+                                break
+                        if suppress_near_lost:
+                            dbg_blocked_new_table_births_near_lost += 1
+                            continue
+
+                    if score < float(self.table_new_conf_create):
+                        continue
+                    bw = max(0, bbox[2] - bbox[0])
+                    bh = max(0, bbox[3] - bbox[1])
+                    if float(bw * bh) < float(self.table_new_min_bbox_area):
+                        continue
+                    if min(bw, bh) < int(self.table_new_min_bbox_minside):
+                        continue
+
+                    suppress_new_table = False
+                    for _existing_id, _existing in class_tracks.items():
+                        if int(_existing.get("miss_count", 0)) > 0:
+                            continue
+                        if not bool(_existing.get("table_confirmed", True)):
+                            continue
+                        _existing_bbox = [int(v) for v in _existing.get("bbox", [0, 0, 0, 0])]
+
+                        if self.table_new_suppress_iou > 0.0:
+                            _iou = self._bbox_iou(bbox, _existing_bbox)
+                            if _iou >= float(self.table_new_suppress_iou):
+                                suppress_new_table = True
+                                break
+
+                        if self.table_new_suppress_center_dist_px > 0.0:
+                            _existing_center = self._bbox_center(_existing_bbox)
+                            _dist = self._center_dist((float(ucx), float(ucy)), _existing_center)
+                            if _dist <= float(self.table_new_suppress_center_dist_px):
+                                suppress_new_table = True
+                                break
+
+                    if suppress_new_table:
+                        continue
+                else:
+                    if score < float(self.conf_create):
+                        continue
+
                 track_id = f"{label}_{self._next_id[label]:02d}"
                 self._next_id[label] += 1
                 class_tracks[track_id] = {
@@ -2785,6 +3182,12 @@ class VisionPipeline:
                     class_tracks[track_id]["table_center_shift_px"] = 0.0
                     class_tracks[track_id]["table_prev_iou"] = 1.0
                     class_tracks[track_id]["table_area_change"] = 0.0
+                    class_tracks[track_id]["obb_poly_px"] = det.get("obb_poly_px")
+                    class_tracks[track_id]["obb_center_px"] = det.get("obb_center_px")
+                    class_tracks[track_id]["obb_yaw_rad"] = det.get("obb_yaw_rad")
+                    class_tracks[track_id]["table_confirm_count"] = 1
+                    class_tracks[track_id]["table_confirmed"] = self.table_new_confirm_frames <= 1
+                    dbg_new_table_tracks_created += 1
                 if label == "person":
                     _hist = deque(maxlen=max(1, int(self.person_static_window)))
                     _hist.append((float(ucx), float(ucy)))
@@ -2797,17 +3200,83 @@ class VisionPipeline:
                 updated_bbox = [int(v) for v in track.get("bbox", [0, 0, 0, 0])]
                 center_smoothed = track.get("center_smoothed", self._bbox_center(updated_bbox))
                 prev_theta_track = track.get("prev_theta")
-                is_ghost = int(track.get("miss_count", 0)) > 0
+                _miss_count = int(track.get("miss_count", 0))
+                is_ghost = _miss_count > 0
                 score = float(track.get("score", 0.0))
 
                 # Keep ghost tracks only internally for short-term re-association.
                 if is_ghost and not self._emit_ghost_overlays:
-                    continue
+                    if (
+                        label == "table"
+                        and self.table_render_grace_frames > 0
+                        and bool(track.get("table_confirmed", True))
+                        and _miss_count <= int(self.table_render_grace_frames)
+                    ):
+                        # Table-only visual grace: reuse last final geometry directly for very short drop-outs.
+                        _last_geom = track.get("table_last_final_render_geom")
+                        _last_frame = int(track.get("table_last_final_render_frame_id", -1))
+                        _grace_age = frame_id - _last_frame if _last_frame >= 0 else None
+                        if (
+                            isinstance(_last_geom, dict)
+                            and _grace_age is not None
+                            and 0 <= int(_grace_age) <= int(self.table_render_grace_frames)
+                        ):
+                            _grace_bbox = [int(v) for v in _last_geom.get("bbox_px", updated_bbox)]
+                            _grace_center_raw = _last_geom.get(
+                                "center_px",
+                                [float(center_smoothed[0]), float(center_smoothed[1])],
+                            )
+                            _grace_center = (float(_grace_center_raw[0]), float(_grace_center_raw[1]))
+                            _grace_yaw_raw = _last_geom.get("yaw_rad")
+                            _grace_yaw = None if _grace_yaw_raw is None else float(_grace_yaw_raw)
+                            _grace_poly = _last_geom.get("poly_px")
+                            _grace_rect_angle = _last_geom.get("rect_angle")
+                            if _grace_rect_angle is None and _grace_yaw is not None:
+                                _grace_rect_angle = float(np.degrees(_grace_yaw))
 
-                if self.H is not None:
-                    cx_f, cy_f = apply_homography([center_smoothed[0], center_smoothed[1]], self.H)
-                else:
-                    cx_f, cy_f = float(center_smoothed[0]), float(center_smoothed[1])
+                            if self.H is not None:
+                                _cx_f, _cy_f = apply_homography([_grace_center[0], _grace_center[1]], self.H)
+                            else:
+                                _cx_f, _cy_f = _grace_center
+
+                            furniture_entities.append(
+                                DetectedEntity(
+                                    id=track_id,
+                                    kind="table",
+                                    pose=Pose2D(
+                                        x=float(_cx_f),
+                                        y=float(_cy_f),
+                                        theta=_grace_yaw,
+                                    ),
+                                    confidence=score,
+                                )
+                            )
+                            overlay_items.append({
+                                "id": track_id,
+                                "label": "table",
+                                "mask": None,
+                                "score": score,
+                                "ghost": False,
+                                "shape": {
+                                    "bbox_px": _grace_bbox,
+                                    "center_px": [float(_grace_center[0]), float(_grace_center[1])],
+                                    "poly_px": None if _grace_poly is None else [list(p) for p in _grace_poly],
+                                    "used_fallback": False,
+                                    "fallback_reason": "render_grace",
+                                    "motion_state": str(track.get("table_motion_state", "moving")),
+                                    "n_contours": 0,
+                                    "best_area": 0.0,
+                                    "rect_w": float(max(1, _grace_bbox[2] - _grace_bbox[0])),
+                                    "rect_h": float(max(1, _grace_bbox[3] - _grace_bbox[1])),
+                                    "rect_angle": _grace_rect_angle,
+                                    "yaw_rad": _grace_yaw,
+                                    "theta_rejected": False,
+                                    "roi_mask": None,
+                                },
+                            })
+                    continue
+                if label == "table" and not bool(track.get("table_confirmed", True)):
+                    continue
 
                 table_shape_extras: Dict = {}
                 table_yaw_rad = None
@@ -2815,48 +3284,82 @@ class VisionPipeline:
                     poly = None
                     theta_rejected = False
                     table_motion_state = str(track.get("table_motion_state", "moving"))
+                    table_obb_poly = track.get("obb_poly_px")
                     if not is_ghost:
-                        orient_dbg = self._extract_table_orientation_debug(frame_bgr, updated_bbox, frame_id=frame_id, track_id=track_id)
-                        poly = orient_dbg.get("poly")
-                        raw_theta = orient_dbg.get("yaw_rad")
-                        if raw_theta is not None:
-                            theta_now = _normalize_theta_half_pi(float(raw_theta))
-                            if prev_theta_track is None:
-                                table_yaw_rad = theta_now
-                            else:
-                                prev_theta_norm = _normalize_theta_half_pi(float(prev_theta_track))
-                                d_theta = _smallest_theta_diff(theta_now, prev_theta_norm)
-                                if abs(d_theta) > theta_gate_rad:
-                                    table_yaw_rad = prev_theta_norm
-                                    theta_rejected = True
+                        if table_obb_poly is not None and len(table_obb_poly) == 4:
+                            poly = np.asarray(table_obb_poly, dtype=np.int32)
+                            raw_theta = track.get("obb_yaw_rad")
+                            if raw_theta is not None:
+                                theta_now = _normalize_theta_half_pi(float(raw_theta))
+                                if prev_theta_track is None:
+                                    table_yaw_rad = theta_now
                                 else:
-                                    table_yaw_rad = _normalize_theta_half_pi((0.8 * prev_theta_norm) + (0.2 * theta_now))
-                        elif prev_theta_track is not None:
-                            table_yaw_rad = _normalize_theta_half_pi(float(prev_theta_track))
+                                    prev_theta_norm = _normalize_theta_half_pi(float(prev_theta_track))
+                                    d_theta = _smallest_theta_diff(theta_now, prev_theta_norm)
+                                    if abs(d_theta) > theta_gate_rad:
+                                        table_yaw_rad = prev_theta_norm
+                                        theta_rejected = True
+                                    else:
+                                        table_yaw_rad = _normalize_theta_half_pi((0.8 * prev_theta_norm) + (0.2 * theta_now))
+                            elif prev_theta_track is not None:
+                                table_yaw_rad = _normalize_theta_half_pi(float(prev_theta_track))
 
-                        if table_yaw_rad is not None:
-                            bx1, by1, bx2, by2 = [float(v) for v in updated_bbox]
-                            bw = max(1.0, bx2 - bx1)
-                            bh = max(1.0, by2 - by1)
-                            bcx = 0.5 * (bx1 + bx2)
-                            bcy = 0.5 * (by1 + by2)
-                            gated_rect = ((bcx, bcy), (bw, bh), float(np.degrees(table_yaw_rad)))
-                            poly = np.round(cv2.boxPoints(gated_rect)).astype(np.int32)
+                            table_shape_extras = {
+                                "poly_px": poly.tolist(),
+                                "used_fallback": False,
+                                "fallback_reason": "table_obb",
+                                "motion_state": table_motion_state,
+                                "n_contours": 0,
+                                "best_area": 0.0,
+                                "rect_w": float(max(1, updated_bbox[2] - updated_bbox[0])),
+                                "rect_h": float(max(1, updated_bbox[3] - updated_bbox[1])),
+                                "rect_angle": float(np.degrees(table_yaw_rad)) if table_yaw_rad is not None else 0.0,
+                                "yaw_rad": float(table_yaw_rad) if table_yaw_rad is not None else None,
+                                "theta_rejected": bool(theta_rejected),
+                                "roi_mask": None,
+                            }
+                        else:
+                            orient_dbg = self._extract_table_orientation_debug(frame_bgr, updated_bbox, frame_id=frame_id, track_id=track_id)
+                            poly = orient_dbg.get("poly")
+                            raw_theta = orient_dbg.get("yaw_rad")
+                            if raw_theta is not None:
+                                theta_now = _normalize_theta_half_pi(float(raw_theta))
+                                if prev_theta_track is None:
+                                    table_yaw_rad = theta_now
+                                else:
+                                    prev_theta_norm = _normalize_theta_half_pi(float(prev_theta_track))
+                                    d_theta = _smallest_theta_diff(theta_now, prev_theta_norm)
+                                    if abs(d_theta) > theta_gate_rad:
+                                        table_yaw_rad = prev_theta_norm
+                                        theta_rejected = True
+                                    else:
+                                        table_yaw_rad = _normalize_theta_half_pi((0.8 * prev_theta_norm) + (0.2 * theta_now))
+                            elif prev_theta_track is not None:
+                                table_yaw_rad = _normalize_theta_half_pi(float(prev_theta_track))
 
-                        table_shape_extras = {
-                            "poly_px": poly.tolist() if poly is not None else None,
-                            "used_fallback": poly is None,
-                            "fallback_reason": "" if poly is not None else "no_orientation",
-                            "motion_state": table_motion_state,
-                            "n_contours": int(orient_dbg.get("n_contours", 0)),
-                            "best_area": float(orient_dbg.get("best_area", 0.0)),
-                            "rect_w": float(orient_dbg.get("rect_w", 0.0)),
-                            "rect_h": float(orient_dbg.get("rect_h", 0.0)),
-                            "rect_angle": float(np.degrees(table_yaw_rad)) if table_yaw_rad is not None else float(orient_dbg.get("rect_angle", 0.0)),
-                            "yaw_rad": float(table_yaw_rad) if table_yaw_rad is not None else None,
-                            "theta_rejected": bool(theta_rejected),
-                            "roi_mask": orient_dbg.get("mask"),
-                        }
+                            if table_yaw_rad is not None:
+                                bx1, by1, bx2, by2 = [float(v) for v in updated_bbox]
+                                bw = max(1.0, bx2 - bx1)
+                                bh = max(1.0, by2 - by1)
+                                bcx = 0.5 * (bx1 + bx2)
+                                bcy = 0.5 * (by1 + by2)
+                                gated_rect = ((bcx, bcy), (bw, bh), float(np.degrees(table_yaw_rad)))
+                                poly = np.round(cv2.boxPoints(gated_rect)).astype(np.int32)
+
+                            table_shape_extras = {
+                                "poly_px": poly.tolist() if poly is not None else None,
+                                "used_fallback": poly is None,
+                                "fallback_reason": "" if poly is not None else "no_orientation",
+                                "motion_state": table_motion_state,
+                                "n_contours": int(orient_dbg.get("n_contours", 0)),
+                                "best_area": float(orient_dbg.get("best_area", 0.0)),
+                                "rect_w": float(orient_dbg.get("rect_w", 0.0)),
+                                "rect_h": float(orient_dbg.get("rect_h", 0.0)),
+                                "rect_angle": float(np.degrees(table_yaw_rad)) if table_yaw_rad is not None else float(orient_dbg.get("rect_angle", 0.0)),
+                                "yaw_rad": float(table_yaw_rad) if table_yaw_rad is not None else None,
+                                "theta_rejected": bool(theta_rejected),
+                                "roi_mask": orient_dbg.get("mask"),
+                            }
                     else:
                         if prev_theta_track is not None:
                             table_yaw_rad = _normalize_theta_half_pi(float(prev_theta_track))
@@ -2885,6 +3388,147 @@ class VisionPipeline:
                         }
 
                     track["prev_theta"] = float(table_yaw_rad) if table_yaw_rad is not None else prev_theta_track
+                    table_render_yaw = table_yaw_rad
+                    # Table-only render hysteresis: choose a stable final yaw for overlay/output.
+                    # This does not modify detection/tracking/matching state.
+                    if table_render_yaw is not None and self.table_angle_deadband_rad > 0.0:
+                        _curr_theta_norm = _normalize_theta_half_pi(float(table_render_yaw))
+                        _prev_render_theta = track.get("table_last_rendered_yaw_rad")
+                        if _prev_render_theta is not None:
+                            _prev_theta_norm = _normalize_theta_half_pi(float(_prev_render_theta))
+                            _delta_theta = _smallest_theta_diff(_curr_theta_norm, _prev_theta_norm)
+                            if abs(_delta_theta) < float(self.table_angle_deadband_rad):
+                                table_render_yaw = _prev_theta_norm
+                            else:
+                                table_render_yaw = _curr_theta_norm
+                        else:
+                            table_render_yaw = _curr_theta_norm
+
+                    if table_render_yaw is not None:
+                        track["table_last_rendered_yaw_rad"] = float(table_render_yaw)
+                        table_shape_extras["yaw_rad"] = float(table_render_yaw)
+                        table_shape_extras["rect_angle"] = float(np.degrees(table_render_yaw))
+
+                    # Table-only static hold: reuse previously accepted final table geometry as-is
+                    # while the table remains effectively static (visual stabilization only).
+                    if self.table_static_hold_enabled:
+                        _curr_bbox = [int(v) for v in updated_bbox]
+                        _curr_center = (float(center_smoothed[0]), float(center_smoothed[1]))
+                        _curr_poly = table_shape_extras.get("poly_px")
+                        _curr_yaw = table_render_yaw
+                        _curr_area = _table_shape_area_px(_curr_bbox, _curr_poly)
+
+                        _ref_geom = track.get("table_static_ref_geom")
+                        _hold_geom = track.get("table_static_hold_geom")
+                        _hold_active = bool(track.get("table_static_hold_active", False))
+                        _cand_count = int(track.get("table_static_candidate_count", 0))
+
+                        if _ref_geom is None:
+                            _ref_geom = {
+                                "bbox_px": list(_curr_bbox),
+                                "center_px": [float(_curr_center[0]), float(_curr_center[1])],
+                                "poly_px": None if _curr_poly is None else [list(p) for p in _curr_poly],
+                                "yaw_rad": None if _curr_yaw is None else float(_curr_yaw),
+                                "rect_angle": None if _curr_yaw is None else float(np.degrees(_curr_yaw)),
+                                "area_px": float(_curr_area),
+                            }
+                            track["table_static_ref_geom"] = _ref_geom
+
+                        def _geom_delta_ok(_a: Dict, _b: Dict) -> bool:
+                            _ac = _a.get("center_px", [0.0, 0.0])
+                            _bc = _b.get("center_px", [0.0, 0.0])
+                            _center_dist = self._center_dist((float(_ac[0]), float(_ac[1])), (float(_bc[0]), float(_bc[1])))
+
+                            _yaw_a = _a.get("yaw_rad")
+                            _yaw_b = _b.get("yaw_rad")
+                            if _yaw_a is None and _yaw_b is None:
+                                _angle_diff = 0.0
+                            elif _yaw_a is None or _yaw_b is None:
+                                _angle_diff = float("inf")
+                            else:
+                                _angle_diff = abs(_smallest_theta_diff(float(_yaw_a), float(_yaw_b)))
+
+                            _area_a = float(max(1e-6, float(_a.get("area_px", 1.0))))
+                            _area_b = float(max(1e-6, float(_b.get("area_px", 1.0))))
+                            _area_diff = abs(_area_a - _area_b) / max(_area_b, 1e-6)
+
+                            return (
+                                _center_dist < float(self.table_static_hold_center_px)
+                                and _angle_diff < float(self.table_static_hold_angle_rad)
+                                and _area_diff < float(self.table_static_hold_area_frac)
+                            )
+
+                        _curr_geom = {
+                            "bbox_px": list(_curr_bbox),
+                            "center_px": [float(_curr_center[0]), float(_curr_center[1])],
+                            "poly_px": None if _curr_poly is None else [list(p) for p in _curr_poly],
+                            "yaw_rad": None if _curr_yaw is None else float(_curr_yaw),
+                            "rect_angle": None if _curr_yaw is None else float(np.degrees(_curr_yaw)),
+                            "area_px": float(_curr_area),
+                        }
+
+                        if _hold_active and _hold_geom is not None:
+                            if _geom_delta_ok(_curr_geom, _hold_geom):
+                                # Keep held final geometry unchanged: no re-fit/reconstruction.
+                                updated_bbox = [int(v) for v in _hold_geom.get("bbox_px", _curr_bbox)]
+                                _hc = _hold_geom.get("center_px", [float(_curr_center[0]), float(_curr_center[1])])
+                                center_smoothed = (float(_hc[0]), float(_hc[1]))
+                                _hy = _hold_geom.get("yaw_rad")
+                                table_yaw_rad = None if _hy is None else float(_hy)
+                                _hpoly = _hold_geom.get("poly_px")
+                                table_shape_extras["poly_px"] = None if _hpoly is None else [list(p) for p in _hpoly]
+                                table_shape_extras["yaw_rad"] = table_yaw_rad
+                                table_shape_extras["rect_angle"] = _hold_geom.get("rect_angle")
+                            else:
+                                track["table_static_hold_active"] = False
+                                track["table_static_candidate_count"] = 0
+                                track["table_static_hold_geom"] = None
+                                track["table_static_ref_geom"] = _curr_geom
+                        else:
+                            if _geom_delta_ok(_curr_geom, _ref_geom):
+                                _cand_count += 1
+                                track["table_static_candidate_count"] = _cand_count
+                            else:
+                                track["table_static_candidate_count"] = 0
+                                track["table_static_ref_geom"] = _curr_geom
+
+                            if int(track.get("table_static_candidate_count", 0)) >= int(self.table_static_hold_frames):
+                                _base_geom = track.get("table_static_ref_geom", _curr_geom)
+                                track["table_static_hold_active"] = True
+                                track["table_static_hold_geom"] = {
+                                    "bbox_px": [int(v) for v in _base_geom.get("bbox_px", _curr_bbox)],
+                                    "center_px": [
+                                        float(_base_geom.get("center_px", [float(_curr_center[0]), float(_curr_center[1])])[0]),
+                                        float(_base_geom.get("center_px", [float(_curr_center[0]), float(_curr_center[1])])[1]),
+                                    ],
+                                    "poly_px": None if _base_geom.get("poly_px") is None else [list(p) for p in _base_geom.get("poly_px")],
+                                    "yaw_rad": _base_geom.get("yaw_rad"),
+                                    "rect_angle": _base_geom.get("rect_angle"),
+                                    "area_px": float(_base_geom.get("area_px", _curr_area)),
+                                }
+                                _hold_geom = track["table_static_hold_geom"]
+                                updated_bbox = [int(v) for v in _hold_geom.get("bbox_px", _curr_bbox)]
+                                _hc = _hold_geom.get("center_px", [float(_curr_center[0]), float(_curr_center[1])])
+                                center_smoothed = (float(_hc[0]), float(_hc[1]))
+                                _hy = _hold_geom.get("yaw_rad")
+                                table_yaw_rad = None if _hy is None else float(_hy)
+                                _hpoly = _hold_geom.get("poly_px")
+                                table_shape_extras["poly_px"] = None if _hpoly is None else [list(p) for p in _hpoly]
+                                table_shape_extras["yaw_rad"] = table_yaw_rad
+                                table_shape_extras["rect_angle"] = _hold_geom.get("rect_angle")
+                    else:
+                        track["table_static_hold_active"] = False
+                        track["table_static_candidate_count"] = 0
+                        track["table_static_hold_geom"] = None
+                        track["table_static_ref_geom"] = None
+
+                    if table_yaw_rad is not None:
+                        track["table_last_rendered_yaw_rad"] = float(table_yaw_rad)
+
+                if self.H is not None:
+                    cx_f, cy_f = apply_homography([center_smoothed[0], center_smoothed[1]], self.H)
+                else:
+                    cx_f, cy_f = float(center_smoothed[0]), float(center_smoothed[1])
 
                 pose = Pose2D(
                     x=float(cx_f),
@@ -2906,6 +3550,19 @@ class VisionPipeline:
                     people_entities.append(entity)
                 else:
                     furniture_entities.append(entity)
+
+                if label == "table" and not is_ghost:
+                    # Persist final rendered table geometry for optional short drop-out grace rendering.
+                    track["table_last_final_render_geom"] = {
+                        "bbox_px": [int(v) for v in updated_bbox],
+                        "center_px": [float(center_smoothed[0]), float(center_smoothed[1])],
+                        "poly_px": None
+                        if table_shape_extras.get("poly_px") is None
+                        else [list(p) for p in table_shape_extras.get("poly_px")],
+                        "yaw_rad": table_shape_extras.get("yaw_rad"),
+                        "rect_angle": table_shape_extras.get("rect_angle"),
+                    }
+                    track["table_last_final_render_frame_id"] = int(frame_id)
 
                 overlay_items.append({
                     "id": track_id,
@@ -2991,6 +3648,68 @@ class VisionPipeline:
 
         if self.debug_dir and rejected_table_overlay_items:
             overlay_items.extend(rejected_table_overlay_items)
+
+        if self.table_obb_debug_raw_overlay and raw_table_obb_detections:
+            for _idx, _det in enumerate(raw_table_obb_detections):
+                _bbox = [int(v) for v in _det.get("bbox_px", [0, 0, 0, 0])]
+                _poly = _det.get("obb_poly_px")
+                _center = _det.get("obb_center_px")
+                if _center is None and len(_bbox) == 4:
+                    _center = [0.5 * float(_bbox[0] + _bbox[2]), 0.5 * float(_bbox[1] + _bbox[3])]
+                overlay_items.append({
+                    "id": f"table_obb_raw_{_idx:03d}",
+                    "label": "table_obb_raw",
+                    "mask": None,
+                    "score": float(_det.get("score", 0.0)),
+                    "ghost": False,
+                    "shape": {
+                        "bbox_px": _bbox,
+                        "center_px": _center,
+                        "poly_px": _poly,
+                        "yaw_rad": _det.get("obb_yaw_rad"),
+                    },
+                })
+
+        if self.table_obb_debug_jsonl and self._table_obb_detector is not None:
+            _final_tables = []
+            for _item in overlay_items:
+                if _item.get("label") != "table":
+                    continue
+                _shape = _item.get("shape", {})
+                _final_tables.append({
+                    "id": _item.get("id"),
+                    "score": float(_item.get("score", 0.0)),
+                    "bbox_px": _shape.get("bbox_px"),
+                    "center_px": _shape.get("center_px"),
+                    "poly_px": _shape.get("poly_px"),
+                    "motion_state": _shape.get("motion_state"),
+                    "fallback_reason": _shape.get("fallback_reason"),
+                })
+            _raw_tables = []
+            for _det in raw_table_obb_detections:
+                _raw_tables.append({
+                    "score": float(_det.get("score", 0.0)),
+                    "bbox_px": _det.get("bbox_px"),
+                    "center_px": _det.get("obb_center_px"),
+                    "poly_px": _det.get("obb_poly_px"),
+                    "yaw_rad": _det.get("obb_yaw_rad"),
+                })
+            _dbg_payload = {
+                "frame_id": int(frame_id),
+                "timestamp": timestamp_iso,
+                "raw_table_obb": _raw_tables,
+                "final_table_tracks": _final_tables,
+                "raw_table_obb_count": int(dbg_raw_table_obb_count),
+                "matched_active_table_tracks": int(dbg_matched_active_table_tracks),
+                "matched_lost_table_tracks": int(dbg_matched_lost_table_tracks),
+                "new_table_tracks_created": int(dbg_new_table_tracks_created),
+                "blocked_new_table_births_near_lost": int(dbg_blocked_new_table_births_near_lost),
+                "recoverable_lost_table_track_count": int(dbg_recoverable_lost_table_track_count),
+            }
+            _dbg_path = Path(self.table_obb_debug_jsonl)
+            _dbg_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(_dbg_path, "a", encoding="utf-8") as _dbg_f:
+                _dbg_f.write(json.dumps(_dbg_payload) + "\n")
 
         self._dbg_frame_id = frame_id
 
@@ -3162,6 +3881,7 @@ class VisionPipeline:
                 if frame is None:
                     print(f"Warning: Could not load {img_path}, skipping.")
                     continue
+                frame = self._apply_input_crop(frame)
                 
                 # Calculate timestamp
                 timestamp_iso = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", 

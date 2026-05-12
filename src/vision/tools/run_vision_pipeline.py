@@ -345,6 +345,11 @@ def main():
     parser.add_argument("--video", help="Input video file path.")
     parser.add_argument("--camera", type=int, help="Camera device index.")
     parser.add_argument("--image-dir", help="Input directory with images (*.jpg, *.png).")
+    parser.add_argument("--camera-rotate", type=int, choices=[0, 90, 180, 270], default=0, help="Optional camera frame rotation in degrees (default: 0).")
+    parser.add_argument("--camera-width", type=int, default=None, help="Optional requested camera capture width in pixels.")
+    parser.add_argument("--camera-height", type=int, default=None, help="Optional requested camera capture height in pixels.")
+    parser.add_argument("--save-live-frame", default=None, help="Optional output PNG path: save first live frame after rotation, before crop/detection.")
+    parser.add_argument("--exit-after-saving-live-frame", action="store_true", help="Exit camera loop immediately after saving --save-live-frame.")
     
     # Output
     parser.add_argument("--out", required=True, help="Output JSONL file path.")
@@ -388,6 +393,13 @@ def main():
     parser.add_argument("--yolo-model", default="runs/detect/train/weights/best_fixed.pt", help="YOLO weights path (default: runs/detect/train/weights/best_fixed.pt).")
     parser.add_argument("--yolo-conf", type=float, default=0.25, help="YOLO confidence threshold (default: 0.25).")
     parser.add_argument("--yolo-iou", type=float, default=0.45, help="YOLO IoU threshold for NMS (default: 0.45).")
+    parser.add_argument("--table-obb-model", default=None, help="Optional table-only OBB weights path for hybrid mode (table from OBB, chair/person from YOLO).")
+    parser.add_argument("--table-obb-conf", type=float, default=None, help="Confidence threshold for --table-obb-model (default: --yolo-conf).")
+    parser.add_argument("--table-obb-iou", type=float, default=None, help="IoU threshold for --table-obb-model (default: --yolo-iou).")
+    parser.add_argument("--table-obb-max-det", type=int, default=0, help="Optional cap for raw table OBB detections before merge/tracking (0 = disabled).")
+    parser.add_argument("--table-obb-raw-min-conf", type=float, default=None, help="Optional minimum confidence applied only to raw table OBB detections before merge/tracking.")
+    parser.add_argument("--table-obb-debug-raw-overlay", action="store_true", help="Show raw table OBB detections as debug overlay items.")
+    parser.add_argument("--table-obb-debug-jsonl", default=None, help="Optional JSONL path to write per-frame raw table OBB detections vs final table tracks.")
     parser.add_argument("--yolo-max-det", type=int, default=80, help="Max YOLO detections kept per frame (default: 80).")
     parser.add_argument("--track-ttl-frames", type=int, default=15, help="Keep unmatched tracks alive for this many frames (default: 15).")
     parser.add_argument("--conf-create", type=float, default=None, help="Min detection confidence to create a NEW track (default: --yolo-conf).")
@@ -428,6 +440,23 @@ def main():
     parser.add_argument("--table-stable-frames", type=int, default=4, help="Consecutive non-moving frames required before table is stable (default: 4).")
     parser.add_argument("--table-min-bbox-area", type=int, default=30000, help="Reject table detections with bbox area < this px\u00b2 (default: 30000).")
     parser.add_argument("--table-min-bbox-minside", type=int, default=120, help="Reject table detections with min(w,h) < this px (default: 120).")
+    parser.add_argument("--table-new-conf-create", type=float, default=None, help="Optional stricter confidence to create NEW table tracks (default: --conf-create).")
+    parser.add_argument("--table-new-min-bbox-area", type=int, default=None, help="Optional stricter min bbox area to create NEW table tracks (default: --table-min-bbox-area).")
+    parser.add_argument("--table-new-min-bbox-minside", type=int, default=None, help="Optional stricter min bbox short-side to create NEW table tracks (default: --table-min-bbox-minside).")
+    parser.add_argument("--table-new-confirm-frames", type=int, default=1, help="Frames required before a NEW table track is shown (1 = disabled).")
+    parser.add_argument("--table-new-suppress-iou", type=float, default=0.0, help="Suppress NEW table tracks if IoU with existing confirmed table >= value (0 = disabled).")
+    parser.add_argument("--table-new-suppress-center-dist-px", type=float, default=0.0, help="Suppress NEW table tracks if center distance to existing confirmed table <= px (0 = disabled).")
+    parser.add_argument("--table-protect-existing-tracks", action="store_true", help="Prefer continuity for tables: suppress new table births while recoverable lost table tracks exist.")
+    parser.add_argument("--table-recover-lost-tracks", action="store_true", help="Enable table-specific lost-track recovery before new table birth.")
+    parser.add_argument("--table-lost-track-ttl", type=int, default=15, help="Recoverable miss-count TTL for lost table tracks when recovery mode is enabled (default: 15).")
+    parser.add_argument("--table-birth-block-near-lost-dist", type=float, default=0.0, help="Suppress NEW table birth when detection center is within this px distance to a recoverable lost table track (0 = disabled).")
+    parser.add_argument("--table-birth-block-near-lost-frames", type=int, default=0, help="Optional max miss_count age for near-lost birth suppression (0 = use all recoverable lost tracks).")
+    parser.add_argument("--table-angle-deadband-deg", type=float, default=0.0, help="Table-only angle hysteresis deadband in degrees for final render angle (0 = disabled).")
+    parser.add_argument("--table-render-grace-frames", type=int, default=0, help="Render last final table geometry for this many missing frames (0 = disabled).")
+    parser.add_argument("--table-static-hold-frames", type=int, default=0, help="Consecutive static candidate frames before table hold is activated (0 = disabled).")
+    parser.add_argument("--table-static-hold-center-px", type=float, default=0.0, help="Static hold threshold for center delta in px (0 = disabled).")
+    parser.add_argument("--table-static-hold-angle-deg", type=float, default=0.0, help="Static hold threshold for angle delta in degrees (0 = disabled).")
+    parser.add_argument("--table-static-hold-area-frac", type=float, default=0.0, help="Static hold threshold for relative area delta (0 = disabled).")
 
     # Dark proposer options
     parser.add_argument("--dark-fixed-thresh", type=int, default=None, help="HSV V-channel threshold for dark objects (0-255).")
@@ -451,6 +480,12 @@ def main():
     parser.add_argument("--no-display", action="store_true", help="Disable live display (camera only).")
     parser.add_argument("--projector-display", action="store_true", help="Show fullscreen projector overlay window (camera mode).")
     parser.add_argument("--projector-monitor", type=int, default=1, help="Monitor index for projector window (0=primary, 1=second).")
+    parser.add_argument("--show-table-ids", action="store_true", help="Show table track IDs near final table overlays.")
+    parser.add_argument("--display-rotate", type=int, choices=[0, 90, 180, 270], default=0, help="Rotate final display/projector feed (0/90/180/270), rendering only.")
+    parser.add_argument("--crop-x", type=int, default=None, help="Optional fixed input crop X offset in pixels.")
+    parser.add_argument("--crop-y", type=int, default=None, help="Optional fixed input crop Y offset in pixels.")
+    parser.add_argument("--crop-w", type=int, default=None, help="Optional fixed input crop width in pixels.")
+    parser.add_argument("--crop-h", type=int, default=None, help="Optional fixed input crop height in pixels.")
     
     args = parser.parse_args()
     
@@ -469,13 +504,55 @@ def main():
     if args.auto_init_boxes and args.image_dir is None:
         parser.error("--auto-init-boxes is only supported with --image-dir.")
     if args.auto_proposals and args.image_dir is None:
-        parser.error("--auto-proposals is only supported with --image-dir.")
+        # Allow live camera for YOLO-only proposal mode.
+        if not (args.camera is not None and args.auto_proposals == "yolo"):
+            parser.error("--auto-proposals is only supported with --image-dir (or --camera when mode is yolo).")
+    if args.table_obb_model and args.auto_proposals != "yolo":
+        parser.error("--table-obb-model is only supported with --auto-proposals yolo.")
     if args.auto_proposals and (args.boxes_init or args.init_boxes or args.auto_init_boxes):
         parser.error("--auto-proposals cannot be used with manual box initialization (--boxes-init, --init-boxes, --auto-init-boxes).")
     if args.overlay_out_dir and args.image_dir is None:
         parser.error("--overlay-out-dir is only supported with --image-dir.")
     if args.flush_every < 1:
         parser.error("--flush-every must be >= 1.")
+    if args.table_obb_max_det is not None and int(args.table_obb_max_det) < 0:
+        parser.error("--table-obb-max-det must be >= 0.")
+    if args.table_obb_raw_min_conf is not None and not (0.0 <= float(args.table_obb_raw_min_conf) <= 1.0):
+        parser.error("--table-obb-raw-min-conf must be in [0, 1].")
+    if int(args.table_lost_track_ttl) < 1:
+        parser.error("--table-lost-track-ttl must be >= 1.")
+    if float(args.table_birth_block_near_lost_dist) < 0.0:
+        parser.error("--table-birth-block-near-lost-dist must be >= 0.")
+    if int(args.table_birth_block_near_lost_frames) < 0:
+        parser.error("--table-birth-block-near-lost-frames must be >= 0.")
+    if float(args.table_angle_deadband_deg) < 0.0:
+        parser.error("--table-angle-deadband-deg must be >= 0.")
+    if int(args.table_render_grace_frames) < 0:
+        parser.error("--table-render-grace-frames must be >= 0.")
+    if int(args.table_static_hold_frames) < 0:
+        parser.error("--table-static-hold-frames must be >= 0.")
+    if float(args.table_static_hold_center_px) < 0.0:
+        parser.error("--table-static-hold-center-px must be >= 0.")
+    if float(args.table_static_hold_angle_deg) < 0.0:
+        parser.error("--table-static-hold-angle-deg must be >= 0.")
+    if float(args.table_static_hold_area_frac) < 0.0:
+        parser.error("--table-static-hold-area-frac must be >= 0.")
+    crop_vals = [args.crop_x, args.crop_y, args.crop_w, args.crop_h]
+    crop_set_count = sum(v is not None for v in crop_vals)
+    if crop_set_count not in (0, 4):
+        parser.error("Set either all crop params (--crop-x --crop-y --crop-w --crop-h) or none.")
+    if args.crop_w is not None and int(args.crop_w) <= 0:
+        parser.error("--crop-w must be > 0.")
+    if args.crop_h is not None and int(args.crop_h) <= 0:
+        parser.error("--crop-h must be > 0.")
+    if args.camera_width is not None and int(args.camera_width) <= 0:
+        parser.error("--camera-width must be > 0.")
+    if args.camera_height is not None and int(args.camera_height) <= 0:
+        parser.error("--camera-height must be > 0.")
+    if args.save_live_frame and args.camera is None:
+        parser.error("--save-live-frame is only supported with --camera.")
+    if args.exit_after_saving_live_frame and not args.save_live_frame:
+        parser.error("--exit-after-saving-live-frame requires --save-live-frame.")
     
     # Load homography if provided
     H = None
@@ -501,6 +578,63 @@ def main():
         print(f"Mode: YOLO proposals")
         print(f"YOLO model: {args.yolo_model}")
         print(f"YOLO conf: {args.yolo_conf}  iou: {args.yolo_iou}  max_det: {args.yolo_max_det}")
+        if args.table_obb_model:
+            table_obb_conf = args.table_obb_conf if args.table_obb_conf is not None else args.yolo_conf
+            table_obb_iou = args.table_obb_iou if args.table_obb_iou is not None else args.yolo_iou
+            print(
+                f"Table OBB hybrid: model={args.table_obb_model} "
+                f"conf={table_obb_conf} iou={table_obb_iou}"
+            )
+            if args.table_obb_max_det and int(args.table_obb_max_det) > 0:
+                print(f"Table OBB raw filter: top_k={int(args.table_obb_max_det)}")
+            if args.table_obb_raw_min_conf is not None:
+                print(f"Table OBB raw filter: min_conf>={float(args.table_obb_raw_min_conf)}")
+            if args.table_obb_debug_raw_overlay or args.table_obb_debug_jsonl:
+                print(
+                    f"Table OBB debug: raw_overlay={args.table_obb_debug_raw_overlay} "
+                    f"jsonl={args.table_obb_debug_jsonl}"
+                )
+            table_new_conf_create = args.table_new_conf_create if args.table_new_conf_create is not None else args.conf_create
+            table_new_min_bbox_area = args.table_new_min_bbox_area if args.table_new_min_bbox_area is not None else args.table_min_bbox_area
+            table_new_min_bbox_minside = args.table_new_min_bbox_minside if args.table_new_min_bbox_minside is not None else args.table_min_bbox_minside
+            print(
+                f"Table anti-phantom: new_conf>={table_new_conf_create} "
+                f"new_min_area={table_new_min_bbox_area} new_min_minside={table_new_min_bbox_minside} "
+                f"confirm_frames={args.table_new_confirm_frames} "
+                f"suppress_iou>={args.table_new_suppress_iou} "
+                f"suppress_center_dist<={args.table_new_suppress_center_dist_px}px"
+            )
+            if args.table_protect_existing_tracks or args.table_recover_lost_tracks:
+                print(
+                    f"Table continuity: protect_existing={args.table_protect_existing_tracks} "
+                    f"recover_lost={args.table_recover_lost_tracks} "
+                    f"lost_ttl={args.table_lost_track_ttl}"
+                )
+            if args.table_recover_lost_tracks and float(args.table_birth_block_near_lost_dist) > 0.0:
+                print(
+                    f"Table birth suppression near lost: dist<={float(args.table_birth_block_near_lost_dist)}px "
+                    f"lost_age<={int(args.table_birth_block_near_lost_frames) if int(args.table_birth_block_near_lost_frames) > 0 else 'recoverable_ttl'}"
+                )
+            if float(args.table_angle_deadband_deg) > 0.0:
+                print(
+                    f"Table angle hysteresis: deadband={float(args.table_angle_deadband_deg)}deg"
+                )
+            if int(args.table_render_grace_frames) > 0:
+                print(
+                    f"Table render grace: frames={int(args.table_render_grace_frames)}"
+                )
+            if (
+                int(args.table_static_hold_frames) > 0
+                and float(args.table_static_hold_center_px) > 0.0
+                and float(args.table_static_hold_angle_deg) > 0.0
+                and float(args.table_static_hold_area_frac) > 0.0
+            ):
+                print(
+                    f"Table static hold: frames>={int(args.table_static_hold_frames)} "
+                    f"center<{float(args.table_static_hold_center_px)}px "
+                    f"angle<{float(args.table_static_hold_angle_deg)}deg "
+                    f"area<{float(args.table_static_hold_area_frac)}"
+                )
         print(
             f"Tracking: ttl={args.track_ttl_frames} conf_create={args.conf_create} conf_keep={args.conf_keep} "
             f"reacquire_age={args.reacquire_max_age} reacquire_dist={args.reacquire_max_dist} reacquire_iou={args.reacquire_min_iou} "
@@ -531,6 +665,23 @@ def main():
         print(f"SAM2.1 Config: {args.sam_config}")
         print(f"SAM2.1 Checkpoint: {args.sam_checkpoint}")
     print(f"Device: {device}")
+    if args.camera is not None:
+        print(
+            f"Camera input: index={args.camera} req_width={args.camera_width} "
+            f"req_height={args.camera_height} camera_rotate={args.camera_rotate} "
+            f"display_rotate={args.display_rotate}"
+        )
+    if args.show_table_ids:
+        print("Overlay debug: show_table_ids=True")
+        if args.save_live_frame:
+            print(
+                f"Live frame capture: save_path={args.save_live_frame} "
+                f"exit_after_save={args.exit_after_saving_live_frame}"
+            )
+    if crop_set_count == 4:
+        print(f"Input crop: enabled x={args.crop_x} y={args.crop_y} w={args.crop_w} h={args.crop_h}")
+    else:
+        print("Input crop: disabled")
     print(f"Table area filter: [{args.table_min_area}, {args.table_max_area}] px")
     print(f"Chair area filter: [{args.chair_min_area}, {args.chair_max_area}] px")
     print(f"Output: {args.out}")
@@ -549,6 +700,13 @@ def main():
         yolo_model=args.yolo_model,
         yolo_conf=args.yolo_conf,
         yolo_iou=args.yolo_iou,
+        table_obb_model=args.table_obb_model,
+        table_obb_conf=args.table_obb_conf,
+        table_obb_iou=args.table_obb_iou,
+        table_obb_max_det=args.table_obb_max_det,
+        table_obb_raw_min_conf=args.table_obb_raw_min_conf,
+        table_obb_debug_raw_overlay=args.table_obb_debug_raw_overlay,
+        table_obb_debug_jsonl=args.table_obb_debug_jsonl,
         yolo_max_det=args.yolo_max_det,
         track_ttl_frames=args.track_ttl_frames,
         conf_create=args.conf_create,
@@ -588,6 +746,34 @@ def main():
         table_stable_frames=args.table_stable_frames,
         table_min_bbox_area=args.table_min_bbox_area,
         table_min_bbox_minside=args.table_min_bbox_minside,
+        table_new_conf_create=args.table_new_conf_create,
+        table_new_min_bbox_area=args.table_new_min_bbox_area,
+        table_new_min_bbox_minside=args.table_new_min_bbox_minside,
+        table_new_confirm_frames=args.table_new_confirm_frames,
+        table_new_suppress_iou=args.table_new_suppress_iou,
+        table_new_suppress_center_dist_px=args.table_new_suppress_center_dist_px,
+        table_protect_existing_tracks=args.table_protect_existing_tracks,
+        table_recover_lost_tracks=args.table_recover_lost_tracks,
+        table_lost_track_ttl=args.table_lost_track_ttl,
+        table_birth_block_near_lost_dist=args.table_birth_block_near_lost_dist,
+        table_birth_block_near_lost_frames=args.table_birth_block_near_lost_frames,
+        table_angle_deadband_deg=args.table_angle_deadband_deg,
+        table_render_grace_frames=args.table_render_grace_frames,
+        table_static_hold_frames=args.table_static_hold_frames,
+        table_static_hold_center_px=args.table_static_hold_center_px,
+        table_static_hold_angle_deg=args.table_static_hold_angle_deg,
+        table_static_hold_area_frac=args.table_static_hold_area_frac,
+        crop_x=args.crop_x,
+        crop_y=args.crop_y,
+        crop_w=args.crop_w,
+        crop_h=args.crop_h,
+        camera_rotate=args.camera_rotate,
+        display_rotate=args.display_rotate,
+        camera_width=args.camera_width,
+        camera_height=args.camera_height,
+        save_live_frame_path=args.save_live_frame,
+        exit_after_saving_live_frame=args.exit_after_saving_live_frame,
+        show_table_ids=args.show_table_ids,
     )
     
     # Process input
