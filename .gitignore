@@ -1,5 +1,6 @@
 # Python virtual environments
 .venv/
+.venv_*
 venv/
 env/
 
@@ -25,30 +26,58 @@ htmlcov/
 # OS/editor files
 .DS_Store
 Thumbs.db
-.vscode/
-!.vscode/extensions.json
-!.vscode/settings.json
 
 # Project runtime data
 logs/
 *.log
 data/sessions/
 data/exports/
-
-# Do NOT ignore source, configs, tests, README.md, pyproject.toml, or example contracts
-# (Handled by not listing them above)
-# Python
-__pycache__/
-*.pyc
-.venv/
-
-# Data / outputs
-data/
+data/aisi/out/
+data/vision/aisi_snapshot_test/
 out_*/
+temp/
+tmp/
 
 # Model weights / checkpoints
 checkpoints/
 *.pt
 
-# Local configs (falls nur lokal)
+# Archives and temp files
+*.zip
+*.tar.gz
+*.tar
+*.rar
+
+# Local environment files
+.env
+.env.local
+
+# Local configs
 configs/vision.yaml
+
+# IDE / Editor (but keep extension configs if checked in)
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# Build outputs
+runs/
+
+# additional virtual env variants
+.venv*/
+
+# local generated vision data
+data/vision/**/*.jsonl
+data/vision/**/overlay*/
+data/vision/**/overlay_*/
+data/vision/**/*overlay*
+
+# regression outputs
+data/aisi/regression/
+
+# accidental local junk
+asdfasdf
+tash push -m wip local changes before yolo proposer integration
