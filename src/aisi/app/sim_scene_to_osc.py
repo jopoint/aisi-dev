@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -19,10 +20,20 @@ except ImportError:
     print("Bitte installiere python-osc mit: pip install python-osc")
     raise SystemExit(1)
 
+try:
+    import msvcrt
+except ImportError:
+    msvcrt = None
+
 
 DEFAULT_OSC_HOST = "127.0.0.1"
 DEFAULT_OSC_PORT = 9000
 DEFAULT_INTERVAL_SECONDS = 0.05
+DEBUG_INTERVAL_SECONDS = 5.0
+DEFAULT_LAYOUT_MODE = "groupwork"
+
+current_layout_mode = DEFAULT_LAYOUT_MODE
+stop_event = threading.Event()
 
 GROUPWORK_TARGETS = [
     {"x_cm": 150.0, "y_cm": 160.0, "rotation_deg": 0.0},
@@ -30,6 +41,26 @@ GROUPWORK_TARGETS = [
     {"x_cm": 150.0, "y_cm": 340.0, "rotation_deg": 0.0},
     {"x_cm": 350.0, "y_cm": 340.0, "rotation_deg": 0.0},
 ]
+
+INPUT_TARGETS = [
+    {"x_cm": 140.0, "y_cm": 150.0, "rotation_deg": 0.0},
+    {"x_cm": 360.0, "y_cm": 150.0, "rotation_deg": 0.0},
+    {"x_cm": 140.0, "y_cm": 260.0, "rotation_deg": 0.0},
+    {"x_cm": 360.0, "y_cm": 260.0, "rotation_deg": 0.0},
+]
+
+DISCUSSION_TARGETS = [
+    {"x_cm": 160.0, "y_cm": 180.0, "rotation_deg": 35.0},
+    {"x_cm": 340.0, "y_cm": 180.0, "rotation_deg": -35.0},
+    {"x_cm": 160.0, "y_cm": 330.0, "rotation_deg": -35.0},
+    {"x_cm": 340.0, "y_cm": 330.0, "rotation_deg": 35.0},
+]
+
+LAYOUT_MODES = {
+    "input": INPUT_TARGETS,
+    "groupwork": GROUPWORK_TARGETS,
+    "discussion": DISCUSSION_TARGETS,
+}
 
 # TouchDesigner uses inverted Y coordinates, so rotation is inverted for visual consistency.
 
@@ -80,7 +111,25 @@ def load_scene(scene_path: Path) -> dict[str, Any]:
         return json.load(handle)
 
 
-def send_tables(client: SimpleUDPClient, tables: list[dict[str, Any]]) -> list[str]:
+def get_target_for_index(index: int, source_table: dict[str, Any], layout_mode: str) -> tuple[float, float, float]:
+    """Return the target pose for a table in the selected layout mode."""
+    targets = LAYOUT_MODES.get(layout_mode, GROUPWORK_TARGETS)
+    if index < len(targets):
+        target = targets[index]
+        return (
+            float(target["x_cm"]),
+            float(target["y_cm"]),
+            float(target["rotation_deg"]),
+        )
+
+    return (
+        float(source_table.get("x_cm", 0.0)),
+        float(source_table.get("y_cm", 0.0)),
+        float(source_table.get("rotation_deg", 0.0)),
+    )
+
+
+def send_tables(client: SimpleUDPClient, tables: list[dict[str, Any]], layout_mode: str) -> list[str]:
     """Send all tables via OSC and return short debug summaries."""
     summaries: list[str] = []
     for index, table in enumerate(tables):
@@ -91,14 +140,7 @@ def send_tables(client: SimpleUDPClient, tables: list[dict[str, Any]]) -> list[s
         width_cm = float(table.get("width_cm", 0.0))
         height_cm = float(table.get("height_cm", 0.0))
 
-        if index < len(GROUPWORK_TARGETS):
-            target_x = float(GROUPWORK_TARGETS[index]["x_cm"])
-            target_y = float(GROUPWORK_TARGETS[index]["y_cm"])
-            target_rot = float(GROUPWORK_TARGETS[index]["rotation_deg"])
-        else:
-            target_x = source_x
-            target_y = source_y
-            target_rot = source_rot
+        target_x, target_y, target_rot = get_target_for_index(index, table, layout_mode)
         td_target_rot = -target_rot
 
         client.send_message(f"/table/{index}/source_x", source_x)
@@ -127,6 +169,51 @@ def print_startup(args: argparse.Namespace, scene_path: Path) -> None:
     print(f"OSC-Ziel: {args.host}:{args.port}")
     print(f"Scene-Datei: {scene_path}")
     print("Lese live Szene und sende Tabellen per OSC. Mit STRG+C beenden.")
+    print(f"Layout mode: {DEFAULT_LAYOUT_MODE}")
+    print("Controls: 1=input, 2=groupwork, 3=discussion, q=quit")
+
+
+def print_layout_options() -> None:
+    """Print the available layout mode options."""
+    print("Controls: 1=input, 2=groupwork, 3=discussion, q=quit")
+
+
+def set_layout_mode(mode: str, state_lock: threading.Lock, layout_state: dict[str, str]) -> None:
+    """Set the current layout mode in a tiny shared state object."""
+    global current_layout_mode
+    with state_lock:
+        current_layout_mode = mode
+        layout_state["mode"] = mode
+    print(f">>> Layout mode changed to: {mode}")
+
+
+def input_thread(layout_state: dict[str, str], state_lock: threading.Lock) -> None:
+    """Read layout mode changes from terminal input without blocking OSC sending."""
+    print_layout_options()
+    while True:
+        if msvcrt is None:
+            return
+
+        if not msvcrt.kbhit():
+            time.sleep(0.05)
+            continue
+
+        key = msvcrt.getwch()
+        if key in ("\r", "\n", " ", "\t"):
+            continue
+
+        if key == "1":
+            set_layout_mode("input", state_lock, layout_state)
+        elif key == "2":
+            set_layout_mode("groupwork", state_lock, layout_state)
+        elif key == "3":
+            set_layout_mode("discussion", state_lock, layout_state)
+        elif key.lower() == "q":
+            print("Beendet.")
+            stop_event.set()
+            return
+        else:
+            print_layout_options()
 
 
 def main() -> None:
@@ -134,14 +221,24 @@ def main() -> None:
     args = parse_args()
     scene_path = Path(args.scene)
     client = SimpleUDPClient(args.host, args.port)
+    layout_state = {"mode": DEFAULT_LAYOUT_MODE}
+    state_lock = threading.Lock()
 
     print_startup(args, scene_path)
 
+    thread = threading.Thread(
+        target=input_thread,
+        args=(layout_state, state_lock),
+        daemon=True,
+    )
+    thread.start()
+
     last_missing_notice = 0.0
     last_bad_json_notice = 0.0
+    last_debug_print = 0.0
 
     try:
-        while True:
+        while not stop_event.is_set():
             if not scene_path.exists():
                 now = time.monotonic()
                 if now - last_missing_notice >= 2.0:
@@ -171,9 +268,14 @@ def main() -> None:
             if not isinstance(tables, list):
                 tables = []
 
-            summaries = send_tables(client, tables)
-            if summaries:
-                print(f"sent {len(summaries)} tables | " + " | ".join(summaries))
+            with state_lock:
+                layout_mode = current_layout_mode
+
+            summaries = send_tables(client, tables, layout_mode)
+            now = time.monotonic()
+            if summaries and now - last_debug_print >= DEBUG_INTERVAL_SECONDS:
+                print(f"mode={layout_mode} | sent {len(summaries)} tables | " + summaries[0])
+                last_debug_print = now
             time.sleep(args.interval)
     except KeyboardInterrupt:
         print("\nBeendet.")
