@@ -32,6 +32,8 @@ DEFAULT_INTERVAL_SECONDS = 0.05
 DEBUG_INTERVAL_SECONDS = 5.0
 DEFAULT_LAYOUT_MODE = "groupwork"
 LEARNING_FORMAT_POLL_SECONDS = 1.0
+DEFAULT_SHOW_PERSONS = True
+DEFAULT_SHOW_CHAIRS = True
 
 current_layout_mode = DEFAULT_LAYOUT_MODE
 stop_event = threading.Event()
@@ -131,6 +133,29 @@ def load_learning_format(path: Path) -> str | None:
     return None
 
 
+def load_learning_settings(path: Path) -> tuple[str | None, bool, bool]:
+    """Load the learning format together with person/chair visibility flags."""
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return None, DEFAULT_SHOW_PERSONS, DEFAULT_SHOW_CHAIRS
+
+    learning_format = data.get("learning_format")
+    if learning_format not in LAYOUT_MODES:
+        learning_format = None
+
+    show_persons = data.get("show_persons", DEFAULT_SHOW_PERSONS)
+    if not isinstance(show_persons, bool):
+        show_persons = DEFAULT_SHOW_PERSONS
+
+    show_chairs = data.get("show_chairs", DEFAULT_SHOW_CHAIRS)
+    if not isinstance(show_chairs, bool):
+        show_chairs = DEFAULT_SHOW_CHAIRS
+
+    return str(learning_format) if learning_format is not None else None, show_persons, show_chairs
+
+
 def get_target_for_index(index: int, source_table: dict[str, Any], layout_mode: str) -> tuple[float, float, float]:
     """Return the target pose for a table in the selected layout mode."""
     targets = LAYOUT_MODES.get(layout_mode, GROUPWORK_TARGETS)
@@ -184,20 +209,22 @@ def send_tables(client: SimpleUDPClient, tables: list[dict[str, Any]], layout_mo
     return summaries
 
 
-def send_persons(client: SimpleUDPClient, persons: list[dict[str, Any]]) -> None:
-    """Send all persons via OSC without any coordinate or radius conversion."""
+def send_persons(client: SimpleUDPClient, persons: list[dict[str, Any]], show_persons: bool) -> None:
+    """Send all persons via OSC and hide them by radius when needed."""
     for index, person in enumerate(persons):
         client.send_message(f"/person/{index}/x", float(person.get("x_cm", 0.0)))
         client.send_message(f"/person/{index}/y", float(person.get("y_cm", 0.0)))
-        client.send_message(f"/person/{index}/radius", float(person.get("radius_cm", 0.0)))
+        radius_cm = float(person.get("radius_cm", 0.0)) if show_persons else 0.0
+        client.send_message(f"/person/{index}/radius", radius_cm)
 
 
-def send_chairs(client: SimpleUDPClient, chairs: list[dict[str, Any]]) -> None:
-    """Send all chairs via OSC without any coordinate or radius conversion."""
+def send_chairs(client: SimpleUDPClient, chairs: list[dict[str, Any]], show_chairs: bool) -> None:
+    """Send all chairs via OSC and hide them by radius when needed."""
     for index, chair in enumerate(chairs):
         client.send_message(f"/chair/{index}/x", float(chair.get("x_cm", 0.0)))
         client.send_message(f"/chair/{index}/y", float(chair.get("y_cm", 0.0)))
-        client.send_message(f"/chair/{index}/radius", float(chair.get("radius_cm", 0.0)))
+        radius_cm = float(chair.get("radius_cm", 0.0)) if show_chairs else 0.0
+        client.send_message(f"/chair/{index}/radius", radius_cm)
 
 
 def print_startup(args: argparse.Namespace, scene_path: Path) -> None:
@@ -339,17 +366,20 @@ def main() -> None:
             if not isinstance(chairs, list):
                 chairs = []
 
+            _, show_persons, show_chairs = load_learning_settings(file_path)
+
             with state_lock:
                 layout_mode = current_layout_mode
 
             summaries = send_tables(client, tables, layout_mode)
-            send_persons(client, persons)
-            send_chairs(client, chairs)
+            send_persons(client, persons, show_persons)
+            send_chairs(client, chairs, show_chairs)
             now = time.monotonic()
             if now - last_debug_print >= DEBUG_INTERVAL_SECONDS:
                 debug_message = (
                     f"mode={layout_mode} | sent {len(summaries)} tables | "
-                    f"persons={len(persons)} chairs={len(chairs)}"
+                    f"persons={len(persons)} chairs={len(chairs)} | "
+                    f"show_persons={show_persons} show_chairs={show_chairs}"
                 )
                 if summaries:
                     debug_message += " | " + summaries[0]

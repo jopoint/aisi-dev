@@ -18,6 +18,17 @@ from urllib.parse import parse_qs, urlparse
 DEFAULT_PORT = 8080
 DEFAULT_LEARNING_FORMAT = "groupwork"
 VALID_LEARNING_FORMATS = {"input", "groupwork", "discussion"}
+DEFAULT_SHOW_PERSONS = True
+DEFAULT_SHOW_CHAIRS = True
+
+
+def default_state() -> dict[str, object]:
+    """Return the default state for the web UI and JSON file."""
+    return {
+        "learning_format": DEFAULT_LEARNING_FORMAT,
+        "show_persons": DEFAULT_SHOW_PERSONS,
+        "show_chairs": DEFAULT_SHOW_CHAIRS,
+    }
 
 
 def repo_root() -> Path:
@@ -41,32 +52,53 @@ def ensure_state_file() -> None:
     """Create the state file with a default value if it does not exist yet."""
     path = state_file_path()
     if not path.exists():
-        write_learning_format(DEFAULT_LEARNING_FORMAT)
+        write_state(default_state())
 
 
-def read_learning_format() -> str:
-    """Read the currently stored learning format."""
+def read_state() -> dict[str, object]:
+    """Read the current UI state and fall back to defaults if needed."""
+    state = default_state()
     path = state_file_path()
     try:
         with path.open("r", encoding="utf-8") as handle:
             data = json.load(handle)
     except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return DEFAULT_LEARNING_FORMAT
+        return state
 
-    value = data.get("learning_format", DEFAULT_LEARNING_FORMAT)
-    if value not in VALID_LEARNING_FORMATS:
-        return DEFAULT_LEARNING_FORMAT
-    return value
+    learning_format = data.get("learning_format", DEFAULT_LEARNING_FORMAT)
+    if learning_format in VALID_LEARNING_FORMATS:
+        state["learning_format"] = learning_format
+
+    if isinstance(data.get("show_persons"), bool):
+        state["show_persons"] = data["show_persons"]
+
+    if isinstance(data.get("show_chairs"), bool):
+        state["show_chairs"] = data["show_chairs"]
+
+    return state
 
 
-def write_learning_format(value: str) -> bool:
-    """Write a new learning format to disk. Invalid values are ignored."""
-    if value not in VALID_LEARNING_FORMATS:
-        return False
+def read_learning_format() -> str:
+    """Read the currently stored learning format."""
+    return str(read_state()["learning_format"])
+
+
+def write_state(state: dict[str, object]) -> bool:
+    """Write the full UI state to disk."""
+    payload = default_state()
+
+    learning_format = state.get("learning_format", DEFAULT_LEARNING_FORMAT)
+    if learning_format in VALID_LEARNING_FORMATS:
+        payload["learning_format"] = learning_format
+
+    if isinstance(state.get("show_persons"), bool):
+        payload["show_persons"] = state["show_persons"]
+
+    if isinstance(state.get("show_chairs"), bool):
+        payload["show_chairs"] = state["show_chairs"]
 
     path = state_file_path()
     temp_path = path.with_suffix(".tmp")
-    payload = {"learning_format": value}
 
     try:
         with temp_path.open("w", encoding="utf-8") as handle:
@@ -74,8 +106,28 @@ def write_learning_format(value: str) -> bool:
         temp_path.replace(path)
         return True
     except OSError as exc:
-        print(f"Could not save learning format: {exc}")
+        print(f"Could not save learning format state: {exc}")
         return False
+
+
+def write_learning_format(value: str) -> bool:
+    """Write a new learning format to disk. Invalid values are ignored."""
+    if value not in VALID_LEARNING_FORMATS:
+        return False
+
+    state = read_state()
+    state["learning_format"] = value
+    return write_state(state)
+
+
+def toggle_state_flag(key: str) -> bool:
+    """Toggle a boolean flag in the stored UI state."""
+    state = read_state()
+    current_value = state.get(key, False)
+    if not isinstance(current_value, bool):
+        current_value = False
+    state[key] = not current_value
+    return write_state(state)
 
 
 def get_local_ip() -> str:
@@ -88,8 +140,10 @@ def get_local_ip() -> str:
         return "127.0.0.1"
 
 
-def build_html(current_format: str) -> str:
+def build_html(current_format: str, show_persons: bool, show_chairs: bool) -> str:
     """Build a very simple mobile-friendly HTML page."""
+    persons_text = "on" if show_persons else "off"
+    chairs_text = "on" if show_chairs else "off"
     return f"""<!doctype html>
 <html lang=\"en\">
 <head>
@@ -119,6 +173,13 @@ def build_html(current_format: str) -> str:
       margin-top: 24px;
       max-width: 420px;
     }}
+        .toggles {{
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            margin-top: 18px;
+            max-width: 420px;
+        }}
     button {{
       font-size: 2rem;
       padding: 22px 18px;
@@ -136,9 +197,15 @@ def build_html(current_format: str) -> str:
       font-size: 1.5rem;
       color: #9fe29f;
     }}
+        .state {{
+            margin-top: 12px;
+            font-size: 1.3rem;
+            color: #d7e4ff;
+        }}
     .input {{ background: #4b6cff; }}
     .groupwork {{ background: #2f9e44; }}
     .discussion {{ background: #c92a2a; }}
+        .toggle {{ background: #444; }}
   </style>
 </head>
 <body>
@@ -149,7 +216,13 @@ def build_html(current_format: str) -> str:
     <button class=\"groupwork\" type=\"submit\" name=\"learning_format\" value=\"groupwork\">2. Groupwork</button>
     <button class=\"discussion\" type=\"submit\" name=\"learning_format\" value=\"discussion\">3. Discussion</button>
   </form>
-  <div class=\"current\">Current learning format: {current_format}</div>
+    <form class=\"toggles\" method=\"post\" action=\"/set\">
+        <button class=\"toggle\" type=\"submit\" name=\"toggle\" value=\"persons\">Persons: {persons_text}</button>
+        <button class=\"toggle\" type=\"submit\" name=\"toggle\" value=\"chairs\">Chairs: {chairs_text}</button>
+    </form>
+    <div class=\"current\">Current learning format: {current_format}</div>
+    <div class=\"state\">Persons: {persons_text}</div>
+    <div class=\"state\">Chairs: {chairs_text}</div>
 </body>
 </html>"""
 
@@ -163,8 +236,12 @@ class LearningFormatHandler(BaseHTTPRequestHandler):
             self.send_error(404, "Not found")
             return
 
-        current_format = read_learning_format()
-        html = build_html(current_format).encode("utf-8")
+        state = read_state()
+        html = build_html(
+            str(state["learning_format"]),
+            bool(state["show_persons"]),
+            bool(state["show_chairs"]),
+        ).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(html)))
@@ -182,12 +259,21 @@ class LearningFormatHandler(BaseHTTPRequestHandler):
         body = self.rfile.read(content_length).decode("utf-8")
         form_data = parse_qs(body)
         selected = form_data.get("learning_format", [""])[0]
+        toggle = form_data.get("toggle", [""])[0]
 
         if selected in VALID_LEARNING_FORMATS:
             write_learning_format(selected)
+        elif toggle == "persons":
+            toggle_state_flag("show_persons")
+        elif toggle == "chairs":
+            toggle_state_flag("show_chairs")
 
-        current_format = read_learning_format()
-        html = build_html(current_format).encode("utf-8")
+        state = read_state()
+        html = build_html(
+            str(state["learning_format"]),
+            bool(state["show_persons"]),
+            bool(state["show_chairs"]),
+        ).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(html)))
