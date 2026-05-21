@@ -9,7 +9,7 @@ Die Sim-Pipeline erlaubt das Testen der AISI-Pipeline ohne echten Raum, ohne ech
 Sim Room Editor
 → live_scene.json
 → sim_scene_to_osc.py
-→ Source + Target OSC
+→ Source (Tables/Persons/Chairs) + Target OSC
 → TouchDesigner Layout Proposal
 ```
 
@@ -47,16 +47,25 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
 ## TouchDesigner
 - TouchDesigner öffnen
+- TouchDesigner in Play-Modus setzen
 - Outputmode 0 wählen
 - OSC In Port: 9000
+- /project1/comp_io/oscin1: Network Port 9000, Active On
 - Source-Tische kommen aus dem Simulator
+- Personen kommen aus dem Simulator (gelbe Outline-Kreise)
+- Stühle kommen aus dem Simulator (grüne Outline-Kreise)
 - Target-Tische kommen aus der Lernformat-Auswahl
 - Motion-Pfeile werden aus Source- und Target-Geos abgeleitet
+- render1 Geometry-Liste muss eine einzeilige Liste bleiben
 
 ## Bedienung
 ### Sim Room Editor
 - Tische mit Maus verschieben
 - Q/E dreht ausgewählten Tisch
+- Personen sind Kreise mit radius_cm = 40
+- Stühle sind Kreise mit radius_cm = 30
+- J: Jitter für Personen/Stühle an/aus
+- O: Occlusion/Dropout für Personen/Stühle an/aus
 - S speichert
 - R reset
 - ESC schließt
@@ -73,22 +82,33 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
 ## Testcheck
 - Bewegen sich Source-Tische in TD, wenn ich sie im Simulator verschiebe?
+- Bewegen sich Personen und Stühle in TD korrekt mit?
+- Sind Personen gelb als Outline-Kreise sichtbar?
+- Sind Stühle grün als Outline-Kreise sichtbar?
 - Wechseln Target-Tische, wenn ich im Browser ein Lernformat wähle?
 - Aktualisieren sich Motion-Pfeile?
 - Stimmt die Rotation?
+- Bleibt die Darstellung nur im TD-Play-Modus live?
 
 ## Bekannte Hinweise
 - Koordinaten bleiben in cm.
 - TD rechnet cm in TD-Koordinaten um.
 - TD invertiert die Y-Achse.
 - Deshalb wird Rotation beim OSC-Senden für TD invertiert.
+- Jitter/Occlusion betreffen nur Personen und Stühle, nicht Tische.
+- Sim Room Editor nur einmal starten; mehrere Instanzen schreiben parallel live_scene.json und verursachen springende Werte.
+- /project1/comp_io/oscin1 muss auf Port 9000 laufen und aktiv sein.
+- TouchDesigner muss im Play-Modus sein, sonst aktualisiert sich die Darstellung nicht.
 - Das Tabletop Grid ist aktuell stabil und soll nicht weiter verändert werden.
 - Echte Kamera und echte Projektion sind in dieser Sim-Pipeline noch nicht enthalten.
 
 ## Aktueller stabiler Stand
 - Sim Room Editor funktioniert
 - Live Source-OSC funktioniert
+- Personen und Stühle werden per OSC gesendet
+- Personen (radius_cm = 40) und Stühle (radius_cm = 30) sind im Simulator integriert
 - Target-Layouts funktionieren
 - Browser-/Tablet-Auswahl funktioniert
 - Launcher-Skript funktioniert
 - TD Outputmode 0 reagiert live
+- Tische, Target-Tische und Motion-Pfeile funktionieren weiterhin
