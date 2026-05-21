@@ -28,6 +28,8 @@ WINDOW_WIDTH_PX = ROI_WIDTH_CM * SCALE_PX_PER_CM
 WINDOW_HEIGHT_PX = ROI_HEIGHT_CM * SCALE_PX_PER_CM
 TABLE_WIDTH_CM = 133
 TABLE_HEIGHT_CM = 67
+PERSON_RADIUS_CM = 40
+CHAIR_RADIUS_CM = 30
 SAVE_INTERVAL_SECONDS = 0.2
 
 BG_COLOR = "#171717"
@@ -36,6 +38,10 @@ TABLE_COLOR = "#e8e8e8"
 TABLE_SELECTED_COLOR = "#ffd36b"
 CROSS_COLOR = "#97e597"
 MARKER_COLOR = "#ff8f8f"
+PERSON_COLOR = "#4bd46a"
+PERSON_SELECTED_COLOR = "#89f0a0"
+CHAIR_COLOR = "#b9b9b9"
+CHAIR_SELECTED_COLOR = "#ffffff"
 TEXT_COLOR = "#e6e6e6"
 
 
@@ -89,6 +95,26 @@ def make_default_tables() -> list[dict]:
     ]
 
 
+def make_default_persons() -> list[dict]:
+    """Create four simple person markers."""
+    return [
+        {"id": "person_0", "x_cm": 180, "y_cm": 260, "radius_cm": PERSON_RADIUS_CM},
+        {"id": "person_1", "x_cm": 320, "y_cm": 260, "radius_cm": PERSON_RADIUS_CM},
+        {"id": "person_2", "x_cm": 180, "y_cm": 380, "radius_cm": PERSON_RADIUS_CM},
+        {"id": "person_3", "x_cm": 320, "y_cm": 380, "radius_cm": PERSON_RADIUS_CM},
+    ]
+
+
+def make_default_chairs() -> list[dict]:
+    """Create four simple chair markers."""
+    return [
+        {"id": "chair_0", "x_cm": 120, "y_cm": 220, "radius_cm": CHAIR_RADIUS_CM},
+        {"id": "chair_1", "x_cm": 380, "y_cm": 220, "radius_cm": CHAIR_RADIUS_CM},
+        {"id": "chair_2", "x_cm": 120, "y_cm": 340, "radius_cm": CHAIR_RADIUS_CM},
+        {"id": "chair_3", "x_cm": 380, "y_cm": 340, "radius_cm": CHAIR_RADIUS_CM},
+    ]
+
+
 def clamp(value: float, low: float, high: float) -> float:
     """Clamp a numeric value into a range."""
     return max(low, min(high, value))
@@ -128,6 +154,14 @@ def rotated_corners(table: dict) -> list[tuple[float, float]]:
     return points
 
 
+def circle_hit_test(point: tuple[float, float], item: dict) -> bool:
+    """Return True if a point lies inside a circle item."""
+    px, py = point
+    cx, cy = world_to_screen(item["x_cm"], item["y_cm"])
+    radius_px = float(item["radius_cm"]) * SCALE_PX_PER_CM
+    return ((px - cx) ** 2 + (py - cy) ** 2) <= radius_px ** 2
+
+
 def point_in_polygon(point: tuple[float, float], polygon: list[tuple[float, float]]) -> bool:
     """Return True if the point lies inside the polygon."""
     x, y = point
@@ -145,7 +179,7 @@ def point_in_polygon(point: tuple[float, float], polygon: list[tuple[float, floa
     return inside
 
 
-def scene_payload(tables: list[dict]) -> dict:
+def scene_payload(tables: list[dict], chairs: list[dict], persons: list[dict]) -> dict:
     """Build the JSON scene structure."""
     return {
         "scene_id": "simulated_live_scene",
@@ -165,14 +199,30 @@ def scene_payload(tables: list[dict]) -> dict:
             }
             for table in tables
         ],
-        "chairs": [],
-        "persons": [],
+        "chairs": [
+            {
+                "id": chair["id"],
+                "x_cm": round(chair["x_cm"], 3),
+                "y_cm": round(chair["y_cm"], 3),
+                "radius_cm": chair["radius_cm"],
+            }
+            for chair in chairs
+        ],
+        "persons": [
+            {
+                "id": person["id"],
+                "x_cm": round(person["x_cm"], 3),
+                "y_cm": round(person["y_cm"], 3),
+                "radius_cm": person["radius_cm"],
+            }
+            for person in persons
+        ],
     }
 
 
-def save_scene(path: Path, tables: list[dict]) -> None:
+def save_scene(path: Path, tables: list[dict], chairs: list[dict], persons: list[dict]) -> None:
     """Write the current scene to disk."""
-    payload = scene_payload(tables)
+    payload = scene_payload(tables, chairs, persons)
     temp_path = path.with_suffix(".tmp")
 
     try:
@@ -186,6 +236,11 @@ def save_scene(path: Path, tables: list[dict]) -> None:
 def reset_tables(tables: list[dict], initial_tables: list[dict]) -> None:
     """Restore all tables to their original start positions."""
     tables[:] = copy.deepcopy(initial_tables)
+
+
+def reset_items(items: list[dict], initial_items: list[dict]) -> None:
+    """Restore circle-based items to their original start positions."""
+    items[:] = copy.deepcopy(initial_items)
 
 
 def print_help() -> None:
@@ -226,8 +281,13 @@ class SimRoomEditor:
         self.canvas.pack()
 
         self.tables = make_default_tables()
+        self.chairs = make_default_chairs()
+        self.persons = make_default_persons()
         self.initial_tables = copy.deepcopy(self.tables)
-        self.selected_table_id: str | None = None
+        self.initial_chairs = copy.deepcopy(self.chairs)
+        self.initial_persons = copy.deepcopy(self.persons)
+        self.selected_kind: str | None = None
+        self.selected_id: str | None = None
         self.dragging = False
         self.drag_offset_x_cm = 0.0
         self.drag_offset_y_cm = 0.0
@@ -258,23 +318,26 @@ class SimRoomEditor:
 
     def save_now(self) -> None:
         """Save immediately and refresh the autosave timer."""
-        save_scene(scene_file_path(), self.tables)
+        save_scene(scene_file_path(), self.tables, self.chairs, self.persons)
         self.last_save_time = time.monotonic()
 
     def reset_all(self) -> None:
         """Reset the tables to the initial layout."""
         reset_tables(self.tables, self.initial_tables)
-        self.selected_table_id = None
+        reset_items(self.chairs, self.initial_chairs)
+        reset_items(self.persons, self.initial_persons)
+        self.selected_kind = None
+        self.selected_id = None
         self.dragging = False
         self.save_now()
         self.redraw()
 
     def rotate_selected(self, delta_deg: float) -> None:
         """Rotate the selected table."""
-        if self.selected_table_id is None:
+        if self.selected_kind != "table" or self.selected_id is None:
             return
         for table in self.tables:
-            if table["id"] == self.selected_table_id:
+            if table["id"] == self.selected_id:
                 table["rotation_deg"] += delta_deg
                 break
         self.save_now()
@@ -283,18 +346,57 @@ class SimRoomEditor:
     def selected_table(self) -> dict | None:
         """Return the currently selected table, if any."""
         for table in self.tables:
-            if table["id"] == self.selected_table_id:
+            if table["id"] == self.selected_id and self.selected_kind == "table":
                 return table
+        return None
+
+
+    def selected_circle_item(self) -> dict | None:
+        """Return the currently selected chair or person, if any."""
+        if self.selected_kind == "person":
+            for person in self.persons:
+                if person["id"] == self.selected_id:
+                    return person
+        if self.selected_kind == "chair":
+            for chair in self.chairs:
+                if chair["id"] == self.selected_id:
+                    return chair
         return None
 
     def on_mouse_down(self, event: tk.Event) -> None:
         """Select a table or start dragging it."""
         mouse_point = (event.x, event.y)
-        self.selected_table_id = None
+
+        self.selected_kind = None
+        self.selected_id = None
+
+        # Selection priority: persons > chairs > tables.
+        for person in reversed(self.persons):
+            if circle_hit_test(mouse_point, person):
+                self.selected_kind = "person"
+                self.selected_id = person["id"]
+                mouse_x_cm, mouse_y_cm = screen_to_world(event.x, event.y)
+                self.drag_offset_x_cm = mouse_x_cm - person["x_cm"]
+                self.drag_offset_y_cm = mouse_y_cm - person["y_cm"]
+                self.dragging = True
+                self.redraw()
+                return
+
+        for chair in reversed(self.chairs):
+            if circle_hit_test(mouse_point, chair):
+                self.selected_kind = "chair"
+                self.selected_id = chair["id"]
+                mouse_x_cm, mouse_y_cm = screen_to_world(event.x, event.y)
+                self.drag_offset_x_cm = mouse_x_cm - chair["x_cm"]
+                self.drag_offset_y_cm = mouse_y_cm - chair["y_cm"]
+                self.dragging = True
+                self.redraw()
+                return
 
         for table in reversed(self.tables):
             if point_in_polygon(mouse_point, rotated_corners(table)):
-                self.selected_table_id = table["id"]
+                self.selected_kind = "table"
+                self.selected_id = table["id"]
                 mouse_x_cm, mouse_y_cm = screen_to_world(event.x, event.y)
                 self.drag_offset_x_cm = mouse_x_cm - table["x_cm"]
                 self.drag_offset_y_cm = mouse_y_cm - table["y_cm"]
@@ -304,19 +406,34 @@ class SimRoomEditor:
         self.redraw()
 
     def on_mouse_drag(self, event: tk.Event) -> None:
-        """Move the selected table."""
-        if not self.dragging or self.selected_table_id is None:
+        """Move the currently selected item."""
+        if not self.dragging or self.selected_id is None:
             return
 
         mouse_x_cm, mouse_y_cm = screen_to_world(event.x, event.y)
-        table = self.selected_table()
-        if table is None:
-            return
+        if self.selected_kind == "table":
+            table = self.selected_table()
+            if table is None:
+                return
 
-        half_w = table["width_cm"] / 2.0
-        half_h = table["height_cm"] / 2.0
-        table["x_cm"] = clamp(mouse_x_cm - self.drag_offset_x_cm, half_w, ROI_WIDTH_CM - half_w)
-        table["y_cm"] = clamp(mouse_y_cm - self.drag_offset_y_cm, half_h, ROI_HEIGHT_CM - half_h)
+            half_w = table["width_cm"] / 2.0
+            half_h = table["height_cm"] / 2.0
+            table["x_cm"] = clamp(mouse_x_cm - self.drag_offset_x_cm, half_w, ROI_WIDTH_CM - half_w)
+            table["y_cm"] = clamp(mouse_y_cm - self.drag_offset_y_cm, half_h, ROI_HEIGHT_CM - half_h)
+        elif self.selected_kind == "person":
+            person = self.selected_circle_item()
+            if person is None:
+                return
+            radius = float(person["radius_cm"])
+            person["x_cm"] = clamp(mouse_x_cm - self.drag_offset_x_cm, radius, ROI_WIDTH_CM - radius)
+            person["y_cm"] = clamp(mouse_y_cm - self.drag_offset_y_cm, radius, ROI_HEIGHT_CM - radius)
+        elif self.selected_kind == "chair":
+            chair = self.selected_circle_item()
+            if chair is None:
+                return
+            radius = float(chair["radius_cm"])
+            chair["x_cm"] = clamp(mouse_x_cm - self.drag_offset_x_cm, radius, ROI_WIDTH_CM - radius)
+            chair["y_cm"] = clamp(mouse_y_cm - self.drag_offset_y_cm, radius, ROI_HEIGHT_CM - radius)
         self.redraw()
 
     def on_mouse_up(self, event: tk.Event) -> None:
@@ -335,6 +452,19 @@ class SimRoomEditor:
         self.canvas.create_line(cx - size, cy, cx + size, cy, fill=color, width=width)
         self.canvas.create_line(cx, cy - size, cx, cy + size, fill=color, width=width)
 
+    def draw_circle_item(self, item: dict, outline_color: str, width: int = 2) -> None:
+        """Draw a circle-based item such as a person or chair."""
+        cx, cy = world_to_screen(item["x_cm"], item["y_cm"])
+        radius_px = float(item["radius_cm"]) * SCALE_PX_PER_CM
+        self.canvas.create_oval(
+            cx - radius_px,
+            cy - radius_px,
+            cx + radius_px,
+            cy + radius_px,
+            outline=outline_color,
+            width=width,
+        )
+
     def redraw(self) -> None:
         """Redraw the entire scene."""
         self.canvas.delete("all")
@@ -351,7 +481,7 @@ class SimRoomEditor:
 
         for table in self.tables:
             points = rotated_corners(table)
-            selected = table["id"] == self.selected_table_id
+            selected = self.selected_kind == "table" and table["id"] == self.selected_id
             outline_color = TABLE_SELECTED_COLOR if selected else TABLE_COLOR
             self.draw_rotated_polygon(points, outline=outline_color, width=3)
 
@@ -370,6 +500,22 @@ class SimRoomEditor:
                 fill=TEXT_COLOR,
                 font=("TkDefaultFont", 10, "bold"),
             )
+
+        for chair in self.chairs:
+            selected = self.selected_kind == "chair" and chair["id"] == self.selected_id
+            outline_color = CHAIR_SELECTED_COLOR if selected else CHAIR_COLOR
+            self.draw_circle_item(chair, outline_color=outline_color, width=3 if selected else 2)
+            cx, cy = world_to_screen(chair["x_cm"], chair["y_cm"])
+            # Keep chair labels centered exactly on the circle midpoint.
+            self.canvas.create_text(cx, cy, text=chair["id"], fill=TEXT_COLOR, font=("TkDefaultFont", 9))
+
+        for person in self.persons:
+            selected = self.selected_kind == "person" and person["id"] == self.selected_id
+            outline_color = PERSON_SELECTED_COLOR if selected else PERSON_COLOR
+            self.draw_circle_item(person, outline_color=outline_color, width=3 if selected else 2)
+            cx, cy = world_to_screen(person["x_cm"], person["y_cm"])
+            # Keep person labels centered exactly on the circle midpoint.
+            self.canvas.create_text(cx, cy, text=person["id"], fill=TEXT_COLOR, font=("TkDefaultFont", 9))
 
         self.canvas.create_text(
             8,
@@ -395,7 +541,7 @@ class SimRoomEditor:
 
         now = time.monotonic()
         if now - self.last_save_time >= SAVE_INTERVAL_SECONDS:
-            save_scene(scene_file_path(), self.tables)
+            save_scene(scene_file_path(), self.tables, self.chairs, self.persons)
             self.last_save_time = now
 
         self.root.after(50, self.autosave_tick)
