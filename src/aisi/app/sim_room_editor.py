@@ -11,6 +11,7 @@ import copy
 import json
 import math
 import os
+import random
 import time
 from pathlib import Path
 
@@ -31,6 +32,8 @@ TABLE_HEIGHT_CM = 67
 PERSON_RADIUS_CM = 40
 CHAIR_RADIUS_CM = 30
 SAVE_INTERVAL_SECONDS = 0.2
+JITTER_RANGE_CM = 5.0
+OCCLUSION_DROPOUT_PROBABILITY = 0.1
 
 BG_COLOR = "#171717"
 ROI_BORDER_COLOR = "#666666"
@@ -220,9 +223,50 @@ def scene_payload(tables: list[dict], chairs: list[dict], persons: list[dict]) -
     }
 
 
-def save_scene(path: Path, tables: list[dict], chairs: list[dict], persons: list[dict]) -> None:
+def export_circle_items(items: list[dict], jitter_enabled: bool, occlusion_enabled: bool) -> list[dict]:
+    """Build exported circle items with optional CV-like instability.
+
+    The editor state remains stable. Only the serialized JSON output gets
+    optional jitter and occlusion dropout.
+    """
+    exported_items: list[dict] = []
+
+    for item in items:
+        if occlusion_enabled and random.random() < OCCLUSION_DROPOUT_PROBABILITY:
+            continue
+
+        export_x_cm = float(item["x_cm"])
+        export_y_cm = float(item["y_cm"])
+        if jitter_enabled:
+            export_x_cm += random.uniform(-JITTER_RANGE_CM, JITTER_RANGE_CM)
+            export_y_cm += random.uniform(-JITTER_RANGE_CM, JITTER_RANGE_CM)
+
+        exported_items.append(
+            {
+                "id": item["id"],
+                "x_cm": round(export_x_cm, 3),
+                "y_cm": round(export_y_cm, 3),
+                "radius_cm": item["radius_cm"],
+            }
+        )
+
+    return exported_items
+
+
+def save_scene(
+    path: Path,
+    tables: list[dict],
+    chairs: list[dict],
+    persons: list[dict],
+    jitter_enabled: bool = False,
+    occlusion_enabled: bool = False,
+) -> None:
     """Write the current scene to disk."""
-    payload = scene_payload(tables, chairs, persons)
+    payload = scene_payload(
+        tables,
+        export_circle_items(chairs, jitter_enabled=jitter_enabled, occlusion_enabled=occlusion_enabled),
+        export_circle_items(persons, jitter_enabled=jitter_enabled, occlusion_enabled=occlusion_enabled),
+    )
     temp_path = path.with_suffix(".tmp")
 
     try:
@@ -252,6 +296,8 @@ def print_help() -> None:
     print("  E: ausgewählten Tisch um +5 Grad drehen")
     print("  R: alle Tische auf Startpositionen zurücksetzen")
     print("  S: sofort speichern")
+    print("  J: Jitter für Personen/Stühle an/aus")
+    print("  O: Occlusion-Dropout für Personen/Stühle an/aus")
     print("  ESC: beenden")
     print(f"Autosave: {scene_file_path()}")
 
@@ -292,6 +338,8 @@ class SimRoomEditor:
         self.drag_offset_x_cm = 0.0
         self.drag_offset_y_cm = 0.0
         self.last_save_time = 0.0
+        self.jitter_enabled = False
+        self.occlusion_enabled = False
         self.running = True
 
         self.root.bind("<Escape>", lambda event: self.close())
@@ -303,6 +351,10 @@ class SimRoomEditor:
         self.root.bind("<R>", lambda event: self.reset_all())
         self.root.bind("<s>", lambda event: self.save_now())
         self.root.bind("<S>", lambda event: self.save_now())
+        self.root.bind("<j>", lambda event: self.toggle_jitter())
+        self.root.bind("<J>", lambda event: self.toggle_jitter())
+        self.root.bind("<o>", lambda event: self.toggle_occlusion())
+        self.root.bind("<O>", lambda event: self.toggle_occlusion())
 
         self.canvas.bind("<ButtonPress-1>", self.on_mouse_down)
         self.canvas.bind("<B1-Motion>", self.on_mouse_drag)
@@ -318,8 +370,27 @@ class SimRoomEditor:
 
     def save_now(self) -> None:
         """Save immediately and refresh the autosave timer."""
-        save_scene(scene_file_path(), self.tables, self.chairs, self.persons)
+        save_scene(
+            scene_file_path(),
+            self.tables,
+            self.chairs,
+            self.persons,
+            jitter_enabled=self.jitter_enabled,
+            occlusion_enabled=self.occlusion_enabled,
+        )
         self.last_save_time = time.monotonic()
+
+    def toggle_jitter(self) -> None:
+        """Toggle export-only jitter for persons and chairs."""
+        self.jitter_enabled = not self.jitter_enabled
+        print(f"Jitter: {'on' if self.jitter_enabled else 'off'}")
+        self.redraw()
+
+    def toggle_occlusion(self) -> None:
+        """Toggle export-only dropout for persons and chairs."""
+        self.occlusion_enabled = not self.occlusion_enabled
+        print(f"Occlusion: {'on' if self.occlusion_enabled else 'off'}")
+        self.redraw()
 
     def reset_all(self) -> None:
         """Reset the tables to the initial layout."""
@@ -521,7 +592,7 @@ class SimRoomEditor:
             8,
             8,
             anchor="nw",
-            text="LMB: select/drag   Q/E: rotate   R: reset   S: save   ESC: quit",
+            text="LMB: select/drag   Q/E: rotate   R: reset   S: save   J/O: CV sim   ESC: quit",
             fill=TEXT_COLOR,
             font=("TkDefaultFont", 10),
         )
@@ -533,6 +604,17 @@ class SimRoomEditor:
             fill=TEXT_COLOR,
             font=("TkDefaultFont", 10),
         )
+        self.canvas.create_text(
+            8,
+            48,
+            anchor="nw",
+            text=(
+                f"Jitter: {'on' if self.jitter_enabled else 'off'} | "
+                f"Occlusion: {'on' if self.occlusion_enabled else 'off'}"
+            ),
+            fill=TEXT_COLOR,
+            font=("TkDefaultFont", 10),
+        )
 
     def autosave_tick(self) -> None:
         """Write the JSON file every 0.2 seconds."""
@@ -541,7 +623,14 @@ class SimRoomEditor:
 
         now = time.monotonic()
         if now - self.last_save_time >= SAVE_INTERVAL_SECONDS:
-            save_scene(scene_file_path(), self.tables, self.chairs, self.persons)
+            save_scene(
+                scene_file_path(),
+                self.tables,
+                self.chairs,
+                self.persons,
+                jitter_enabled=self.jitter_enabled,
+                occlusion_enabled=self.occlusion_enabled,
+            )
             self.last_save_time = now
 
         self.root.after(50, self.autosave_tick)

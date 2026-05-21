@@ -1,7 +1,7 @@
 """Send the simulated room editor scene to TouchDesigner via OSC.
 
 This script continuously reads data/aisi/scenes/simulated/live_scene.json and
-sends the table values to TouchDesigner using python-osc.
+sends table, person, and chair values to TouchDesigner using python-osc.
 """
 
 from __future__ import annotations
@@ -184,11 +184,27 @@ def send_tables(client: SimpleUDPClient, tables: list[dict[str, Any]], layout_mo
     return summaries
 
 
+def send_persons(client: SimpleUDPClient, persons: list[dict[str, Any]]) -> None:
+    """Send all persons via OSC without any coordinate or radius conversion."""
+    for index, person in enumerate(persons):
+        client.send_message(f"/person/{index}/x", float(person.get("x_cm", 0.0)))
+        client.send_message(f"/person/{index}/y", float(person.get("y_cm", 0.0)))
+        client.send_message(f"/person/{index}/radius", float(person.get("radius_cm", 0.0)))
+
+
+def send_chairs(client: SimpleUDPClient, chairs: list[dict[str, Any]]) -> None:
+    """Send all chairs via OSC without any coordinate or radius conversion."""
+    for index, chair in enumerate(chairs):
+        client.send_message(f"/chair/{index}/x", float(chair.get("x_cm", 0.0)))
+        client.send_message(f"/chair/{index}/y", float(chair.get("y_cm", 0.0)))
+        client.send_message(f"/chair/{index}/radius", float(chair.get("radius_cm", 0.0)))
+
+
 def print_startup(args: argparse.Namespace, scene_path: Path) -> None:
     """Print a short startup message."""
     print(f"OSC-Ziel: {args.host}:{args.port}")
     print(f"Scene-Datei: {scene_path}")
-    print("Lese live Szene und sende Tabellen per OSC. Mit STRG+C beenden.")
+    print("Lese live Szene und sende Tabellen, Personen und Stühle per OSC. Mit STRG+C beenden.")
     print(f"Layout mode: {DEFAULT_LAYOUT_MODE}")
     print("Controls: 1=input, 2=groupwork, 3=discussion, q=quit")
 
@@ -315,13 +331,29 @@ def main() -> None:
             if not isinstance(tables, list):
                 tables = []
 
+            persons = scene.get("persons", [])
+            if not isinstance(persons, list):
+                persons = []
+
+            chairs = scene.get("chairs", [])
+            if not isinstance(chairs, list):
+                chairs = []
+
             with state_lock:
                 layout_mode = current_layout_mode
 
             summaries = send_tables(client, tables, layout_mode)
+            send_persons(client, persons)
+            send_chairs(client, chairs)
             now = time.monotonic()
-            if summaries and now - last_debug_print >= DEBUG_INTERVAL_SECONDS:
-                print(f"mode={layout_mode} | sent {len(summaries)} tables | " + summaries[0])
+            if now - last_debug_print >= DEBUG_INTERVAL_SECONDS:
+                debug_message = (
+                    f"mode={layout_mode} | sent {len(summaries)} tables | "
+                    f"persons={len(persons)} chairs={len(chairs)}"
+                )
+                if summaries:
+                    debug_message += " | " + summaries[0]
+                print(debug_message)
                 last_debug_print = now
             time.sleep(args.interval)
     except KeyboardInterrupt:
