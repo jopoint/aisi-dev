@@ -3,7 +3,7 @@
 # Schritt 4: Source/Target Marker + Bewegungslinien für 4 Tische
 
 ROOT_PATH = '/project1'
-OSC_PORT = 7000
+OSC_PORT = 9000
 
 ROI_CENTER_CM = 250
 TD_SCALE = 0.0052
