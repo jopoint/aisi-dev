@@ -31,6 +31,7 @@ DEFAULT_OSC_PORT = 9000
 DEFAULT_INTERVAL_SECONDS = 0.05
 DEBUG_INTERVAL_SECONDS = 5.0
 DEFAULT_LAYOUT_MODE = "groupwork"
+LEARNING_FORMAT_POLL_SECONDS = 1.0
 
 current_layout_mode = DEFAULT_LAYOUT_MODE
 stop_event = threading.Event()
@@ -75,6 +76,11 @@ def default_scene_path() -> Path:
     return repo_root() / "data" / "aisi" / "scenes" / "simulated" / "live_scene.json"
 
 
+def learning_format_path() -> Path:
+    """Return the path of the shared learning format JSON file."""
+    return repo_root() / "data" / "aisi" / "state" / "learning_format.json"
+
+
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
@@ -109,6 +115,20 @@ def load_scene(scene_path: Path) -> dict[str, Any]:
     """Load the live scene JSON file."""
     with scene_path.open("r", encoding="utf-8") as handle:
         return json.load(handle)
+
+
+def load_learning_format(path: Path) -> str | None:
+    """Load a valid learning format from the shared JSON file."""
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return None
+
+    value = data.get("learning_format")
+    if value in LAYOUT_MODES:
+        return str(value)
+    return None
 
 
 def get_target_for_index(index: int, source_table: dict[str, Any], layout_mode: str) -> tuple[float, float, float]:
@@ -187,6 +207,20 @@ def set_layout_mode(mode: str, state_lock: threading.Lock, layout_state: dict[st
     print(f">>> Layout mode changed to: {mode}")
 
 
+def apply_layout_mode_from_file(path: Path, state_lock: threading.Lock, layout_state: dict[str, str], last_file_mode: str | None) -> str | None:
+    """Read the file and update the layout mode if it contains a valid value."""
+    file_mode = load_learning_format(path)
+    if file_mode is None or file_mode == last_file_mode:
+        return last_file_mode
+
+    global current_layout_mode
+    with state_lock:
+        current_layout_mode = file_mode
+        layout_state["mode"] = file_mode
+    print(f">>> Layout mode changed from file: {file_mode}")
+    return file_mode
+
+
 def input_thread(layout_state: dict[str, str], state_lock: threading.Lock) -> None:
     """Read layout mode changes from terminal input without blocking OSC sending."""
     print_layout_options()
@@ -223,6 +257,7 @@ def main() -> None:
     client = SimpleUDPClient(args.host, args.port)
     layout_state = {"mode": DEFAULT_LAYOUT_MODE}
     state_lock = threading.Lock()
+    file_path = learning_format_path()
 
     print_startup(args, scene_path)
 
@@ -236,9 +271,21 @@ def main() -> None:
     last_missing_notice = 0.0
     last_bad_json_notice = 0.0
     last_debug_print = 0.0
+    last_learning_format_poll = 0.0
+    last_file_mode: str | None = None
 
     try:
         while not stop_event.is_set():
+            now = time.monotonic()
+            if now - last_learning_format_poll >= LEARNING_FORMAT_POLL_SECONDS:
+                last_file_mode = apply_layout_mode_from_file(
+                    file_path,
+                    state_lock,
+                    layout_state,
+                    last_file_mode,
+                )
+                last_learning_format_poll = now
+
             if not scene_path.exists():
                 now = time.monotonic()
                 if now - last_missing_notice >= 2.0:
