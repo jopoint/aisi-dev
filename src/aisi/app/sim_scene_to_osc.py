@@ -24,6 +24,15 @@ DEFAULT_OSC_HOST = "127.0.0.1"
 DEFAULT_OSC_PORT = 9000
 DEFAULT_INTERVAL_SECONDS = 0.05
 
+GROUPWORK_TARGETS = [
+    {"x_cm": 150.0, "y_cm": 160.0, "rotation_deg": 0.0},
+    {"x_cm": 350.0, "y_cm": 160.0, "rotation_deg": 0.0},
+    {"x_cm": 150.0, "y_cm": 340.0, "rotation_deg": 0.0},
+    {"x_cm": 350.0, "y_cm": 340.0, "rotation_deg": 0.0},
+]
+
+# TouchDesigner uses inverted Y coordinates, so rotation is inverted for visual consistency.
+
 
 def repo_root() -> Path:
     """Return the repository root based on this file location."""
@@ -78,21 +87,36 @@ def send_tables(client: SimpleUDPClient, tables: list[dict[str, Any]]) -> list[s
         source_x = float(table.get("x_cm", 0.0))
         source_y = float(table.get("y_cm", 0.0))
         source_rot = float(table.get("rotation_deg", 0.0))
+        td_source_rot = -source_rot
         width_cm = float(table.get("width_cm", 0.0))
         height_cm = float(table.get("height_cm", 0.0))
 
+        if index < len(GROUPWORK_TARGETS):
+            target_x = float(GROUPWORK_TARGETS[index]["x_cm"])
+            target_y = float(GROUPWORK_TARGETS[index]["y_cm"])
+            target_rot = float(GROUPWORK_TARGETS[index]["rotation_deg"])
+        else:
+            target_x = source_x
+            target_y = source_y
+            target_rot = source_rot
+        td_target_rot = -target_rot
+
         client.send_message(f"/table/{index}/source_x", source_x)
         client.send_message(f"/table/{index}/source_y", source_y)
-        client.send_message(f"/table/{index}/source_rot", source_rot)
+        client.send_message(f"/table/{index}/source_rot", td_source_rot)
+        client.send_message(f"/table/{index}/target_x", target_x)
+        client.send_message(f"/table/{index}/target_y", target_y)
+        client.send_message(f"/table/{index}/target_rot", td_target_rot)
         client.send_message(f"/table/{index}/x", source_x)
         client.send_message(f"/table/{index}/y", source_y)
-        client.send_message(f"/table/{index}/rot", source_rot)
+        client.send_message(f"/table/{index}/rot", td_source_rot)
         client.send_message(f"/table/{index}/width", width_cm)
         client.send_message(f"/table/{index}/height", height_cm)
 
         table_id = str(table.get("id", f"table_{index}"))
         summaries.append(
-            f"{table_id} source_x={source_x:.3f} source_y={source_y:.3f} source_rot={source_rot:.3f}"
+            f"{table_id} source=({source_x:.3f}, {source_y:.3f}, {td_source_rot:.3f}) "
+            f"target=({target_x:.3f}, {target_y:.3f}, {td_target_rot:.3f})"
         )
 
     return summaries
