@@ -64,6 +64,31 @@ def _normalize_scene_for_aisi(scene: dict[str, Any]) -> dict[str, Any]:
         roi["y_max"] = float(roi.get("height_cm", 500.0))
 
     normalized["roi"] = roi
+
+    tables = normalized.get("tables")
+    if isinstance(tables, list):
+        normalized_tables: list[dict[str, Any]] = []
+        for table in tables:
+            if not isinstance(table, dict):
+                normalized_tables.append(table)
+                continue
+
+            normalized_table = dict(table)
+            if "x" not in normalized_table and "x_cm" in normalized_table:
+                normalized_table["x"] = normalized_table["x_cm"]
+            if "y" not in normalized_table and "y_cm" in normalized_table:
+                normalized_table["y"] = normalized_table["y_cm"]
+            if "width" not in normalized_table and "width_cm" in normalized_table:
+                normalized_table["width"] = normalized_table["width_cm"]
+            if "height" not in normalized_table and "height_cm" in normalized_table:
+                normalized_table["height"] = normalized_table["height_cm"]
+            if "rot_deg" not in normalized_table and "rotation_deg" in normalized_table:
+                normalized_table["rot_deg"] = normalized_table["rotation_deg"]
+
+            normalized_tables.append(normalized_table)
+
+        normalized["tables"] = normalized_tables
+
     return normalized
 
 
@@ -248,9 +273,7 @@ def compute_target_layout(scene: dict, learning_format: str) -> list[dict[str, f
         learning_format = "input"
 
     try:
-        targets = _compute_with_aisi_pipeline(scene, learning_format)
-        targets = _center_targets_in_roi(targets)
-        return _apply_source_center_offset(scene, targets)
+        return _compute_with_aisi_pipeline(scene, learning_format)
     except Exception as exc:
         if not _DID_WARN_FALLBACK:
             print(f"[sim_layout_rules] Falling back to static targets: {exc}")
