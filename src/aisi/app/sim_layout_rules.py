@@ -223,7 +223,7 @@ def _center_targets_in_roi(targets: list[dict[str, float]]) -> list[dict[str, fl
 def _compute_with_aisi_pipeline(
     scene: dict[str, Any],
     learning_format: str,
-    transformation_strength: float = 0.5,
+    transformation_strength: float = 0.8,
 ) -> list[dict[str, float]]:
     """Compute target layout with the existing AISI layout pipeline."""
 

@@ -20,6 +20,16 @@ DEFAULT_LEARNING_FORMAT = "groupwork"
 VALID_LEARNING_FORMATS = {"input", "groupwork", "discussion"}
 DEFAULT_SHOW_PERSONS = True
 DEFAULT_SHOW_CHAIRS = True
+DEFAULT_TRANSFORMATION_STRENGTH = 0.5
+
+
+def clamp_transformation_strength(value: object) -> float:
+    """Clamp the slider value to the expected 0.0..1.0 range."""
+
+    try:
+        return max(0.0, min(1.0, float(value)))
+    except (TypeError, ValueError):
+        return DEFAULT_TRANSFORMATION_STRENGTH
 
 
 def default_state() -> dict[str, object]:
@@ -28,6 +38,7 @@ def default_state() -> dict[str, object]:
         "learning_format": DEFAULT_LEARNING_FORMAT,
         "show_persons": DEFAULT_SHOW_PERSONS,
         "show_chairs": DEFAULT_SHOW_CHAIRS,
+        "transformation_strength": DEFAULT_TRANSFORMATION_STRENGTH,
     }
 
 
@@ -75,6 +86,10 @@ def read_state() -> dict[str, object]:
     if isinstance(data.get("show_chairs"), bool):
         state["show_chairs"] = data["show_chairs"]
 
+    state["transformation_strength"] = clamp_transformation_strength(
+        data.get("transformation_strength", DEFAULT_TRANSFORMATION_STRENGTH)
+    )
+
     return state
 
 
@@ -96,6 +111,10 @@ def write_state(state: dict[str, object]) -> bool:
 
     if isinstance(state.get("show_chairs"), bool):
         payload["show_chairs"] = state["show_chairs"]
+
+    payload["transformation_strength"] = clamp_transformation_strength(
+        state.get("transformation_strength", DEFAULT_TRANSFORMATION_STRENGTH)
+    )
 
     path = state_file_path()
     temp_path = path.with_suffix(".tmp")
@@ -140,10 +159,11 @@ def get_local_ip() -> str:
         return "127.0.0.1"
 
 
-def build_html(current_format: str, show_persons: bool, show_chairs: bool) -> str:
+def build_html(current_format: str, show_persons: bool, show_chairs: bool, transformation_strength: float) -> str:
     """Build a very simple mobile-friendly HTML page."""
     persons_text = "on" if show_persons else "off"
     chairs_text = "on" if show_chairs else "off"
+    strength_percent = int(round(clamp_transformation_strength(transformation_strength) * 100.0))
     return f"""<!doctype html>
 <html lang=\"en\">
 <head>
@@ -173,6 +193,27 @@ def build_html(current_format: str, show_persons: bool, show_chairs: bool) -> st
       margin-top: 24px;
       max-width: 420px;
     }}
+        .slider-card {{
+            margin-top: 20px;
+            max-width: 420px;
+            padding: 18px;
+            border-radius: 18px;
+            background: #1c1c1c;
+        }}
+        .slider-label {{
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            font-size: 1.2rem;
+            margin-bottom: 10px;
+        }}
+        input[type="range"] {{
+            width: 100%;
+        }}
+        .slider-value {{
+            color: #9fe29f;
+            font-weight: bold;
+        }}
         .toggles {{
             display: flex;
             flex-direction: column;
@@ -205,7 +246,7 @@ def build_html(current_format: str, show_persons: bool, show_chairs: bool) -> st
     .input {{ background: #4b6cff; }}
     .groupwork {{ background: #2f9e44; }}
     .discussion {{ background: #c92a2a; }}
-        .toggle {{ background: #444; }}
+    .toggle {{ background: #444; }}
   </style>
 </head>
 <body>
@@ -216,13 +257,30 @@ def build_html(current_format: str, show_persons: bool, show_chairs: bool) -> st
     <button class=\"groupwork\" type=\"submit\" name=\"learning_format\" value=\"groupwork\">2. Groupwork</button>
     <button class=\"discussion\" type=\"submit\" name=\"learning_format\" value=\"discussion\">3. Discussion</button>
   </form>
-    <form class=\"toggles\" method=\"post\" action=\"/set\">
-        <button class=\"toggle\" type=\"submit\" name=\"toggle\" value=\"persons\">Persons: {persons_text}</button>
-        <button class=\"toggle\" type=\"submit\" name=\"toggle\" value=\"chairs\">Chairs: {chairs_text}</button>
+    <form class="slider-card" method="post" action="/set">
+        <div class="slider-label">
+            <span>Umbauintensität</span>
+            <span class="slider-value" id="transformation-strength-value">{strength_percent}%</span>
+        </div>
+        <input
+            id="transformation-strength"
+            type="range"
+            name="transformation_strength"
+            min="0"
+            max="100"
+            step="1"
+            value="{strength_percent}"
+            onchange="this.form.submit()"
+            oninput="document.getElementById('transformation-strength-value').textContent = this.value + '%'"
+        >
     </form>
-    <div class=\"current\">Current learning format: {current_format}</div>
-    <div class=\"state\">Persons: {persons_text}</div>
-    <div class=\"state\">Chairs: {chairs_text}</div>
+    <form class="toggles" method="post" action="/set">
+        <button class="toggle" type="submit" name="toggle" value="persons">Persons: {persons_text}</button>
+        <button class="toggle" type="submit" name="toggle" value="chairs">Chairs: {chairs_text}</button>
+    </form>
+    <div class="current">Current learning format: {current_format}</div>
+    <div class="state">Persons: {persons_text}</div>
+    <div class="state">Chairs: {chairs_text}</div>
 </body>
 </html>"""
 
@@ -241,6 +299,7 @@ class LearningFormatHandler(BaseHTTPRequestHandler):
             str(state["learning_format"]),
             bool(state["show_persons"]),
             bool(state["show_chairs"]),
+            float(state["transformation_strength"]),
         ).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -260,19 +319,36 @@ class LearningFormatHandler(BaseHTTPRequestHandler):
         form_data = parse_qs(body)
         selected = form_data.get("learning_format", [""])[0]
         toggle = form_data.get("toggle", [""])[0]
-
-        if selected in VALID_LEARNING_FORMATS:
-            write_learning_format(selected)
-        elif toggle == "persons":
-            toggle_state_flag("show_persons")
-        elif toggle == "chairs":
-            toggle_state_flag("show_chairs")
+        transformation_strength_raw = form_data.get("transformation_strength", [""])[0]
 
         state = read_state()
+        changed = False
+
+        if selected in VALID_LEARNING_FORMATS:
+            state["learning_format"] = selected
+            changed = True
+        elif toggle == "persons":
+            state["show_persons"] = not bool(state.get("show_persons", DEFAULT_SHOW_PERSONS))
+            changed = True
+        elif toggle == "chairs":
+            state["show_chairs"] = not bool(state.get("show_chairs", DEFAULT_SHOW_CHAIRS))
+            changed = True
+
+        if transformation_strength_raw != "":
+            try:
+                state["transformation_strength"] = clamp_transformation_strength(int(transformation_strength_raw) / 100.0)
+                changed = True
+            except ValueError:
+                pass
+
+        if changed:
+            write_state(state)
+
         html = build_html(
             str(state["learning_format"]),
             bool(state["show_persons"]),
             bool(state["show_chairs"]),
+            float(state["transformation_strength"]),
         ).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")

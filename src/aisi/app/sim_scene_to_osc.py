@@ -36,6 +36,7 @@ DEFAULT_LAYOUT_MODE = "groupwork"
 LEARNING_FORMAT_POLL_SECONDS = 1.0
 DEFAULT_SHOW_PERSONS = True
 DEFAULT_SHOW_CHAIRS = True
+DEFAULT_TRANSFORMATION_STRENGTH = 0.5
 VALID_LEARNING_FORMATS = {"input", "groupwork", "discussion"}
 
 current_layout_mode = DEFAULT_LAYOUT_MODE
@@ -109,13 +110,22 @@ def load_learning_format(path: Path) -> str | None:
     return None
 
 
-def load_learning_settings(path: Path) -> tuple[str | None, bool, bool]:
-    """Load the learning format together with person/chair visibility flags."""
+def clamp_transformation_strength(value: object) -> float:
+    """Clamp the transformation strength to the expected 0.0..1.0 range."""
+
+    try:
+        return max(0.0, min(1.0, float(value)))
+    except (TypeError, ValueError):
+        return DEFAULT_TRANSFORMATION_STRENGTH
+
+
+def load_learning_settings(path: Path) -> tuple[str | None, bool, bool, float]:
+    """Load the learning format, visibility flags, and transformation strength."""
     try:
         with path.open("r", encoding="utf-8") as handle:
             data = json.load(handle)
     except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return None, DEFAULT_SHOW_PERSONS, DEFAULT_SHOW_CHAIRS
+        return None, DEFAULT_SHOW_PERSONS, DEFAULT_SHOW_CHAIRS, DEFAULT_TRANSFORMATION_STRENGTH
 
     learning_format = data.get("learning_format")
     if learning_format not in VALID_LEARNING_FORMATS:
@@ -129,7 +139,16 @@ def load_learning_settings(path: Path) -> tuple[str | None, bool, bool]:
     if not isinstance(show_chairs, bool):
         show_chairs = DEFAULT_SHOW_CHAIRS
 
-    return str(learning_format) if learning_format is not None else None, show_persons, show_chairs
+    transformation_strength = clamp_transformation_strength(
+        data.get("transformation_strength", DEFAULT_TRANSFORMATION_STRENGTH)
+    )
+
+    return (
+        str(learning_format) if learning_format is not None else None,
+        show_persons,
+        show_chairs,
+        transformation_strength,
+    )
 
 
 def get_target_for_index(index: int, source_table: dict[str, Any], targets: list[dict[str, Any]]) -> tuple[float, float, float]:
@@ -341,12 +360,12 @@ def main() -> None:
             if not isinstance(chairs, list):
                 chairs = []
 
-            _, show_persons, show_chairs = load_learning_settings(file_path)
+            _, show_persons, show_chairs, transformation_strength = load_learning_settings(file_path)
 
             with state_lock:
                 layout_mode = current_layout_mode
 
-            targets = compute_target_layout(scene, layout_mode)
+            targets = compute_target_layout(scene, layout_mode, transformation_strength=transformation_strength)
             summaries = send_tables(client, tables, targets)
             send_persons(client, persons, show_persons)
             send_chairs(client, chairs, show_chairs)
