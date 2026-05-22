@@ -14,6 +14,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from aisi.app.sim_layout_rules import compute_target_layout
+
 try:
     from pythonosc.udp_client import SimpleUDPClient
 except ImportError:
@@ -34,36 +36,10 @@ DEFAULT_LAYOUT_MODE = "groupwork"
 LEARNING_FORMAT_POLL_SECONDS = 1.0
 DEFAULT_SHOW_PERSONS = True
 DEFAULT_SHOW_CHAIRS = True
+VALID_LEARNING_FORMATS = {"input", "groupwork", "discussion"}
 
 current_layout_mode = DEFAULT_LAYOUT_MODE
 stop_event = threading.Event()
-
-GROUPWORK_TARGETS = [
-    {"x_cm": 150.0, "y_cm": 160.0, "rotation_deg": 0.0},
-    {"x_cm": 350.0, "y_cm": 160.0, "rotation_deg": 0.0},
-    {"x_cm": 150.0, "y_cm": 340.0, "rotation_deg": 0.0},
-    {"x_cm": 350.0, "y_cm": 340.0, "rotation_deg": 0.0},
-]
-
-INPUT_TARGETS = [
-    {"x_cm": 140.0, "y_cm": 150.0, "rotation_deg": 0.0},
-    {"x_cm": 360.0, "y_cm": 150.0, "rotation_deg": 0.0},
-    {"x_cm": 140.0, "y_cm": 260.0, "rotation_deg": 0.0},
-    {"x_cm": 360.0, "y_cm": 260.0, "rotation_deg": 0.0},
-]
-
-DISCUSSION_TARGETS = [
-    {"x_cm": 160.0, "y_cm": 180.0, "rotation_deg": 35.0},
-    {"x_cm": 340.0, "y_cm": 180.0, "rotation_deg": -35.0},
-    {"x_cm": 160.0, "y_cm": 330.0, "rotation_deg": -35.0},
-    {"x_cm": 340.0, "y_cm": 330.0, "rotation_deg": 35.0},
-]
-
-LAYOUT_MODES = {
-    "input": INPUT_TARGETS,
-    "groupwork": GROUPWORK_TARGETS,
-    "discussion": DISCUSSION_TARGETS,
-}
 
 # TouchDesigner uses inverted Y coordinates, so rotation is inverted for visual consistency.
 
@@ -128,7 +104,7 @@ def load_learning_format(path: Path) -> str | None:
         return None
 
     value = data.get("learning_format")
-    if value in LAYOUT_MODES:
+    if value in VALID_LEARNING_FORMATS:
         return str(value)
     return None
 
@@ -142,7 +118,7 @@ def load_learning_settings(path: Path) -> tuple[str | None, bool, bool]:
         return None, DEFAULT_SHOW_PERSONS, DEFAULT_SHOW_CHAIRS
 
     learning_format = data.get("learning_format")
-    if learning_format not in LAYOUT_MODES:
+    if learning_format not in VALID_LEARNING_FORMATS:
         learning_format = None
 
     show_persons = data.get("show_persons", DEFAULT_SHOW_PERSONS)
@@ -156,9 +132,8 @@ def load_learning_settings(path: Path) -> tuple[str | None, bool, bool]:
     return str(learning_format) if learning_format is not None else None, show_persons, show_chairs
 
 
-def get_target_for_index(index: int, source_table: dict[str, Any], layout_mode: str) -> tuple[float, float, float]:
+def get_target_for_index(index: int, source_table: dict[str, Any], targets: list[dict[str, Any]]) -> tuple[float, float, float]:
     """Return the target pose for a table in the selected layout mode."""
-    targets = LAYOUT_MODES.get(layout_mode, GROUPWORK_TARGETS)
     if index < len(targets):
         target = targets[index]
         return (
@@ -174,7 +149,7 @@ def get_target_for_index(index: int, source_table: dict[str, Any], layout_mode: 
     )
 
 
-def send_tables(client: SimpleUDPClient, tables: list[dict[str, Any]], layout_mode: str) -> list[str]:
+def send_tables(client: SimpleUDPClient, tables: list[dict[str, Any]], targets: list[dict[str, Any]]) -> list[str]:
     """Send all tables via OSC and return short debug summaries."""
     summaries: list[str] = []
     for index, table in enumerate(tables):
@@ -185,7 +160,7 @@ def send_tables(client: SimpleUDPClient, tables: list[dict[str, Any]], layout_mo
         width_cm = float(table.get("width_cm", 0.0))
         height_cm = float(table.get("height_cm", 0.0))
 
-        target_x, target_y, target_rot = get_target_for_index(index, table, layout_mode)
+        target_x, target_y, target_rot = get_target_for_index(index, table, targets)
         td_target_rot = -target_rot
 
         client.send_message(f"/table/{index}/source_x", source_x)
@@ -371,7 +346,8 @@ def main() -> None:
             with state_lock:
                 layout_mode = current_layout_mode
 
-            summaries = send_tables(client, tables, layout_mode)
+            targets = compute_target_layout(scene, layout_mode)
+            summaries = send_tables(client, tables, targets)
             send_persons(client, persons, show_persons)
             send_chairs(client, chairs, show_chairs)
             now = time.monotonic()
