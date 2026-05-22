@@ -73,6 +73,15 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 ### Learning Format UI
 - Browser öffnen: http://127.0.0.1:8080
 - Input / Groupwork / Discussion wählen
+- Neu: Regler "Umbauintensität" steuert `transformation_strength`.
+- 0% bedeutet: Targets bleiben beim aktuellen Source-Zustand.
+- 50% bedeutet: mittlere Transformation.
+- 100% bedeutet: vollständiger AISI-Generator-Vorschlag.
+- Der Wert wird in `data/aisi/state/learning_format.json` als `transformation_strength` zwischen `0.0` und `1.0` gespeichert.
+- `sim_scene_to_osc.py` liest den Wert live und gibt ihn an `compute_target_layout(...)` weiter.
+- `sim_layout_rules.py` blendet damit die AISI-Targets final mit der aktuellen Source-Szene.
+- Intern wird `transformation_strength` bereits vorher in der Layout-Pipeline genutzt und beeinflusst erste Generator-Heuristiken.
+- Hinweis: Der Regler ist aktuell nur für die Sim-Pipeline gedacht und noch nicht für die echte CV-Pipeline verallgemeinert.
 
 ### sim_scene_to_osc.py
 - 1=input
