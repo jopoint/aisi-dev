@@ -10,6 +10,7 @@ def generate_target_structure(
     scene_state: SceneState,
     scene_features: SceneFeatures,
     target_profile: TargetProfile,
+    transformation_strength: float = 0.5,
 ) -> TargetStructure:
     """Generate an adaptive target structure from the current scene geometry."""
     learning_format = scene_state.learning_format

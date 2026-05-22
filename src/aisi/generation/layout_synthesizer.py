@@ -28,16 +28,32 @@ def synthesize_layout(
     scene_features: SceneFeatures,
     target_profile: TargetProfile,
     target_structure: TargetStructure,
+    transformation_strength: float = 0.5,
 ) -> LayoutProposal:
     """Synthesize adaptive table-only layouts from target structure + current scene."""
     tables = sorted(scene_state.tables, key=lambda table: table.table_id)
 
     if scene_state.learning_format == "input":
-        targets, notes = _layout_input_adaptive(scene_state, tables, target_structure)
+        targets, notes = _layout_input_adaptive(
+            scene_state,
+            tables,
+            target_structure,
+            transformation_strength=transformation_strength,
+        )
     elif scene_state.learning_format == "groupwork":
-        targets, notes = _layout_groupwork_adaptive(scene_state, tables, target_structure)
+        targets, notes = _layout_groupwork_adaptive(
+            scene_state,
+            tables,
+            target_structure,
+            transformation_strength=transformation_strength,
+        )
     else:
-        targets, notes = _layout_discussion_adaptive(scene_state, tables, target_structure)
+        targets, notes = _layout_discussion_adaptive(
+            scene_state,
+            tables,
+            target_structure,
+            transformation_strength=transformation_strength,
+        )
 
     assignment_result = assign_tables_to_targets_min_cost(scene_state, targets)
     targets = assignment_result.table_targets
@@ -96,6 +112,7 @@ def _layout_input_adaptive(
     scene_state: SceneState,
     tables: list[TableState],
     target_structure: TargetStructure,
+    transformation_strength: float = 0.5,
 ) -> tuple[list[TableTarget], list[str]]:
     if not tables:
         return [], ["input: no tables available"]
@@ -406,6 +423,7 @@ def _layout_groupwork_adaptive(
     scene_state: SceneState,
     tables: list[TableState],
     target_structure: TargetStructure,
+    transformation_strength: float = 0.5,
 ) -> tuple[list[TableTarget], list[str]]:
     if not tables:
         return [], ["groupwork: no tables available"]
@@ -608,6 +626,7 @@ def _layout_discussion_adaptive(
     scene_state: SceneState,
     tables: list[TableState],
     target_structure: TargetStructure,
+    transformation_strength: float = 0.5,
 ) -> tuple[list[TableTarget], list[str]]:
     if not tables:
         return [], ["discussion: no tables available"]

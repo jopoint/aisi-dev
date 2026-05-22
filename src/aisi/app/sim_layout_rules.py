@@ -223,6 +223,7 @@ def _center_targets_in_roi(targets: list[dict[str, float]]) -> list[dict[str, fl
 def _compute_with_aisi_pipeline(
     scene: dict[str, Any],
     learning_format: str,
+    transformation_strength: float = 0.5,
 ) -> list[dict[str, float]]:
     """Compute target layout with the existing AISI layout pipeline."""
 
@@ -240,12 +241,14 @@ def _compute_with_aisi_pipeline(
         scene_state,
         scene_features,
         target_profile,
+        transformation_strength=transformation_strength,
     )
     proposal = synthesize_layout(
         scene_state,
         scene_features,
         target_profile,
         target_structure,
+        transformation_strength=transformation_strength,
     )
 
     targets = []
@@ -264,7 +267,11 @@ def _compute_with_aisi_pipeline(
     return targets
 
 
-def compute_target_layout(scene: dict, learning_format: str) -> list[dict[str, float]]:
+def compute_target_layout(
+    scene: dict,
+    learning_format: str,
+    transformation_strength: float = 0.5,
+) -> list[dict[str, float]]:
     """Return target table layout for the selected learning format."""
 
     global _DID_WARN_FALLBACK
@@ -273,7 +280,7 @@ def compute_target_layout(scene: dict, learning_format: str) -> list[dict[str, f
         learning_format = "input"
 
     try:
-        return _compute_with_aisi_pipeline(scene, learning_format)
+        return _compute_with_aisi_pipeline(scene, learning_format, transformation_strength=transformation_strength)
     except Exception as exc:
         if not _DID_WARN_FALLBACK:
             print(f"[sim_layout_rules] Falling back to static targets: {exc}")
