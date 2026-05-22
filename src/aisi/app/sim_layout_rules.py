@@ -267,6 +267,49 @@ def _compute_with_aisi_pipeline(
     return targets
 
 
+def _blend_generated_targets_with_source(
+    scene: dict[str, Any],
+    generated_targets: list[dict[str, float]],
+    transformation_strength: float,
+) -> list[dict[str, float]]:
+    """Blend generated targets toward the source scene using the given strength."""
+
+    strength = _clamp(transformation_strength, 0.0, 1.0)
+    source_tables = scene.get("tables") if isinstance(scene, dict) else None
+    if not isinstance(source_tables, list):
+        source_tables = []
+
+    blended_targets: list[dict[str, float]] = []
+    for index, generated_target in enumerate(generated_targets):
+        if not isinstance(generated_target, dict):
+            continue
+
+        if index >= len(source_tables) or not isinstance(source_tables[index], dict):
+            blended_targets.append({
+                "x_cm": float(generated_target.get("x_cm", 0.0)),
+                "y_cm": float(generated_target.get("y_cm", 0.0)),
+                "rotation_deg": float(generated_target.get("rotation_deg", 0.0)),
+            })
+            continue
+
+        source_table = source_tables[index]
+        source_x = float(source_table.get("x_cm", 0.0))
+        source_y = float(source_table.get("y_cm", 0.0))
+        source_rot = float(source_table.get("rotation_deg", 0.0))
+
+        target_x = float(generated_target.get("x_cm", 0.0))
+        target_y = float(generated_target.get("y_cm", 0.0))
+        target_rot = float(generated_target.get("rotation_deg", 0.0))
+
+        blended_targets.append({
+            "x_cm": source_x + strength * (target_x - source_x),
+            "y_cm": source_y + strength * (target_y - source_y),
+            "rotation_deg": source_rot + strength * (target_rot - source_rot),
+        })
+
+    return blended_targets
+
+
 def compute_target_layout(
     scene: dict,
     learning_format: str,
@@ -280,7 +323,12 @@ def compute_target_layout(
         learning_format = "input"
 
     try:
-        return _compute_with_aisi_pipeline(scene, learning_format, transformation_strength=transformation_strength)
+        generated_targets = _compute_with_aisi_pipeline(
+            scene,
+            learning_format,
+            transformation_strength=transformation_strength,
+        )
+        return _blend_generated_targets_with_source(scene, generated_targets, transformation_strength)
     except Exception as exc:
         if not _DID_WARN_FALLBACK:
             print(f"[sim_layout_rules] Falling back to static targets: {exc}")
