@@ -38,6 +38,7 @@ class TableState:
     width: float = 110.0
     height: float = 70.0
     confidence: float | None = None
+    table_type: str | None = None
 
     @property
     def theta(self) -> float:

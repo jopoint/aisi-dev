@@ -9,11 +9,17 @@ from __future__ import annotations
 
 import copy
 import json
-import math
 import os
 import random
 import time
 from pathlib import Path
+
+from aisi.core.table_geometry import (
+    TABLE_TYPE_NAMES,
+    clamp_table_center_to_roi,
+    get_table_geometry,
+    world_footprint,
+)
 
 try:
     import tkinter as tk
@@ -27,8 +33,6 @@ ROI_HEIGHT_CM = 500
 SCALE_PX_PER_CM = 2
 WINDOW_WIDTH_PX = ROI_WIDTH_CM * SCALE_PX_PER_CM
 WINDOW_HEIGHT_PX = ROI_HEIGHT_CM * SCALE_PX_PER_CM
-TABLE_WIDTH_CM = 133
-TABLE_HEIGHT_CM = 67
 PERSON_RADIUS_CM = 40
 CHAIR_RADIUS_CM = 30
 SAVE_INTERVAL_SECONDS = 0.2
@@ -65,48 +69,31 @@ def get_table_type_by_index(index: int) -> str:
     
     Cycles through: summit, sprint, rect
     """
-    return ["summit", "sprint", "rect"][index % 3]
+    return TABLE_TYPE_NAMES[index % len(TABLE_TYPE_NAMES)]
+
+
+def make_default_table(table_id: str, x_cm: float, y_cm: float, index: int) -> dict:
+    """Create one default table from its canonical type geometry."""
+    table_type = get_table_type_by_index(index)
+    geometry = get_table_geometry(table_type)
+    return {
+        "id": table_id,
+        "x_cm": x_cm,
+        "y_cm": y_cm,
+        "width_cm": geometry.nominal_width,
+        "height_cm": geometry.nominal_depth,
+        "rotation_deg": 0,
+        "type": table_type,
+    }
 
 
 def make_default_tables() -> list[dict]:
     """Create the initial table layout."""
     return [
-        {
-            "id": "table_0",
-            "x_cm": 100,
-            "y_cm": 100,
-            "width_cm": TABLE_WIDTH_CM,
-            "height_cm": TABLE_HEIGHT_CM,
-            "rotation_deg": 0,
-            "type": get_table_type_by_index(0),
-        },
-        {
-            "id": "table_1",
-            "x_cm": 290,
-            "y_cm": 100,
-            "width_cm": TABLE_WIDTH_CM,
-            "height_cm": TABLE_HEIGHT_CM,
-            "rotation_deg": 0,
-            "type": get_table_type_by_index(1),
-        },
-        {
-            "id": "table_2",
-            "x_cm": 100,
-            "y_cm": 320,
-            "width_cm": TABLE_WIDTH_CM,
-            "height_cm": TABLE_HEIGHT_CM,
-            "rotation_deg": 0,
-            "type": get_table_type_by_index(2),
-        },
-        {
-            "id": "table_3",
-            "x_cm": 290,
-            "y_cm": 320,
-            "width_cm": TABLE_WIDTH_CM,
-            "height_cm": TABLE_HEIGHT_CM,
-            "rotation_deg": 0,
-            "type": get_table_type_by_index(3),
-        },
+        make_default_table("table_0", 100, 100, 0),
+        make_default_table("table_1", 290, 100, 1),
+        make_default_table("table_2", 100, 320, 2),
+        make_default_table("table_3", 290, 320, 3),
     ]
 
 
@@ -145,28 +132,15 @@ def screen_to_world(x_px: float, y_px: float) -> tuple[float, float]:
     return x_px / SCALE_PX_PER_CM, y_px / SCALE_PX_PER_CM
 
 
-def rotated_corners(table: dict) -> list[tuple[float, float]]:
-    """Return the four table corners as canvas points in pixels."""
-    cx, cy = world_to_screen(table["x_cm"], table["y_cm"])
-    half_w = table["width_cm"] * SCALE_PX_PER_CM / 2.0
-    half_h = table["height_cm"] * SCALE_PX_PER_CM / 2.0
-    angle = math.radians(table["rotation_deg"])
-    cos_a = math.cos(angle)
-    sin_a = math.sin(angle)
-
-    local_points = [
-        (-half_w, -half_h),
-        (half_w, -half_h),
-        (half_w, half_h),
-        (-half_w, half_h),
-    ]
-
-    points = []
-    for lx, ly in local_points:
-        rx = lx * cos_a - ly * sin_a
-        ry = lx * sin_a + ly * cos_a
-        points.append((cx + rx, cy + ry))
-    return points
+def table_screen_polygon(table: dict) -> list[tuple[float, float]]:
+    """Return the canonical table footprint as canvas points in pixels."""
+    points = world_footprint(
+        table["type"],
+        float(table["x_cm"]),
+        float(table["y_cm"]),
+        float(table["rotation_deg"]),
+    )
+    return [world_to_screen(x_cm, y_cm) for x_cm, y_cm in points]
 
 
 def circle_hit_test(point: tuple[float, float], item: dict) -> bool:
@@ -196,6 +170,22 @@ def point_in_polygon(point: tuple[float, float], polygon: list[tuple[float, floa
 
 def scene_payload(tables: list[dict], chairs: list[dict], persons: list[dict]) -> dict:
     """Build the JSON scene structure."""
+    serialized_tables = []
+    for table in tables:
+        table_type = str(table["type"])
+        geometry = get_table_geometry(table_type)
+        serialized_tables.append(
+            {
+                "id": table["id"],
+                "x_cm": round(table["x_cm"], 3),
+                "y_cm": round(table["y_cm"], 3),
+                "width_cm": geometry.nominal_width,
+                "height_cm": geometry.nominal_depth,
+                "rotation_deg": round(table["rotation_deg"], 3),
+                "type": table_type,
+            }
+        )
+
     return {
         "scene_id": "simulated_live_scene",
         "source": "sim_room_editor",
@@ -203,18 +193,7 @@ def scene_payload(tables: list[dict], chairs: list[dict], persons: list[dict]) -
             "width_cm": ROI_WIDTH_CM,
             "height_cm": ROI_HEIGHT_CM,
         },
-        "tables": [
-            {
-                "id": table["id"],
-                "x_cm": round(table["x_cm"], 3),
-                "y_cm": round(table["y_cm"], 3),
-                "width_cm": table["width_cm"],
-                "height_cm": table["height_cm"],
-                "rotation_deg": round(table["rotation_deg"], 3),
-                "type": table.get("type", "summit"),
-            }
-            for table in tables
-        ],
+        "tables": serialized_tables,
         "chairs": [
             {
                 "id": chair["id"],
@@ -303,6 +282,7 @@ def reset_items(items: list[dict], initial_items: list[dict]) -> None:
 def print_help() -> None:
     """Print the keyboard and mouse controls."""
     print("Bedienung:")
+    print("  T: Typ des ausgewählten Tischs wechseln")
     print("  Linksklick auf einen Tisch: auswählen")
     print("  Linksklick und ziehen: Tisch verschieben")
     print("  Q: ausgewählten Tisch um -5 Grad drehen")
@@ -317,7 +297,20 @@ def print_help() -> None:
 
 def table_label(table: dict) -> str:
     """Return a short label for a table."""
-    return table["id"]
+    return f"{table['id']} [{table['type']}]"
+
+
+def cycle_table_type(table: dict) -> str:
+    """Advance one table to the next canonical type and keep its pose identity."""
+    current_index = TABLE_TYPE_NAMES.index(table["type"])
+    table["type"] = TABLE_TYPE_NAMES[(current_index + 1) % len(TABLE_TYPE_NAMES)]
+    geometry = get_table_geometry(table["type"])
+    table["width_cm"] = geometry.nominal_width
+    table["height_cm"] = geometry.nominal_depth
+    table["x_cm"], table["y_cm"] = clamp_table_center_to_roi(
+        table["type"], table["x_cm"], table["y_cm"], table["rotation_deg"]
+    )
+    return table["type"]
 
 
 class SimRoomEditor:
@@ -368,6 +361,8 @@ class SimRoomEditor:
         self.root.bind("<J>", lambda event: self.toggle_jitter())
         self.root.bind("<o>", lambda event: self.toggle_occlusion())
         self.root.bind("<O>", lambda event: self.toggle_occlusion())
+        self.root.bind("<t>", lambda event: self.cycle_selected_table_type())
+        self.root.bind("<T>", lambda event: self.cycle_selected_table_type())
 
         self.canvas.bind("<ButtonPress-1>", self.on_mouse_down)
         self.canvas.bind("<B1-Motion>", self.on_mouse_drag)
@@ -423,7 +418,21 @@ class SimRoomEditor:
         for table in self.tables:
             if table["id"] == self.selected_id:
                 table["rotation_deg"] += delta_deg
+                table["x_cm"], table["y_cm"] = clamp_table_center_to_roi(
+                    table["type"], table["x_cm"], table["y_cm"], table["rotation_deg"]
+                )
                 break
+        self.save_now()
+        self.redraw()
+
+    def cycle_selected_table_type(self) -> None:
+        """Cycle the selected table through the canonical table types."""
+        table = self.selected_table()
+        if table is None:
+            return
+
+        cycle_table_type(table)
+        print(f"Tischtyp {table['id']}: {table['type']}")
         self.save_now()
         self.redraw()
 
@@ -478,7 +487,7 @@ class SimRoomEditor:
                 return
 
         for table in reversed(self.tables):
-            if point_in_polygon(mouse_point, rotated_corners(table)):
+            if point_in_polygon(mouse_point, table_screen_polygon(table)):
                 self.selected_kind = "table"
                 self.selected_id = table["id"]
                 mouse_x_cm, mouse_y_cm = screen_to_world(event.x, event.y)
@@ -500,10 +509,12 @@ class SimRoomEditor:
             if table is None:
                 return
 
-            half_w = table["width_cm"] / 2.0
-            half_h = table["height_cm"] / 2.0
-            table["x_cm"] = clamp(mouse_x_cm - self.drag_offset_x_cm, half_w, ROI_WIDTH_CM - half_w)
-            table["y_cm"] = clamp(mouse_y_cm - self.drag_offset_y_cm, half_h, ROI_HEIGHT_CM - half_h)
+            table["x_cm"], table["y_cm"] = clamp_table_center_to_roi(
+                table["type"],
+                mouse_x_cm - self.drag_offset_x_cm,
+                mouse_y_cm - self.drag_offset_y_cm,
+                table["rotation_deg"],
+            )
         elif self.selected_kind == "person":
             person = self.selected_circle_item()
             if person is None:
@@ -564,7 +575,7 @@ class SimRoomEditor:
         )
 
         for table in self.tables:
-            points = rotated_corners(table)
+            points = table_screen_polygon(table)
             selected = self.selected_kind == "table" and table["id"] == self.selected_id
             outline_color = TABLE_SELECTED_COLOR if selected else TABLE_COLOR
             self.draw_rotated_polygon(points, outline=outline_color, width=3)
@@ -605,7 +616,7 @@ class SimRoomEditor:
             8,
             8,
             anchor="nw",
-            text="LMB: select/drag   Q/E: rotate   R: reset   S: save   J/O: CV sim   ESC: quit",
+            text="LMB: select/drag   Q/E: rotate   T: type   R: reset   S: save   J/O: CV sim   ESC: quit",
             fill=TEXT_COLOR,
             font=("TkDefaultFont", 10),
         )

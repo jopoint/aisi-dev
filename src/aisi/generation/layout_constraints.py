@@ -13,6 +13,19 @@ from aisi.core.models import (
     candidate_facing_normals,
     choose_facing_normal_toward_target,
 )
+from aisi.core.table_geometry import (
+    Footprint,
+    convex_polygons_intersect,
+    polygon_inside_roi,
+    rectangle_footprint,
+    required_table_center_separation,
+    resolve_table_state_geometry,
+    support_distance,
+    table_allowed_center_bounds,
+    table_support_distance,
+    table_world_footprint as resolve_table_world_footprint,
+    transform_local_footprint,
+)
 
 
 @dataclass(slots=True)
@@ -71,8 +84,8 @@ def evaluate_hard_constraints(
     """Count hard-constraint violations for a table-only proposal.
 
     Notes:
-    - Overlap uses OBB intersection (SAT) against rotated table rectangles.
-    - Clearance is modeled as a directed OBB on the primary seat side only.
+    - Overlap uses SAT against the real rotated table footprints.
+    - Clearance remains a directed rectangle on the primary seat side.
     """
     by_id = _table_state_by_id(scene_state)
     pair_context = _build_pair_context(generation_notes)
@@ -84,14 +97,12 @@ def evaluate_hard_constraints(
         for jdx in range(idx + 1, len(targets)):
             target_b = targets[jdx]
             state_b = by_id[target_b.table_id]
-            if _obb_intersects(
+            if _table_footprints_intersect(
+                state_a=state_a,
                 center_a=(target_a.target_x, target_a.target_y),
-                width_a=state_a.width,
-                height_a=state_a.height,
                 rot_deg_a=target_a.target_rot_deg,
+                state_b=state_b,
                 center_b=(target_b.target_x, target_b.target_y),
-                width_b=state_b.width,
-                height_b=state_b.height,
                 rot_deg_b=target_b.target_rot_deg,
                 gap=overlap_gap,
             ):
@@ -102,8 +113,7 @@ def evaluate_hard_constraints(
         state = by_id[target.table_id]
         if not _table_inside_roi(
             center=(target.target_x, target.target_y),
-            width=state.width,
-            height=state.height,
+            table_state=state,
             rot_deg=target.target_rot_deg,
             roi=scene_state.roi,
         ):
@@ -130,16 +140,11 @@ def evaluate_hard_constraints(
             ):
                 continue
             other_state = by_id[other_target.table_id]
-            if _obb_intersects(
-                center_a=(zone.cx, zone.cy),
-                width_a=zone.width,
-                height_a=zone.height,
-                rot_deg_a=zone.rot_deg,
-                center_b=(other_target.target_x, other_target.target_y),
-                width_b=other_state.width,
-                height_b=other_state.height,
-                rot_deg_b=other_target.target_rot_deg,
-                gap=0.0,
+            if _clearance_zone_intersects_table(
+                zone=zone,
+                table_state=other_state,
+                table_center=(other_target.target_x, other_target.target_y),
+                table_rot_deg=other_target.target_rot_deg,
             ):
                 blocked = True
                 break
@@ -166,7 +171,7 @@ def repair_layout_hard_constraints(
     """Iteratively repair hard constraints with local geometric nudges.
 
     This is not a global optimizer. It performs conservative local corrections:
-    - clamp OBBs into ROI,
+    - clamp real table footprints into ROI,
     - push apart overlapping tables,
     - push blockers out of seat-side clearance zones,
     - compact groupwork pair members when they drift too far apart.
@@ -217,8 +222,7 @@ def repair_layout_hard_constraints(
             table_state = by_id[target.table_id]
             clamped = _clamp_table_center_to_roi(
                 center=(target.target_x, target.target_y),
-                width=table_state.width,
-                height=table_state.height,
+                table_state=table_state,
                 rot_deg=target.target_rot_deg,
                 roi=scene_state.roi,
             )
@@ -253,14 +257,12 @@ def repair_layout_hard_constraints(
                     changed = changed or pair_fixed
                     continue
 
-                if not _obb_intersects(
+                if not _table_footprints_intersect(
+                    state_a=state_a,
                     center_a=(target_a.target_x, target_a.target_y),
-                    width_a=state_a.width,
-                    height_a=state_a.height,
                     rot_deg_a=target_a.target_rot_deg,
+                    state_b=state_b,
                     center_b=(target_b.target_x, target_b.target_y),
-                    width_b=state_b.width,
-                    height_b=state_b.height,
                     rot_deg_b=target_b.target_rot_deg,
                     gap=overlap_gap,
                 ):
@@ -273,12 +275,12 @@ def repair_layout_hard_constraints(
                     ),
                     fallback=_deterministic_pair_axis(idx, jdx),
                 )
-                required = _required_separation_along_axis(
-                    width_a=state_a.width,
-                    height_a=state_a.height,
+                required = _required_table_separation_along_axis(
+                    state_a=state_a,
+                    center_a=(target_a.target_x, target_a.target_y),
                     rot_deg_a=target_a.target_rot_deg,
-                    width_b=state_b.width,
-                    height_b=state_b.height,
+                    state_b=state_b,
+                    center_b=(target_b.target_x, target_b.target_y),
                     rot_deg_b=target_b.target_rot_deg,
                     axis=push_axis,
                     gap=overlap_gap,
@@ -306,15 +308,13 @@ def repair_layout_hard_constraints(
 
                 target_a.target_x, target_a.target_y = _clamp_table_center_to_roi(
                     center=(target_a.target_x, target_a.target_y),
-                    width=state_a.width,
-                    height=state_a.height,
+                    table_state=state_a,
                     rot_deg=target_a.target_rot_deg,
                     roi=scene_state.roi,
                 )
                 target_b.target_x, target_b.target_y = _clamp_table_center_to_roi(
                     center=(target_b.target_x, target_b.target_y),
-                    width=state_b.width,
-                    height=state_b.height,
+                    table_state=state_b,
                     rot_deg=target_b.target_rot_deg,
                     roi=scene_state.roi,
                 )
@@ -339,16 +339,11 @@ def repair_layout_hard_constraints(
                 ):
                     continue
                 other_state = by_id[other_target.table_id]
-                intersects = _obb_intersects(
-                    center_a=(zone.cx, zone.cy),
-                    width_a=zone.width,
-                    height_a=zone.height,
-                    rot_deg_a=zone.rot_deg,
-                    center_b=(other_target.target_x, other_target.target_y),
-                    width_b=other_state.width,
-                    height_b=other_state.height,
-                    rot_deg_b=other_target.target_rot_deg,
-                    gap=0.0,
+                intersects = _clearance_zone_intersects_table(
+                    zone=zone,
+                    table_state=other_state,
+                    table_center=(other_target.target_x, other_target.target_y),
+                    table_rot_deg=other_target.target_rot_deg,
                 )
                 if not intersects:
                     continue
@@ -360,13 +355,11 @@ def repair_layout_hard_constraints(
                     ),
                     fallback=zone.seat_direction,
                 )
-                required = _required_separation_along_axis(
-                    width_a=zone.width,
-                    height_a=zone.height,
-                    rot_deg_a=zone.rot_deg,
-                    width_b=other_state.width,
-                    height_b=other_state.height,
-                    rot_deg_b=other_target.target_rot_deg,
+                required = _required_clearance_separation_along_axis(
+                    zone=zone,
+                    table_state=other_state,
+                    table_center=(other_target.target_x, other_target.target_y),
+                    table_rot_deg=other_target.target_rot_deg,
                     axis=push_axis,
                     gap=4.0,
                 )
@@ -384,8 +377,7 @@ def repair_layout_hard_constraints(
                 other_target.target_y += push_axis[1] * step
                 other_target.target_x, other_target.target_y = _clamp_table_center_to_roi(
                     center=(other_target.target_x, other_target.target_y),
-                    width=other_state.width,
-                    height=other_state.height,
+                    table_state=other_state,
                     rot_deg=other_target.target_rot_deg,
                     roi=scene_state.roi,
                 )
@@ -518,8 +510,14 @@ def _primary_seat_clearance_zone(
     depth_factor: float,
 ) -> _SeatClearanceZone:
     seat_info = _seat_side_info(target)
-    depth = max(table_state.width * depth_factor, table_state.height * 0.72)
-    center_offset = (table_state.height * 0.5) + (depth * 0.5)
+    geometry = resolve_table_state_geometry(table_state)
+    depth = max(geometry.nominal_width * depth_factor, geometry.nominal_depth * 0.72)
+    footprint_support = table_support_distance(
+        table_state,
+        target.target_rot_deg,
+        seat_info.seat_direction,
+    )
+    center_offset = footprint_support + (depth * 0.5)
 
     cx = target.target_x + seat_info.seat_direction[0] * center_offset
     cy = target.target_y + seat_info.seat_direction[1] * center_offset
@@ -527,7 +525,7 @@ def _primary_seat_clearance_zone(
     return _SeatClearanceZone(
         cx=cx,
         cy=cy,
-        width=max(18.0, table_state.width * 0.58),
+        width=max(18.0, geometry.nominal_width * 0.58),
         height=max(16.0, depth),
         rot_deg=target.target_rot_deg,
         seat_direction=seat_info.seat_direction,
@@ -727,15 +725,13 @@ def _compact_groupwork_pair_targets(
 
             first.target_x, first.target_y = _clamp_table_center_to_roi(
                 center=(first.target_x, first.target_y),
-                width=first_state.width,
-                height=first_state.height,
+                table_state=first_state,
                 rot_deg=first.target_rot_deg,
                 roi=scene_state.roi,
             )
             second.target_x, second.target_y = _clamp_table_center_to_roi(
                 center=(second.target_x, second.target_y),
-                width=second_state.width,
-                height=second_state.height,
+                table_state=second_state,
                 rot_deg=second.target_rot_deg,
                 roi=scene_state.roi,
             )
@@ -758,15 +754,13 @@ def _compact_groupwork_pair_targets(
 
         first.target_x, first.target_y = _clamp_table_center_to_roi(
             center=(first.target_x, first.target_y),
-            width=first_state.width,
-            height=first_state.height,
+            table_state=first_state,
             rot_deg=first.target_rot_deg,
             roi=scene_state.roi,
         )
         second.target_x, second.target_y = _clamp_table_center_to_roi(
             center=(second.target_x, second.target_y),
-            width=second_state.width,
-            height=second_state.height,
+            table_state=second_state,
             rot_deg=second.target_rot_deg,
             roi=scene_state.roi,
         )
@@ -803,26 +797,25 @@ def _repair_groupwork_pair_overlap_if_needed(
     direction_sign = 1.0 if signed >= 0.0 else -1.0
     projected_gap = abs(signed)
 
-    required_no_overlap_gap = _required_separation_along_axis(
-        width_a=state_a.width,
-        height_a=state_a.height,
+    separation_axis = (pair_normal[0] * direction_sign, pair_normal[1] * direction_sign)
+    required_no_overlap_gap = _required_table_separation_along_axis(
+        state_a=state_a,
+        center_a=(target_a.target_x, target_a.target_y),
         rot_deg_a=target_a.target_rot_deg,
-        width_b=state_b.width,
-        height_b=state_b.height,
+        state_b=state_b,
+        center_b=(target_b.target_x, target_b.target_y),
         rot_deg_b=target_b.target_rot_deg,
-        axis=pair_normal,
+        axis=separation_axis,
         gap=1.0,
     )
     target_gap = max(desired_gap, required_no_overlap_gap)
 
-    intersects = _obb_intersects(
+    intersects = _table_footprints_intersect(
+        state_a=state_a,
         center_a=(target_a.target_x, target_a.target_y),
-        width_a=state_a.width,
-        height_a=state_a.height,
         rot_deg_a=target_a.target_rot_deg,
+        state_b=state_b,
         center_b=(target_b.target_x, target_b.target_y),
-        width_b=state_b.width,
-        height_b=state_b.height,
         rot_deg_b=target_b.target_rot_deg,
         gap=0.0,
     )
@@ -842,15 +835,13 @@ def _repair_groupwork_pair_overlap_if_needed(
 
     target_a.target_x, target_a.target_y = _clamp_table_center_to_roi(
         center=(target_a.target_x, target_a.target_y),
-        width=state_a.width,
-        height=state_a.height,
+        table_state=state_a,
         rot_deg=target_a.target_rot_deg,
         roi=scene_state.roi,
     )
     target_b.target_x, target_b.target_y = _clamp_table_center_to_roi(
         center=(target_b.target_x, target_b.target_y),
-        width=state_b.width,
-        height=state_b.height,
+        table_state=state_b,
         rot_deg=target_b.target_rot_deg,
         roi=scene_state.roi,
     )
@@ -915,32 +906,33 @@ def _copy_target(target: TableTarget) -> TableTarget:
 
 def _table_inside_roi(
     center: tuple[float, float],
-    width: float,
-    height: float,
+    table_state: TableState,
     rot_deg: float,
     roi: ROI,
 ) -> bool:
-    extent_x, extent_y = _obb_extents_on_world_axes(width, height, rot_deg)
-    return (
-        center[0] - extent_x >= roi.x_min
-        and center[0] + extent_x <= roi.x_max
-        and center[1] - extent_y >= roi.y_min
-        and center[1] + extent_y <= roi.y_max
+    return polygon_inside_roi(
+        _table_world_footprint(table_state, center, rot_deg),
+        x_min=roi.x_min,
+        y_min=roi.y_min,
+        x_max=roi.x_max,
+        y_max=roi.y_max,
     )
 
 
 def _clamp_table_center_to_roi(
     center: tuple[float, float],
-    width: float,
-    height: float,
+    table_state: TableState,
     rot_deg: float,
     roi: ROI,
 ) -> tuple[float, float]:
-    extent_x, extent_y = _obb_extents_on_world_axes(width, height, rot_deg)
-    x_min = roi.x_min + extent_x
-    x_max = roi.x_max - extent_x
-    y_min = roi.y_min + extent_y
-    y_max = roi.y_max - extent_y
+    x_min, y_min, x_max, y_max = table_allowed_center_bounds(
+        table_state,
+        rot_deg,
+        x_min=roi.x_min,
+        y_min=roi.y_min,
+        x_max=roi.x_max,
+        y_max=roi.y_max,
+    )
 
     if x_min > x_max:
         clamped_x = (roi.x_min + roi.x_max) * 0.5
@@ -953,6 +945,104 @@ def _clamp_table_center_to_roi(
         clamped_y = _clamp(center[1], y_min, y_max)
 
     return (clamped_x, clamped_y)
+
+
+def _table_world_footprint(
+    table_state: TableState,
+    center: tuple[float, float],
+    rot_deg: float,
+) -> Footprint:
+    return resolve_table_world_footprint(table_state, center, rot_deg)
+
+
+def _table_footprints_intersect(
+    state_a: TableState,
+    center_a: tuple[float, float],
+    rot_deg_a: float,
+    state_b: TableState,
+    center_b: tuple[float, float],
+    rot_deg_b: float,
+    gap: float,
+) -> bool:
+    return convex_polygons_intersect(
+        _table_world_footprint(state_a, center_a, rot_deg_a),
+        _table_world_footprint(state_b, center_b, rot_deg_b),
+        minimum_gap=gap,
+    )
+
+
+def _required_table_separation_along_axis(
+    state_a: TableState,
+    center_a: tuple[float, float],
+    rot_deg_a: float,
+    state_b: TableState,
+    center_b: tuple[float, float],
+    rot_deg_b: float,
+    axis: tuple[float, float],
+    gap: float,
+) -> float:
+    return required_table_center_separation(
+        state_a,
+        rot_deg_a,
+        state_b,
+        rot_deg_b,
+        axis,
+        gap=gap,
+    )
+
+
+def _clearance_zone_polygon(zone: _SeatClearanceZone) -> Footprint:
+    return transform_local_footprint(
+        rectangle_footprint(zone.width, zone.height),
+        zone.cx,
+        zone.cy,
+        zone.rot_deg,
+    )
+
+
+def _clearance_zone_intersects_table(
+    zone: _SeatClearanceZone,
+    table_state: TableState,
+    table_center: tuple[float, float],
+    table_rot_deg: float,
+) -> bool:
+    return convex_polygons_intersect(
+        _clearance_zone_polygon(zone),
+        _table_world_footprint(table_state, table_center, table_rot_deg),
+    )
+
+
+def _required_clearance_separation_along_axis(
+    zone: _SeatClearanceZone,
+    table_state: TableState,
+    table_center: tuple[float, float],
+    table_rot_deg: float,
+    axis: tuple[float, float],
+    gap: float,
+) -> float:
+    return _required_polygon_separation_along_axis(
+        polygon_a=_clearance_zone_polygon(zone),
+        center_a=(zone.cx, zone.cy),
+        polygon_b=_table_world_footprint(table_state, table_center, table_rot_deg),
+        center_b=table_center,
+        axis=axis,
+        gap=gap,
+    )
+
+
+def _required_polygon_separation_along_axis(
+    polygon_a: Footprint,
+    center_a: tuple[float, float],
+    polygon_b: Footprint,
+    center_b: tuple[float, float],
+    axis: tuple[float, float],
+    gap: float,
+) -> float:
+    return (
+        support_distance(polygon_a, axis, center=center_a)
+        + support_distance(polygon_b, (-axis[0], -axis[1]), center=center_b)
+        + max(0.0, gap)
+    )
 
 
 def _obb_extents_on_world_axes(width: float, height: float, rot_deg: float) -> tuple[float, float]:

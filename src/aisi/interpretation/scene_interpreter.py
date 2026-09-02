@@ -5,6 +5,7 @@ from statistics import mean, median, pstdev
 from typing import Iterable
 
 from aisi.core.models import ROI, SceneFeatures, SceneState, TableState
+from aisi.core.table_geometry import resolve_table_state_geometry
 
 
 # Rule thresholds are intentionally simple and centralized for easier tuning.
@@ -321,7 +322,7 @@ def _angular_gap_evenness(angles: Iterable[float]) -> float:
 
 
 def _table_diagonal(table: TableState) -> float:
-    return math.hypot(max(1.0, table.width), max(1.0, table.height))
+    return max(1.0, resolve_table_state_geometry(table).characteristic_diagonal)
 
 
 def _mean_table_diagonal(tables: list[TableState]) -> float:

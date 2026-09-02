@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from aisi.app.sim_layout_rules import compute_target_layout
+from aisi.core.table_geometry import TABLE_TYPE_IDS, TABLE_TYPE_NAMES
 
 try:
     from pythonosc.udp_client import SimpleUDPClient
@@ -157,15 +158,13 @@ def get_table_type(index: int, table: dict[str, Any]) -> str:
     Valid types: summit, sprint, rect
     Cycles through types by index: 0→summit, 1→sprint, 2→rect, 3→summit, etc.
     """
-    VALID_TYPES = ("summit", "sprint", "rect")
-    
     # Try to read from table first
     table_type = table.get("type")
-    if isinstance(table_type, str) and table_type in VALID_TYPES:
+    if isinstance(table_type, str) and table_type in TABLE_TYPE_IDS:
         return table_type
     
     # Fall back to cycling by index
-    return VALID_TYPES[index % len(VALID_TYPES)]
+    return TABLE_TYPE_NAMES[index % len(TABLE_TYPE_NAMES)]
 
 
 def get_table_type_id(table_type: str) -> int:
@@ -174,8 +173,7 @@ def get_table_type_id(table_type: str) -> int:
     Mapping: summit=0, sprint=1, rect=2
     Defaults to 0 if type is invalid.
     """
-    TYPE_MAP = {"summit": 0, "sprint": 1, "rect": 2}
-    return TYPE_MAP.get(table_type, 0)
+    return TABLE_TYPE_IDS.get(table_type, 0)
 
 
 def get_target_for_index(index: int, source_table: dict[str, Any], targets: list[dict[str, Any]]) -> tuple[float, float, float]:

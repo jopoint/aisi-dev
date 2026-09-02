@@ -4,6 +4,7 @@ import math
 from statistics import mean, median
 
 from aisi.core.models import ClusterZone, Point2D, SceneFeatures, SceneState, TargetProfile, TargetStructure
+from aisi.core.table_geometry import required_table_center_separation, resolve_table_state_geometry
 
 
 def generate_target_structure(
@@ -303,9 +304,16 @@ def pair_tables_by_proximity(tables: list) -> list[list]:
 
 
 def _groupwork_pair_cost(table_a, table_b) -> float:
-    mean_height = max(1.0, (max(1.0, table_a.height) + max(1.0, table_b.height)) * 0.5)
     distance = _distance((table_a.x, table_a.y), (table_b.x, table_b.y))
-    preferred_distance = mean_height * 1.02
+    pair_axis = _normalize_vector((table_b.x - table_a.x, table_b.y - table_a.y))
+    preferred_distance = required_table_center_separation(
+        table_a,
+        table_a.rot_deg,
+        table_b,
+        table_b.rot_deg,
+        pair_axis,
+        gap=4.0,
+    )
 
     distance_ratio = distance / preferred_distance
     distance_penalty = abs(distance_ratio - 1.0)
@@ -326,7 +334,7 @@ def _groupwork_pair_cost(table_a, table_b) -> float:
 
 def _groupwork_singleton_cost(tables: list, idx: int, mask: int) -> float:
     table = tables[idx]
-    mean_diag = mean(math.hypot(max(1.0, item.width), max(1.0, item.height)) for item in tables)
+    mean_diag = mean(resolve_table_state_geometry(item).characteristic_diagonal for item in tables)
     nearest = math.inf
     for other_idx, other in enumerate(tables):
         if other_idx == idx or not (mask & (1 << other_idx)):
@@ -467,8 +475,9 @@ def _input_row_spacing(scene_state: SceneState) -> float:
     if not scene_state.tables:
         return max(60.0, scene_state.roi.height * 0.16)
 
-    median_height = median(max(1.0, table.height) for table in scene_state.tables)
-    median_width = median(max(1.0, table.width) for table in scene_state.tables)
+    geometries = [resolve_table_state_geometry(table) for table in scene_state.tables]
+    median_height = median(max(1.0, geometry.nominal_depth) for geometry in geometries)
+    median_width = median(max(1.0, geometry.nominal_width) for geometry in geometries)
     roi_min = max(1.0, min(scene_state.roi.width, scene_state.roi.height))
     return max(median_height * 1.35, median_width * 0.95, roi_min * 0.16)
 
@@ -500,7 +509,7 @@ def _normalize_vector(vector: tuple[float, float]) -> tuple[float, float]:
 
 
 def _proximity_threshold_from_tables(tables: list) -> float:
-    diagonals = [math.hypot(max(1.0, table.width), max(1.0, table.height)) for table in tables]
+    diagonals = [resolve_table_state_geometry(table).characteristic_diagonal for table in tables]
     return max(1.0, 1.28 * median(diagonals))
 
 
@@ -540,13 +549,17 @@ def _build_zone_from_group(group: list, scene_state: SceneState) -> ClusterZone:
     roi_min = max(1.0, min(roi.width, roi.height))
     center = _clip_point_to_roi((centroid.x, centroid.y), roi, margin=roi_min * 0.05)
 
-    mean_diag = mean(math.hypot(max(1.0, table.width), max(1.0, table.height)) for table in group)
+    geometries = [resolve_table_state_geometry(table) for table in group]
+    mean_diag = mean(geometry.characteristic_diagonal for geometry in geometries)
     if len(group) == 1:
         radius = mean_diag * 0.72
     elif len(group) == 2:
         pair_sep = _distance((group[0].x, group[0].y), (group[1].x, group[1].y))
-        mean_height = max(1.0, mean(max(1.0, table.height) for table in group))
-        compact_sep = _lerp(pair_sep, mean_height * 1.02, 0.62)
+        pair_axis = _normalize_vector((group[1].x - group[0].x, group[1].y - group[0].y))
+        preferred_sep = required_table_center_separation(
+            group[0], group[0].rot_deg, group[1], group[1].rot_deg, pair_axis, gap=4.0
+        )
+        compact_sep = _lerp(pair_sep, preferred_sep, 0.62)
         radius = (compact_sep * 0.62) + (mean_diag * 0.34)
     else:
         spread = mean(_distance((table.x, table.y), center) for table in group)

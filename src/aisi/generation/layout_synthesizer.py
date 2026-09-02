@@ -14,13 +14,20 @@ from aisi.core.models import (
     TargetStructure,
     long_axis_rotation_from_facing_vector,
 )
-from aisi.generation.assignment_utils import assign_tables_to_targets_min_cost
-from aisi.generation.layout_constraints import repair_layout_hard_constraints
+from aisi.core.table_geometry import (
+    required_table_center_separation,
+    resolve_table_state_geometry,
+    table_allowed_center_bounds,
+    table_support_distance,
+    table_world_footprint,
+)
+from aisi.generation.assignment_utils import score_format_bound_targets
+from aisi.generation.layout_constraints import evaluate_hard_constraints, repair_layout_hard_constraints
 from aisi.generation.target_structure_generator import pair_tables_for_groupwork
 
 
-GROUPWORK_PAIR_TABLE_DEPTH_CM = 70.0
 GROUPWORK_PAIR_SEAM_GAP_CM = 4.0
+INPUT_TABLE_GAP_CM = 8.0
 
 
 def synthesize_layout(
@@ -32,6 +39,18 @@ def synthesize_layout(
 ) -> LayoutProposal:
     """Synthesize adaptive table-only layouts from target structure + current scene."""
     tables = sorted(scene_state.tables, key=lambda table: table.table_id)
+    strength = _clamp(transformation_strength, 0.0, 1.0)
+
+    if strength <= 0.0:
+        return LayoutProposal(
+            table_targets=_source_pose_targets(scene_state),
+            chair_targets=[],
+            generation_notes=[
+                "transformation_strength=0.000",
+                "transformation_strength_zero=exact_source_no_repair",
+                "assignment_strategy=format_bound",
+            ],
+        )
 
     if scene_state.learning_format == "input":
         targets, notes = _layout_input_adaptive(
@@ -55,16 +74,97 @@ def synthesize_layout(
             transformation_strength=transformation_strength,
         )
 
-    assignment_result = assign_tables_to_targets_min_cost(scene_state, targets)
+    assignment_result = score_format_bound_targets(scene_state, targets)
     targets = assignment_result.table_targets
     notes = [*notes, *assignment_result.notes]
+
+    targets = _blend_targets_with_source(scene_state, targets, strength)
+    notes.append(f"transformation_strength={strength:.3f}")
 
     repaired_targets, repair_notes = _apply_hard_constraint_repair(scene_state, targets, notes)
     notes = [*notes, *repair_notes]
 
+    final_stats = _evaluate_for_learning_format(scene_state, repaired_targets, notes)
+    if final_stats.overlap_violations or final_stats.roi_violations:
+        raise ValueError(
+            "Final layout violates hard table geometry: "
+            f"overlap={final_stats.overlap_violations}, roi={final_stats.roi_violations}"
+        )
+    if final_stats.clearance_violations:
+        notes.append(f"final_clearance_violations={final_stats.clearance_violations}")
+
     return LayoutProposal(
-        table_targets=sorted(repaired_targets, key=lambda target: target.table_id),
+        table_targets=_targets_in_scene_order(scene_state, repaired_targets),
         chair_targets=[],
+        generation_notes=notes,
+    )
+
+
+def _source_pose_targets(scene_state: SceneState) -> list[TableTarget]:
+    return [
+        TableTarget(
+            table_id=table.table_id,
+            target_x=table.x,
+            target_y=table.y,
+            source_rot_deg=table.rot_deg,
+            target_rot_deg=table.rot_deg,
+        )
+        for table in scene_state.tables
+    ]
+
+
+def _targets_in_scene_order(scene_state: SceneState, targets: list[TableTarget]) -> list[TableTarget]:
+    by_id = {target.table_id: target for target in targets}
+    return [by_id[table.table_id] for table in scene_state.tables if table.table_id in by_id]
+
+
+def _blend_targets_with_source(
+    scene_state: SceneState,
+    targets: list[TableTarget],
+    strength: float,
+) -> list[TableTarget]:
+    source_by_id = {table.table_id: table for table in scene_state.tables}
+    blended: list[TableTarget] = []
+    for target in targets:
+        source = source_by_id[target.table_id]
+        x = _lerp(source.x, target.target_x, strength)
+        y = _lerp(source.y, target.target_y, strength)
+        rot = _normalize_angle_deg(
+            source.rot_deg + _normalize_angle_deg(target.target_rot_deg - source.rot_deg) * strength
+        )
+        facing_x = target.facing_target_x
+        facing_y = target.facing_target_y
+        if facing_x is not None and facing_y is not None:
+            facing_x += x - target.target_x
+            facing_y += y - target.target_y
+        blended.append(
+            TableTarget(
+                table_id=target.table_id,
+                target_x=x,
+                target_y=y,
+                source_rot_deg=source.rot_deg,
+                target_rot_deg=rot,
+                facing_target_x=facing_x,
+                facing_target_y=facing_y,
+            )
+        )
+    return blended
+
+
+def _evaluate_for_learning_format(
+    scene_state: SceneState,
+    targets: list[TableTarget],
+    notes: list[str],
+):
+    depth_factor = 0.65 if scene_state.learning_format == "input" else 0.80 if scene_state.learning_format == "discussion" else 1.0
+    return evaluate_hard_constraints(
+        scene_state,
+        targets,
+        # Groupwork pairs intentionally use their own 4 cm seam.  Final
+        # validity therefore means real-footprint non-intersection; the repair
+        # still applies its existing 8 cm spacing to non-paired tables.
+        overlap_gap=0.0,
+        clearance_depth_factor=depth_factor,
         generation_notes=notes,
     )
 
@@ -84,7 +184,7 @@ def _apply_hard_constraint_repair(
     outcome = repair_layout_hard_constraints(
         scene_state,
         table_targets,
-        max_iterations=30,
+        max_iterations=80,
         overlap_gap=8.0,
         clearance_depth_factor=clearance_depth_factor,
         generation_notes=generation_notes,
@@ -120,6 +220,10 @@ def _layout_input_adaptive(
     roi = scene_state.roi
     roi_diag = max(1.0, math.hypot(roi.width, roi.height))
     front_direction, row_axis, axis_note = _resolve_input_front_axes(scene_state, tables, target_structure)
+    common_rot_deg = long_axis_rotation_from_facing_vector(
+        facing_vector=front_direction,
+        reference_rot_deg=_mean_group_rot_deg(tables),
+    )
 
     row_layout_candidates = _input_row_layout_candidates(len(tables))
     preferred_layout = list(target_structure.row_layout)
@@ -133,7 +237,9 @@ def _layout_input_adaptive(
     best_score = math.inf
     for row_layout in row_layout_candidates:
         row_centers = _resolve_input_row_centers(scene_state, tables, target_structure, row_layout, front_direction)
-        plan = _build_input_row_plan(scene_state, tables, row_layout, row_centers, row_axis)
+        plan = _build_input_row_plan(
+            scene_state, tables, row_layout, row_centers, row_axis, common_rot_deg
+        )
         plan_score = _score_input_row_plan(scene_state, tables, plan, row_layout, row_axis)
         if plan_score < best_score:
             best_score = plan_score
@@ -141,11 +247,6 @@ def _layout_input_adaptive(
 
     if best_plan is None:
         return [], ["input: failed to synthesize frontal row plan"]
-
-    common_rot_deg = long_axis_rotation_from_facing_vector(
-        facing_vector=front_direction,
-        reference_rot_deg=_mean_group_rot_deg(tables),
-    )
 
     targets: list[TableTarget] = []
     assignment_notes: list[str] = []
@@ -161,17 +262,18 @@ def _layout_input_adaptive(
             _lerp(table.x, slot_center[0], pull),
             _lerp(table.y, slot_center[1], pull),
         )
-        target_center = _clip_table_center_to_roi(blended, table, scene_state)
-
-        seat_probe = max(table.width * 0.85, table.height * 1.35)
-        seat_target = (
-            target_center[0] + front_direction[0] * seat_probe,
-            target_center[1] + front_direction[1] * seat_probe,
-        )
         target_rot_deg = _blend_rotation_toward(
             target_rot_deg=common_rot_deg,
             source_rot_deg=table.rot_deg,
             preserve_ratio=0.10,
+        )
+        target_center = _clip_table_center_to_roi(blended, table, target_rot_deg, scene_state)
+
+        geometry = resolve_table_state_geometry(table)
+        seat_probe = table_support_distance(table, target_rot_deg, front_direction) + geometry.nominal_depth * 0.85
+        seat_target = (
+            target_center[0] + front_direction[0] * seat_probe,
+            target_center[1] + front_direction[1] * seat_probe,
         )
 
         targets.append(
@@ -305,8 +407,8 @@ def _build_input_row_plan(
     row_layout: list[int],
     row_centers: list[tuple[float, float]],
     row_axis: tuple[float, float],
+    target_rot_deg: float,
 ) -> dict:
-    col_spacing = _input_col_spacing(scene_state, tables)
     back_axis = (-_perpendicular(row_axis)[0], -_perpendicular(row_axis)[1])
 
     sorted_by_depth = sorted(tables, key=lambda table: _dot((table.x, table.y), back_axis))
@@ -321,12 +423,27 @@ def _build_input_row_plan(
 
         row_tables_sorted = sorted(row_tables, key=lambda table: _dot((table.x, table.y), row_axis))
         row_center = row_centers[min(row_idx, len(row_centers) - 1)]
-        lateral_start = -0.5 * (row_size - 1) * col_spacing
-
-        slots: list[tuple[float, float]] = []
-        for slot_idx in range(row_size):
-            lateral = lateral_start + slot_idx * col_spacing
-            slots.append((row_center[0] + row_axis[0] * lateral, row_center[1] + row_axis[1] * lateral))
+        lateral_positions = [0.0]
+        for previous, current in zip(row_tables_sorted, row_tables_sorted[1:]):
+            lateral_positions.append(
+                lateral_positions[-1]
+                + required_table_center_separation(
+                    previous,
+                    target_rot_deg,
+                    current,
+                    target_rot_deg,
+                    row_axis,
+                    gap=INPUT_TABLE_GAP_CM,
+                )
+            )
+        lateral_center = (lateral_positions[0] + lateral_positions[-1]) * 0.5
+        slots = [
+            (
+                row_center[0] + row_axis[0] * (lateral - lateral_center),
+                row_center[1] + row_axis[1] * (lateral - lateral_center),
+            )
+            for lateral in lateral_positions
+        ]
 
         for slot_idx, (table, slot_center) in enumerate(zip(row_tables_sorted, slots)):
             assignments.append(
@@ -399,8 +516,9 @@ def _input_row_spacing(scene_state: SceneState, tables: list[TableState]) -> flo
     if not tables:
         return max(60.0, scene_state.roi.height * 0.16)
 
-    median_height = median(max(1.0, table.height) for table in tables)
-    median_width = median(max(1.0, table.width) for table in tables)
+    geometries = [resolve_table_state_geometry(table) for table in tables]
+    median_height = median(max(1.0, geometry.nominal_depth) for geometry in geometries)
+    median_width = median(max(1.0, geometry.nominal_width) for geometry in geometries)
     roi_min = max(1.0, min(scene_state.roi.width, scene_state.roi.height))
     return max(median_height * 1.35, median_width * 0.95, roi_min * 0.16)
 
@@ -409,7 +527,7 @@ def _input_col_spacing(scene_state: SceneState, tables: list[TableState]) -> flo
     if not tables:
         return max(70.0, scene_state.roi.width * 0.18)
 
-    median_width = median(max(1.0, table.width) for table in tables)
+    median_width = median(max(1.0, resolve_table_state_geometry(table).nominal_width) for table in tables)
     roi_min = max(1.0, min(scene_state.roi.width, scene_state.roi.height))
     return max(median_width * 0.90, roi_min * 0.11)
 
@@ -438,7 +556,9 @@ def _layout_groupwork_adaptive(
 
     pair_zone_map = _assign_pairs_to_cluster_zones(pairs, zones) if zones else {idx: idx for idx in range(len(pairs))}
 
-    median_height = median(max(1.0, table.height) for table in tables)
+    median_height = median(
+        max(1.0, resolve_table_state_geometry(table).nominal_depth) for table in tables
+    )
 
     island_specs: list[dict] = []
     initial_centers: list[tuple[float, float]] = []
@@ -464,8 +584,6 @@ def _layout_groupwork_adaptive(
         )
 
         if len(pair) == 2:
-            desired_sep = GROUPWORK_PAIR_TABLE_DEPTH_CM + GROUPWORK_PAIR_SEAM_GAP_CM
-
             source_link_axis = _unit_vector_between(pair[0], pair[1], fallback=(1.0, 0.0))
             source_pair_rot = _mean_group_rot_deg(pair)
             source_long_axis = _long_axis_vector_from_rot(source_pair_rot)
@@ -485,6 +603,14 @@ def _layout_groupwork_adaptive(
                 short_axis = (-short_axis[0], -short_axis[1])
 
             pair_rot_deg = _rotation_from_long_axis(long_axis, reference_rot_deg=source_pair_rot)
+            desired_sep = required_table_center_separation(
+                pair[0],
+                pair_rot_deg,
+                pair[1],
+                pair_rot_deg,
+                short_axis,
+                gap=GROUPWORK_PAIR_SEAM_GAP_CM,
+            )
         else:
             desired_sep = 0.0
             pair_rot_deg = pair[0].rot_deg
@@ -506,7 +632,9 @@ def _layout_groupwork_adaptive(
         )
         initial_centers.append(initial_center)
         island_anchors.append(zone_center)
-        island_radii.append(_estimate_groupwork_island_radius(pair, desired_sep))
+        island_radii.append(
+            _estimate_groupwork_island_radius(pair, desired_sep, short_axis, pair_rot_deg)
+        )
 
     distributed_centers = _spread_groupwork_island_centers(
         scene_state=scene_state,
@@ -552,9 +680,13 @@ def _layout_groupwork_adaptive(
             seat_signs = [-1.0, 1.0]
 
             for table, ideal, seat_sign in zip(ordered_pair, ideal_positions, seat_signs):
-                target_center = _clip_table_center_to_roi(ideal, table, scene_state)
+                target_center = _clip_table_center_to_roi(ideal, table, pair_rot_deg, scene_state)
                 seat_direction = (pair_normal[0] * seat_sign, pair_normal[1] * seat_sign)
-                seat_probe = max(table.width * 0.80, table.height * 1.35)
+                geometry = resolve_table_state_geometry(table)
+                seat_probe = (
+                    table_support_distance(table, pair_rot_deg, seat_direction)
+                    + geometry.nominal_depth * 0.85
+                )
                 seat_target = (
                     target_center[0] + seat_direction[0] * seat_probe,
                     target_center[1] + seat_direction[1] * seat_probe,
@@ -586,12 +718,18 @@ def _layout_groupwork_adaptive(
                 min_pull=0.40,
                 max_pull=0.72,
             )
-            target_center = _clip_table_center_to_roi(blended, table, scene_state)
+            target_rot_deg = _target_rot_deg_from_facing_target(
+                table=table,
+                table_center=blended,
+                facing_target=island_center,
+            )
+            target_center = _clip_table_center_to_roi(blended, table, target_rot_deg, scene_state)
             target_rot_deg = _target_rot_deg_from_facing_target(
                 table=table,
                 table_center=target_center,
                 facing_target=island_center,
             )
+            target_center = _clip_table_center_to_roi(target_center, table, target_rot_deg, scene_state)
             targets.append(
                 TableTarget(
                     table_id=table.table_id,
@@ -613,7 +751,7 @@ def _layout_groupwork_adaptive(
         f"groupwork_pair_count={len(pairs)} zones={len(zones)}",
         f"groupwork_pairs={'; '.join(pair_members_notes)}",
         f"groupwork_island_centers={'; '.join(pair_center_notes)}",
-        f"groupwork_pair_gap_cm={GROUPWORK_PAIR_TABLE_DEPTH_CM + GROUPWORK_PAIR_SEAM_GAP_CM:.1f}",
+        f"groupwork_pair_seam_gap_cm={GROUPWORK_PAIR_SEAM_GAP_CM:.1f}",
         f"groupwork_pair_geometry={'; '.join(pair_geometry_notes)}",
         f"groupwork_pair_rotations={'; '.join(pair_rotation_notes)}",
         f"groupwork_table_roles={'; '.join(sorted(table_role_notes))}",
@@ -659,7 +797,10 @@ def _layout_discussion_adaptive(
 
     polar_entries.sort(key=lambda item: item[1])
     base_radius = median(entry[2] for entry in polar_entries)
-    min_radius = roi_min * 0.14
+    typical_diagonal = median(
+        resolve_table_state_geometry(table).characteristic_diagonal for table in tables
+    )
+    min_radius = max(roi_min * 0.14, typical_diagonal * 0.55)
     max_radius = roi_min * 0.42
     start_angle = polar_entries[0][1]
 
@@ -680,12 +821,18 @@ def _layout_discussion_adaptive(
             min_pull=0.40,
             max_pull=0.78,
         )
-        target_center = _clip_table_center_to_roi(blended, table, scene_state)
+        target_rot_deg = _target_rot_deg_from_facing_target(
+            table=table,
+            table_center=blended,
+            facing_target=center_tuple,
+        )
+        target_center = _clip_table_center_to_roi(blended, table, target_rot_deg, scene_state)
         target_rot_deg = _target_rot_deg_from_facing_target(
             table=table,
             table_center=target_center,
             facing_target=center_tuple,
         )
+        target_center = _clip_table_center_to_roi(target_center, table, target_rot_deg, scene_state)
 
         targets.append(
             TableTarget(
@@ -918,8 +1065,10 @@ def _groupwork_pair_cohesion(pair: list[TableState]) -> float:
         return 0.0
 
     separation = _distance((pair[0].x, pair[0].y), (pair[1].x, pair[1].y))
-    mean_height = max(1.0, (max(1.0, pair[0].height) + max(1.0, pair[1].height)) * 0.5)
-    preferred = mean_height * 1.02
+    pair_axis = _unit_vector_between(pair[0], pair[1], fallback=(1.0, 0.0))
+    preferred = required_table_center_separation(
+        pair[0], pair[0].rot_deg, pair[1], pair[1].rot_deg, pair_axis, gap=GROUPWORK_PAIR_SEAM_GAP_CM
+    )
 
     separation_quality = max(0.0, 1.0 - (abs(separation - preferred) / max(1.0, preferred * 0.90)))
     orientation_delta = _angle_delta_mod180(pair[0].rot_deg, pair[1].rot_deg)
@@ -968,18 +1117,27 @@ def _long_side_label_from_direction(rot_deg: float, direction: tuple[float, floa
     return "long_side_pos_normal" if side_sign >= 0.0 else "long_side_neg_normal"
 
 
-def _estimate_groupwork_island_radius(pair: list[TableState], separation: float) -> float:
+def _estimate_groupwork_island_radius(
+    pair: list[TableState],
+    separation: float,
+    separation_normal: tuple[float, float],
+    target_rot_deg: float,
+) -> float:
     if not pair:
         return 0.0
     if len(pair) == 1:
-        table = pair[0]
-        return math.hypot(max(1.0, table.width), max(1.0, table.height)) * 0.55
-
-    mean_width = mean(max(1.0, table.width) for table in pair)
-    mean_height = mean(max(1.0, table.height) for table in pair)
-    half_long = mean_width * 0.52
-    half_short = (separation * 0.5) + (mean_height * 0.55)
-    return math.hypot(half_long, half_short) + (mean_height * 0.20)
+        polygons = [table_world_footprint(pair[0], (0.0, 0.0), target_rot_deg)]
+    else:
+        normal = _normalize_vector(separation_normal)
+        half = separation * 0.5
+        centers = [(-normal[0] * half, -normal[1] * half), (normal[0] * half, normal[1] * half)]
+        polygons = [
+            table_world_footprint(table, center, target_rot_deg)
+            for table, center in zip(pair, centers)
+        ]
+    radius = max(math.hypot(x, y) for polygon in polygons for x, y in polygon)
+    padding = mean(resolve_table_state_geometry(table).nominal_depth for table in pair) * 0.20
+    return radius + padding
 
 
 def _spread_groupwork_island_centers(
@@ -1070,18 +1228,25 @@ def _adaptive_pull(delta: float, roi_diag: float, min_pull: float, max_pull: flo
 def _clip_table_center_to_roi(
     center: tuple[float, float],
     table: TableState,
+    rotation_deg: float,
     scene_state: SceneState,
 ) -> tuple[float, float]:
-    """Keep target center inside ROI with a small geometry-aware margin."""
+    """Clamp a rotated real footprint into the ROI."""
     roi = scene_state.roi
-    margin_x = max(8.0, table.width * 0.22)
-    margin_y = max(8.0, table.height * 0.22)
+    x_min, x_max, y_min, y_max = table_allowed_center_bounds(
+        table,
+        rotation_deg,
+        x_min=roi.x_min,
+        x_max=roi.x_max,
+        y_min=roi.y_min,
+        y_max=roi.y_max,
+    )
     return _clip_point(
         center,
-        x_min=roi.x_min + margin_x,
-        x_max=roi.x_max - margin_x,
-        y_min=roi.y_min + margin_y,
-        y_max=roi.y_max - margin_y,
+        x_min=x_min,
+        x_max=x_max,
+        y_min=y_min,
+        y_max=y_max,
     )
 
 

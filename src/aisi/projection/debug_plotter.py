@@ -4,10 +4,10 @@ import math
 from pathlib import Path
 
 import matplotlib.pyplot as plt
-from matplotlib.patches import Circle, FancyArrowPatch, Rectangle
-from matplotlib.transforms import Affine2D
+from matplotlib.patches import Circle, FancyArrowPatch, Polygon, Rectangle
 
 from aisi.core.models import LayoutProposal, SceneState, choose_facing_normal_toward_target
+from aisi.core.table_geometry import resolve_table_state_geometry, table_world_footprint
 
 
 def plot_scene_state(
@@ -22,11 +22,10 @@ def plot_scene_state(
     for table in scene_state.tables:
         _draw_rotated_table_centered(
             ax,
+            table=table,
             x=table.x,
             y=table.y,
             rot_deg=table.rot_deg,
-            width=table.width,
-            height=table.height,
             edgecolor="#2E7D32",
             fillcolor="#2E7D32",
             linestyle="-",
@@ -55,15 +54,14 @@ def plot_layout_proposal(
     source_map = {table.table_id: table for table in scene_state.tables}
     for target in layout_proposal.table_targets:
         source = source_map.get(target.table_id)
-        width = source.width if source else 110.0
-        height = source.height if source else 70.0
+        if source is None:
+            continue
         _draw_rotated_table_centered(
             ax,
+            table=source,
             x=target.target_x,
             y=target.target_y,
             rot_deg=target.target_rot_deg,
-            width=width,
-            height=height,
             edgecolor="#EF6C00",
             fillcolor="none",
             linestyle="--",
@@ -94,11 +92,10 @@ def plot_before_after(
     for table in scene_state.tables:
         _draw_rotated_table_centered(
             ax,
+            table=table,
             x=table.x,
             y=table.y,
             rot_deg=table.rot_deg,
-            width=table.width,
-            height=table.height,
             edgecolor="#1E88E5",
             fillcolor="#1E88E5",
             linestyle="-",
@@ -110,15 +107,14 @@ def plot_before_after(
 
     for target in layout_proposal.table_targets:
         source = source_map.get(target.table_id)
-        width = source.width if source else 110.0
-        height = source.height if source else 70.0
+        if source is None:
+            continue
         _draw_rotated_table_centered(
             ax,
+            table=source,
             x=target.target_x,
             y=target.target_y,
             rot_deg=target.target_rot_deg,
-            width=width,
-            height=height,
             edgecolor="#E53935",
             fillcolor="none",
             linestyle="--",
@@ -189,11 +185,10 @@ def _draw_table(
 
 def _draw_rotated_table_centered(
     ax: plt.Axes,
+    table,
     x: float,
     y: float,
     rot_deg: float,
-    width: float,
-    height: float,
     edgecolor: str,
     fillcolor: str,
     linestyle: str,
@@ -203,22 +198,21 @@ def _draw_rotated_table_centered(
     show_facing_arrow: bool,
 ) -> None:
     """Draw table geometry and optional facing-normal arrow."""
-    patch = Rectangle(
-        (x - width / 2.0, y - height / 2.0),
-        width,
-        height,
+    footprint = table_world_footprint(table, (x, y), rot_deg)
+    patch = Polygon(
+        footprint,
+        closed=True,
         facecolor=fillcolor,
         edgecolor=edgecolor,
         linestyle=linestyle,
         linewidth=1.8,
         alpha=alpha,
     )
-    patch.set_transform(Affine2D().rotate_deg_around(x, y, rot_deg) + ax.transData)
     ax.add_patch(patch)
 
     if show_facing_arrow:
         facing_vector = _facing_vector_for_plot(x, y, rot_deg, facing_target)
-        arrow_length = height * 0.52
+        arrow_length = resolve_table_state_geometry(table).nominal_depth * 0.52
         ax.add_patch(
             FancyArrowPatch(
                 (x, y),

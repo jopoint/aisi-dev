@@ -15,6 +15,43 @@ class AssignmentResult:
     notes: list[str]
 
 
+def score_format_bound_targets(
+    scene_state: SceneState,
+    table_targets: list[TableTarget],
+) -> AssignmentResult:
+    """Score targets without changing the format generator's table-id binding."""
+    sources_by_id = {table.table_id: table for table in scene_state.tables}
+    total_cost = 0.0
+    scored = 0
+    notes: list[str] = []
+    for target_index, target in enumerate(table_targets):
+        source = sources_by_id.get(target.table_id)
+        if source is None:
+            notes.append(f"{target.table_id}:format_bound_source_missing")
+            continue
+        total_cost += _single_pair_cost(
+            scene_state,
+            source,
+            target,
+            source_idx=target_index,
+            slot_idx=target_index,
+        )
+        scored += 1
+
+    normalized_cost = total_cost / max(1, scored)
+    notes.extend(
+        [
+            f"assignment_cost_total={normalized_cost:.3f}",
+            "assignment_strategy=format_bound",
+        ]
+    )
+    return AssignmentResult(
+        table_targets=list(table_targets),
+        assignment_cost_total=normalized_cost,
+        notes=notes,
+    )
+
+
 def assign_tables_to_targets_min_cost(
     scene_state: SceneState,
     target_slots: list[TableTarget],

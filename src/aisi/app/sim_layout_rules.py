@@ -251,8 +251,12 @@ def _compute_with_aisi_pipeline(
         transformation_strength=transformation_strength,
     )
 
+    target_by_id = {target.table_id: target for target in proposal.table_targets}
     targets = []
-    for target in proposal.table_targets:
+    for table in scene_state.tables:
+        target = target_by_id.get(table.table_id)
+        if target is None:
+            raise ValueError(f"AISI layout pipeline omitted table_id={table.table_id!r}.")
         targets.append(
             {
                 "x_cm": float(target.target_x),
@@ -265,6 +269,101 @@ def _compute_with_aisi_pipeline(
         raise ValueError("AISI layout pipeline returned no table targets.")
 
     return targets
+
+
+def _compute_geometry_safe_static_fallback(
+    scene: dict[str, Any],
+    learning_format: str,
+    transformation_strength: float,
+) -> list[dict[str, float]]:
+    """Bind static slots to scene IDs, then blend, repair, and validate them."""
+    from aisi.core.models import TableTarget
+    from aisi.core.table_geometry import table_allowed_center_bounds
+    from aisi.generation.layout_synthesizer import (
+        _apply_hard_constraint_repair,
+        _blend_targets_with_source,
+        _evaluate_for_learning_format,
+        _source_pose_targets,
+        _targets_in_scene_order,
+    )
+    from aisi.input.scene_loader import build_scene_state_from_dict
+
+    normalized_scene = _normalize_scene_for_aisi(scene)
+    scene_state = build_scene_state_from_dict(normalized_scene, learning_format=learning_format)
+    strength = _clamp(transformation_strength, 0.0, 1.0)
+    if strength <= 0.0:
+        targets = _source_pose_targets(scene_state)
+    else:
+        templates = _static_fallback(learning_format)
+        targets: list[TableTarget] = []
+        for index, table in enumerate(scene_state.tables):
+            if index < len(templates):
+                template = templates[index]
+                rotation = float(template["rotation_deg"])
+                x_min, x_max, y_min, y_max = table_allowed_center_bounds(
+                    table,
+                    rotation,
+                    x_min=scene_state.roi.x_min,
+                    x_max=scene_state.roi.x_max,
+                    y_min=scene_state.roi.y_min,
+                    y_max=scene_state.roi.y_max,
+                )
+                x = _clamp(float(template["x_cm"]), x_min, x_max)
+                y = _clamp(float(template["y_cm"]), y_min, y_max)
+            else:
+                x, y, rotation = table.x, table.y, table.rot_deg
+            targets.append(
+                TableTarget(
+                    table_id=table.table_id,
+                    target_x=x,
+                    target_y=y,
+                    source_rot_deg=table.rot_deg,
+                    target_rot_deg=rotation,
+                )
+            )
+
+        targets = _blend_targets_with_source(scene_state, targets, strength)
+        notes = ["fallback=static_geometry_safe", f"transformation_strength={strength:.3f}"]
+        targets, repair_notes = _apply_hard_constraint_repair(scene_state, targets, notes)
+        notes.extend(repair_notes)
+        stats = _evaluate_for_learning_format(scene_state, targets, notes)
+        if stats.overlap_violations or stats.roi_violations:
+            raise ValueError(
+                "Static fallback remains invalid: "
+                f"overlap={stats.overlap_violations}, roi={stats.roi_violations}, "
+                f"clearance={stats.clearance_violations}"
+            )
+        if stats.clearance_violations:
+            print(
+                "[sim_layout_rules] Static fallback has remaining seat-clearance "
+                f"violations: {stats.clearance_violations}"
+            )
+
+    ordered = _targets_in_scene_order(scene_state, targets)
+    return [
+        {
+            "x_cm": float(target.target_x),
+            "y_cm": float(target.target_y),
+            "rotation_deg": float(target.target_rot_deg),
+        }
+        for target in ordered
+    ]
+
+
+def _source_pose_fallback(scene: dict[str, Any]) -> list[dict[str, float]]:
+    """Last-resort contract-preserving source poses; validity is not implied."""
+    result: list[dict[str, float]] = []
+    for table in scene.get("tables", []):
+        if not isinstance(table, dict):
+            continue
+        result.append(
+            {
+                "x_cm": float(table.get("x_cm", table.get("x", 0.0))),
+                "y_cm": float(table.get("y_cm", table.get("y", 0.0))),
+                "rotation_deg": float(table.get("rotation_deg", table.get("rot_deg", 0.0))),
+            }
+        )
+    return result
 
 
 def _blend_generated_targets_with_source(
@@ -323,15 +422,25 @@ def compute_target_layout(
         learning_format = "input"
 
     try:
-        generated_targets = _compute_with_aisi_pipeline(
+        return _compute_with_aisi_pipeline(
             scene,
             learning_format,
             transformation_strength=transformation_strength,
         )
-        return _blend_generated_targets_with_source(scene, generated_targets, transformation_strength)
     except Exception as exc:
         if not _DID_WARN_FALLBACK:
             print(f"[sim_layout_rules] Falling back to static targets: {exc}")
             _DID_WARN_FALLBACK = True
 
-        return _static_fallback(learning_format)
+        try:
+            return _compute_geometry_safe_static_fallback(
+                scene,
+                learning_format,
+                transformation_strength,
+            )
+        except Exception as fallback_exc:
+            print(
+                "[sim_layout_rules] Geometry-safe static fallback failed; returning "
+                f"source poses without claiming validity: {fallback_exc}"
+            )
+            return _source_pose_fallback(scene)

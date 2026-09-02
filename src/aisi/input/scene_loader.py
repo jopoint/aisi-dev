@@ -5,6 +5,11 @@ from pathlib import Path
 from typing import Any
 
 from aisi.core.models import ChairState, ROI, SceneState, TableState
+from aisi.core.table_geometry import TABLE_GEOMETRIES, normalize_table_type
+
+
+LEGACY_DEFAULT_TABLE_WIDTH = 110.0
+LEGACY_DEFAULT_TABLE_HEIGHT = 70.0
 
 
 def load_scene_json(path: str | Path) -> dict[str, Any]:
@@ -58,26 +63,41 @@ def _build_tables(scene_dict: dict[str, Any]) -> list[TableState]:
     tables: list[TableState] = []
     for index, item in enumerate(raw_tables):
         pose = item.get("pose", item)
+        table_type = normalize_table_type(item.get("type"))
         rot_deg = _safe_float(item.get("rot_deg"))
         if rot_deg is None:
             rot_deg = _safe_float(pose.get("rot_deg"))
         if rot_deg is None:
             rot_deg = 0.0
+        if table_type in TABLE_GEOMETRIES:
+            geometry = TABLE_GEOMETRIES[table_type]
+            width = geometry.nominal_width
+            height = geometry.nominal_depth
+        else:
+            width = _read_dimension(
+                item,
+                pose,
+                primary_keys=("width",),
+                fallback_keys=(),
+                default=LEGACY_DEFAULT_TABLE_WIDTH,
+            )
+            height = _read_dimension(
+                item,
+                pose,
+                primary_keys=("height", "depth"),
+                fallback_keys=("depth",),
+                default=LEGACY_DEFAULT_TABLE_HEIGHT,
+            )
         tables.append(
             TableState(
                 table_id=str(item.get("id") or f"table_{index:02d}"),
                 x=float(pose.get("x", 0.0)),
                 y=float(pose.get("y", 0.0)),
                 rot_deg=float(rot_deg),
-                width=_read_dimension(item, pose, primary_keys=("width",), fallback_keys=(), default=110.0),
-                height=_read_dimension(
-                    item,
-                    pose,
-                    primary_keys=("height", "depth"),
-                    fallback_keys=("depth",),
-                    default=70.0,
-                ),
+                width=width,
+                height=height,
                 confidence=_safe_float(item.get("confidence")),
+                table_type=table_type,
             )
         )
     return tables
