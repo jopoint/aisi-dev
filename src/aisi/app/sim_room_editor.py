@@ -60,6 +60,14 @@ def scene_file_path() -> Path:
     return out_dir / "live_scene.json"
 
 
+def get_table_type_by_index(index: int) -> str:
+    """Return the deterministic table type based on index.
+    
+    Cycles through: summit, sprint, rect
+    """
+    return ["summit", "sprint", "rect"][index % 3]
+
+
 def make_default_tables() -> list[dict]:
     """Create the initial table layout."""
     return [
@@ -70,6 +78,7 @@ def make_default_tables() -> list[dict]:
             "width_cm": TABLE_WIDTH_CM,
             "height_cm": TABLE_HEIGHT_CM,
             "rotation_deg": 0,
+            "type": get_table_type_by_index(0),
         },
         {
             "id": "table_1",
@@ -78,6 +87,7 @@ def make_default_tables() -> list[dict]:
             "width_cm": TABLE_WIDTH_CM,
             "height_cm": TABLE_HEIGHT_CM,
             "rotation_deg": 0,
+            "type": get_table_type_by_index(1),
         },
         {
             "id": "table_2",
@@ -86,6 +96,7 @@ def make_default_tables() -> list[dict]:
             "width_cm": TABLE_WIDTH_CM,
             "height_cm": TABLE_HEIGHT_CM,
             "rotation_deg": 0,
+            "type": get_table_type_by_index(2),
         },
         {
             "id": "table_3",
@@ -94,6 +105,7 @@ def make_default_tables() -> list[dict]:
             "width_cm": TABLE_WIDTH_CM,
             "height_cm": TABLE_HEIGHT_CM,
             "rotation_deg": 0,
+            "type": get_table_type_by_index(3),
         },
     ]
 
@@ -199,6 +211,7 @@ def scene_payload(tables: list[dict], chairs: list[dict], persons: list[dict]) -
                 "width_cm": table["width_cm"],
                 "height_cm": table["height_cm"],
                 "rotation_deg": round(table["rotation_deg"], 3),
+                "type": table.get("type", "summit"),
             }
             for table in tables
         ],

@@ -151,6 +151,33 @@ def load_learning_settings(path: Path) -> tuple[str | None, bool, bool, float]:
     )
 
 
+def get_table_type(index: int, table: dict[str, Any]) -> str:
+    """Get the table type, reading from table['type'] or defaulting by index.
+    
+    Valid types: summit, sprint, rect
+    Cycles through types by index: 0→summit, 1→sprint, 2→rect, 3→summit, etc.
+    """
+    VALID_TYPES = ("summit", "sprint", "rect")
+    
+    # Try to read from table first
+    table_type = table.get("type")
+    if isinstance(table_type, str) and table_type in VALID_TYPES:
+        return table_type
+    
+    # Fall back to cycling by index
+    return VALID_TYPES[index % len(VALID_TYPES)]
+
+
+def get_table_type_id(table_type: str) -> int:
+    """Convert table type string to numeric ID.
+    
+    Mapping: summit=0, sprint=1, rect=2
+    Defaults to 0 if type is invalid.
+    """
+    TYPE_MAP = {"summit": 0, "sprint": 1, "rect": 2}
+    return TYPE_MAP.get(table_type, 0)
+
+
 def get_target_for_index(index: int, source_table: dict[str, Any], targets: list[dict[str, Any]]) -> tuple[float, float, float]:
     """Return the target pose for a table in the selected layout mode."""
     if index < len(targets):
@@ -178,6 +205,8 @@ def send_tables(client: SimpleUDPClient, tables: list[dict[str, Any]], targets: 
         td_source_rot = -source_rot
         width_cm = float(table.get("width_cm", 0.0))
         height_cm = float(table.get("height_cm", 0.0))
+        table_type = get_table_type(index, table)
+        table_type_id = get_table_type_id(table_type)
 
         target_x, target_y, target_rot = get_target_for_index(index, table, targets)
         td_target_rot = -target_rot
@@ -193,6 +222,8 @@ def send_tables(client: SimpleUDPClient, tables: list[dict[str, Any]], targets: 
         client.send_message(f"/table/{index}/rot", td_source_rot)
         client.send_message(f"/table/{index}/width", width_cm)
         client.send_message(f"/table/{index}/height", height_cm)
+        client.send_message(f"/table/{index}/type", table_type)
+        client.send_message(f"/table/{index}/type_id", table_type_id)
 
         table_id = str(table.get("id", f"table_{index}"))
         summaries.append(
@@ -366,6 +397,9 @@ def main() -> None:
                 layout_mode = current_layout_mode
 
             targets = compute_target_layout(scene, layout_mode, transformation_strength=transformation_strength)
+            client.send_message("/table/count", len(tables))
+            client.send_message("/person/count", len(persons))
+            client.send_message("/chair/count", len(chairs))
             summaries = send_tables(client, tables, targets)
             send_persons(client, persons, show_persons)
             send_chairs(client, chairs, show_chairs)
