@@ -1,8 +1,9 @@
 """Simple top-down room simulator for editing a CV-like scene without a real room.
 
 This version uses only the Python standard library plus tkinter.
-It shows four editable tables in a 500 cm x 500 cm ROI and writes the current
-scene to data/aisi/scenes/simulated/live_scene.json every 0.2 seconds.
+It provides editable tables, chairs, and persons in a 500 cm x 500 cm ROI and
+writes the current scene to data/aisi/scenes/simulated/live_scene.json every
+0.2 seconds.
 """
 
 from __future__ import annotations
@@ -10,9 +11,15 @@ from __future__ import annotations
 import copy
 import json
 import os
+import platform
 import random
 import time
 from pathlib import Path
+
+if platform.system() == "Darwin":
+    import matplotlib
+
+    matplotlib.use("TkAgg")
 
 from aisi.core.table_geometry import (
     TABLE_TYPE_NAMES,
@@ -33,6 +40,11 @@ ROI_HEIGHT_CM = 500
 SCALE_PX_PER_CM = 2
 WINDOW_WIDTH_PX = ROI_WIDTH_CM * SCALE_PX_PER_CM
 WINDOW_HEIGHT_PX = ROI_HEIGHT_CM * SCALE_PX_PER_CM
+MACOS_SCALE_PX_PER_CM = 1.4
+MACOS_INITIAL_WINDOW_WIDTH_PX = 1000
+MACOS_INITIAL_WINDOW_HEIGHT_PX = 800
+MACOS_MINIMUM_WINDOW_WIDTH_PX = 760
+MACOS_MINIMUM_WINDOW_HEIGHT_PX = 760
 PERSON_RADIUS_CM = 40
 CHAIR_RADIUS_CM = 30
 SAVE_INTERVAL_SECONDS = 0.2
@@ -97,6 +109,62 @@ def make_default_tables() -> list[dict]:
     ]
 
 
+def next_object_number(items: list[dict], kind: str) -> int:
+    """Return the next available numeric suffix for one scene object kind.
+
+    IDs intentionally do not reuse a removed object's numeric suffix. This
+    keeps an editor session deterministic and avoids an old object identity
+    being silently assigned to a newly added object.
+    """
+    prefix = f"{kind}_"
+    used_numbers = {
+        int(str(item.get("id", ""))[len(prefix) :])
+        for item in items
+        if str(item.get("id", "")).startswith(prefix)
+        and str(item.get("id", ""))[len(prefix) :].isdigit()
+    }
+    return max(used_numbers, default=-1) + 1
+
+
+def next_object_id(items: list[dict], kind: str) -> str:
+    """Return the next available ID for one scene object kind."""
+    return f"{kind}_{next_object_number(items, kind)}"
+
+
+def addition_offset(index: int) -> tuple[float, float]:
+    """Return a small deterministic center-relative offset for a new item."""
+    offsets = (
+        (0.0, 0.0),
+        (30.0, 0.0),
+        (0.0, 30.0),
+        (-30.0, 0.0),
+        (0.0, -30.0),
+        (30.0, 30.0),
+        (-30.0, 30.0),
+        (-30.0, -30.0),
+        (30.0, -30.0),
+    )
+    return offsets[index % len(offsets)]
+
+
+def make_added_table(tables: list[dict], table_id: str | None = None) -> dict:
+    """Create a new rectangular table at a deterministic valid ROI position."""
+    table_id = table_id or next_object_id(tables, "table")
+    table_number = int(table_id.rsplit("_", 1)[1])
+    offset_x, offset_y = addition_offset(table_number)
+    x_cm, y_cm = clamp_table_center_to_roi("rect", 250.0 + offset_x, 250.0 + offset_y, 0.0)
+    geometry = get_table_geometry("rect")
+    return {
+        "id": table_id,
+        "x_cm": x_cm,
+        "y_cm": y_cm,
+        "width_cm": geometry.nominal_width,
+        "height_cm": geometry.nominal_depth,
+        "rotation_deg": 0.0,
+        "type": "rect",
+    }
+
+
 def make_default_persons() -> list[dict]:
     """Create four simple person markers."""
     return [
@@ -115,6 +183,21 @@ def make_default_chairs() -> list[dict]:
         {"id": "chair_2", "x_cm": 120, "y_cm": 340, "radius_cm": CHAIR_RADIUS_CM},
         {"id": "chair_3", "x_cm": 380, "y_cm": 340, "radius_cm": CHAIR_RADIUS_CM},
     ]
+
+
+def make_added_circle_item(
+    items: list[dict], kind: str, radius_cm: float, item_id: str | None = None
+) -> dict:
+    """Create a new chair or person at a deterministic valid ROI position."""
+    item_id = item_id or next_object_id(items, kind)
+    item_number = int(item_id.rsplit("_", 1)[1])
+    offset_x, offset_y = addition_offset(item_number)
+    return {
+        "id": item_id,
+        "x_cm": clamp(250.0 + offset_x, radius_cm, ROI_WIDTH_CM - radius_cm),
+        "y_cm": clamp(250.0 + offset_y, radius_cm, ROI_HEIGHT_CM - radius_cm),
+        "radius_cm": radius_cm,
+    }
 
 
 def clamp(value: float, low: float, high: float) -> float:
@@ -283,6 +366,8 @@ def print_help() -> None:
     """Print the keyboard and mouse controls."""
     print("Bedienung:")
     print("  T: Typ des ausgewählten Tischs wechseln")
+    print("  A/C/P: Tisch/Stuhl/Person hinzufügen")
+    print("  Entf/Backspace: ausgewähltes Objekt löschen")
     print("  Linksklick auf einen Tisch: auswählen")
     print("  Linksklick und ziehen: Tisch verschieben")
     print("  Q: ausgewählten Tisch um -5 Grad drehen")
@@ -317,10 +402,25 @@ class SimRoomEditor:
     """Small tkinter-based room editor."""
 
     def __init__(self) -> None:
+        global SCALE_PX_PER_CM, WINDOW_WIDTH_PX, WINDOW_HEIGHT_PX
+
         self.root = tk.Tk()
         self.root.title("AISI Sim Room Editor")
         self.root.configure(bg=BG_COLOR)
-        self.root.resizable(False, False)
+        if self.root.tk.call("tk", "windowingsystem") == "aqua":
+            # A fixed 1000 px square canvas exceeds the usable height of many
+            # Mac displays once window chrome and the controls are included.
+            # This is display scaling only; all scene coordinates remain cm.
+            SCALE_PX_PER_CM = MACOS_SCALE_PX_PER_CM
+            WINDOW_WIDTH_PX = round(ROI_WIDTH_CM * SCALE_PX_PER_CM)
+            WINDOW_HEIGHT_PX = round(ROI_HEIGHT_CM * SCALE_PX_PER_CM)
+            self.root.geometry(
+                f"{MACOS_INITIAL_WINDOW_WIDTH_PX}x{MACOS_INITIAL_WINDOW_HEIGHT_PX}"
+            )
+            self.root.minsize(
+                MACOS_MINIMUM_WINDOW_WIDTH_PX, MACOS_MINIMUM_WINDOW_HEIGHT_PX
+            )
+        self.root.resizable(True, True)
         self.root.protocol("WM_DELETE_WINDOW", self.close)
 
         self.canvas = tk.Canvas(
@@ -332,12 +432,22 @@ class SimRoomEditor:
         )
         self.canvas.pack()
 
+        self.controls = tk.Frame(self.root, bg=BG_COLOR)
+        self.controls.pack(fill="x", pady=(6, 0))
+        tk.Button(self.controls, text="+ Table", command=self.add_table).pack(side="left", padx=(0, 4))
+        tk.Button(self.controls, text="+ Chair", command=self.add_chair).pack(side="left", padx=4)
+        tk.Button(self.controls, text="+ Person", command=self.add_person).pack(side="left", padx=4)
+        tk.Button(self.controls, text="Remove selected", command=self.remove_selected).pack(side="left", padx=4)
+
         self.tables = make_default_tables()
         self.chairs = make_default_chairs()
         self.persons = make_default_persons()
         self.initial_tables = copy.deepcopy(self.tables)
         self.initial_chairs = copy.deepcopy(self.chairs)
         self.initial_persons = copy.deepcopy(self.persons)
+        self.next_table_number = next_object_number(self.tables, "table")
+        self.next_chair_number = next_object_number(self.chairs, "chair")
+        self.next_person_number = next_object_number(self.persons, "person")
         self.selected_kind: str | None = None
         self.selected_id: str | None = None
         self.dragging = False
@@ -363,6 +473,14 @@ class SimRoomEditor:
         self.root.bind("<O>", lambda event: self.toggle_occlusion())
         self.root.bind("<t>", lambda event: self.cycle_selected_table_type())
         self.root.bind("<T>", lambda event: self.cycle_selected_table_type())
+        self.root.bind("<a>", lambda event: self.add_table())
+        self.root.bind("<A>", lambda event: self.add_table())
+        self.root.bind("<c>", lambda event: self.add_chair())
+        self.root.bind("<C>", lambda event: self.add_chair())
+        self.root.bind("<p>", lambda event: self.add_person())
+        self.root.bind("<P>", lambda event: self.add_person())
+        self.root.bind("<Delete>", lambda event: self.remove_selected())
+        self.root.bind("<BackSpace>", lambda event: self.remove_selected())
 
         self.canvas.bind("<ButtonPress-1>", self.on_mouse_down)
         self.canvas.bind("<B1-Motion>", self.on_mouse_drag)
@@ -410,6 +528,68 @@ class SimRoomEditor:
         self.dragging = False
         self.save_now()
         self.redraw()
+
+    def select_item(self, kind: str, item_id: str) -> None:
+        """Make one newly created or clicked object the explicit selection."""
+        self.selected_kind = kind
+        self.selected_id = item_id
+        self.dragging = False
+
+    def add_table(self) -> None:
+        """Append and select one new canonical rectangular table."""
+        table = make_added_table(self.tables, table_id=f"table_{self.next_table_number}")
+        self.next_table_number += 1
+        self.tables.append(table)
+        self.select_item("table", table["id"])
+        self.save_now()
+        self.redraw()
+
+    def add_chair(self) -> None:
+        """Append and select one new chair."""
+        chair = make_added_circle_item(
+            self.chairs, "chair", CHAIR_RADIUS_CM, item_id=f"chair_{self.next_chair_number}"
+        )
+        self.next_chair_number += 1
+        self.chairs.append(chair)
+        self.select_item("chair", chair["id"])
+        self.save_now()
+        self.redraw()
+
+    def add_person(self) -> None:
+        """Append and select one new person."""
+        person = make_added_circle_item(
+            self.persons, "person", PERSON_RADIUS_CM, item_id=f"person_{self.next_person_number}"
+        )
+        self.next_person_number += 1
+        self.persons.append(person)
+        self.select_item("person", person["id"])
+        self.save_now()
+        self.redraw()
+
+    def remove_selected(self) -> None:
+        """Remove exactly the currently selected object, if it still exists."""
+        if self.selected_id is None:
+            return
+
+        items: list[dict] | None = None
+        if self.selected_kind == "table":
+            items = self.tables
+        elif self.selected_kind == "chair":
+            items = self.chairs
+        elif self.selected_kind == "person":
+            items = self.persons
+        if items is None:
+            return
+
+        for index, item in enumerate(items):
+            if item["id"] == self.selected_id:
+                del items[index]
+                self.selected_kind = None
+                self.selected_id = None
+                self.dragging = False
+                self.save_now()
+                self.redraw()
+                return
 
     def rotate_selected(self, delta_deg: float) -> None:
         """Rotate the selected table."""
@@ -616,7 +796,7 @@ class SimRoomEditor:
             8,
             8,
             anchor="nw",
-            text="LMB: select/drag   Q/E: rotate   T: type   R: reset   S: save   J/O: CV sim   ESC: quit",
+            text="LMB: select/drag   A/C/P: add   Del: remove   Q/E: rotate   T: type   R: reset   S: save   J/O: CV sim   ESC: quit",
             fill=TEXT_COLOR,
             font=("TkDefaultFont", 10),
         )

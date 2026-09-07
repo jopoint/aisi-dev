@@ -1,0 +1,97 @@
+{
+  "scene_id": "simulated_live_scene",
+  "source": "sim_room_editor",
+  "roi": {
+    "width_cm": 500,
+    "height_cm": 500
+  },
+  "tables": [
+    {
+      "id": "table_0",
+      "x_cm": 95.0,
+      "y_cm": 102.143,
+      "width_cm": 160.0,
+      "height_cm": 80.0,
+      "rotation_deg": 65,
+      "type": "rect"
+    },
+    {
+      "id": "table_4",
+      "x_cm": 410.0,
+      "y_cm": 92.857,
+      "width_cm": 160.0,
+      "height_cm": 80.0,
+      "rotation_deg": 115.0,
+      "type": "rect"
+    },
+    {
+      "id": "table_5",
+      "x_cm": 245.0,
+      "y_cm": 86.784,
+      "width_cm": 160.0,
+      "height_cm": 80.0,
+      "rotation_deg": -30.0,
+      "type": "rect"
+    },
+    {
+      "id": "table_6",
+      "x_cm": 327.143,
+      "y_cm": 207.143,
+      "width_cm": 160.0,
+      "height_cm": 80.0,
+      "rotation_deg": -145.0,
+      "type": "rect"
+    },
+    {
+      "id": "table_8",
+      "x_cm": 135.0,
+      "y_cm": 235.714,
+      "width_cm": 160.0,
+      "height_cm": 80.0,
+      "rotation_deg": -15.0,
+      "type": "rect"
+    },
+    {
+      "id": "table_9",
+      "x_cm": 64.286,
+      "y_cm": 375.0,
+      "width_cm": 160.0,
+      "height_cm": 80.0,
+      "rotation_deg": -85.0,
+      "type": "rect"
+    },
+    {
+      "id": "table_10",
+      "x_cm": 262.143,
+      "y_cm": 270.714,
+      "width_cm": 160.0,
+      "height_cm": 80.0,
+      "rotation_deg": -5.0,
+      "type": "rect"
+    },
+    {
+      "id": "table_11",
+      "x_cm": 417.143,
+      "y_cm": 295.0,
+      "width_cm": 160.0,
+      "height_cm": 80.0,
+      "rotation_deg": -90.0,
+      "type": "rect"
+    }
+  ],
+  "chairs": [],
+  "persons": [
+    {
+      "id": "person_1",
+      "x_cm": 302.143,
+      "y_cm": 392.857,
+      "radius_cm": 40
+    },
+    {
+      "id": "person_2",
+      "x_cm": 178.571,
+      "y_cm": 392.857,
+      "radius_cm": 40
+    }
+  ]
+}

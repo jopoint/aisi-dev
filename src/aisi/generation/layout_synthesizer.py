@@ -28,6 +28,9 @@ from aisi.generation.target_structure_generator import pair_tables_for_groupwork
 
 GROUPWORK_PAIR_SEAM_GAP_CM = 4.0
 INPUT_TABLE_GAP_CM = 8.0
+RECT_TEMPLATE_MAX_TABLES = 6
+RECT_INPUT_TWO_COLUMN_SPACING_CM = 220.0
+RECT_INPUT_ROW_SPACING_CM = 190.0
 
 
 def synthesize_layout(
@@ -52,7 +55,9 @@ def synthesize_layout(
             ],
         )
 
-    if scene_state.learning_format == "input":
+    if _uses_rect_template_layout(tables):
+        targets, notes = _layout_rect_templates(scene_state, tables)
+    elif scene_state.learning_format == "input":
         targets, notes = _layout_input_adaptive(
             scene_state,
             tables,
@@ -98,6 +103,284 @@ def synthesize_layout(
         chair_targets=[],
         generation_notes=notes,
     )
+
+
+def _uses_rect_template_layout(tables: list[TableState]) -> bool:
+    """Return whether a small all-rect scene uses the restored template path."""
+    return 1 <= len(tables) <= RECT_TEMPLATE_MAX_TABLES and all(
+        table.table_type == "rect" for table in tables
+    )
+
+
+def _layout_rect_templates(
+    scene_state: SceneState,
+    tables: list[TableState],
+) -> tuple[list[TableTarget], list[str]]:
+    """Build deterministic, ID-bound layouts for the historical rect workflow."""
+    if scene_state.learning_format == "input":
+        return _layout_rect_input_templates(scene_state, tables)
+    if scene_state.learning_format == "groupwork":
+        return _layout_rect_groupwork_templates(scene_state, tables)
+    return _layout_rect_discussion_templates(scene_state, tables)
+
+
+def _layout_rect_input_templates(
+    scene_state: SceneState,
+    tables: list[TableState],
+) -> tuple[list[TableTarget], list[str]]:
+    """Restore frontal rect rows with spacing that satisfies current clearance."""
+    occupancy_by_count = {
+        1: (1,),
+        2: (2,),
+        3: (2, 1),
+        4: (2, 2),
+        5: (3, 2),
+        6: (3, 3),
+    }
+    occupancy = occupancy_by_count[len(tables)]
+    row_y = (250.0,) if len(occupancy) == 1 else (155.0, 345.0)
+    rotation_deg = long_axis_rotation_from_facing_vector((0.0, -1.0), reference_rot_deg=0.0)
+
+    slots: list[tuple[float, float]] = []
+    for row_size, y in zip(occupancy, row_y):
+        slots.extend((x, y) for x in _rect_input_row_x_positions(tables[0], row_size))
+
+    targets = [
+        TableTarget(
+            table_id=table.table_id,
+            target_x=slot[0],
+            target_y=slot[1],
+            source_rot_deg=table.rot_deg,
+            target_rot_deg=rotation_deg,
+            facing_target_x=slot[0],
+            facing_target_y=slot[1] - 100.0,
+        )
+        for table, slot in zip(tables, slots)
+    ]
+    return targets, [
+        "rect_template=input",
+        f"rect_input_occupancy={list(occupancy)}",
+        f"rect_input_two_column_spacing_cm={RECT_INPUT_TWO_COLUMN_SPACING_CM:.1f}",
+        f"rect_input_row_spacing_cm={RECT_INPUT_ROW_SPACING_CM:.1f}",
+    ]
+
+
+def _rect_input_row_x_positions(table: TableState, row_size: int) -> tuple[float, ...]:
+    if row_size == 1:
+        return (250.0,)
+    if row_size == 2:
+        half_spacing = RECT_INPUT_TWO_COLUMN_SPACING_CM * 0.5
+        return (250.0 - half_spacing, 250.0 + half_spacing)
+
+    lateral_spacing = required_table_center_separation(
+        table,
+        0.0,
+        table,
+        0.0,
+        (1.0, 0.0),
+        gap=INPUT_TABLE_GAP_CM,
+    )
+    return tuple(250.0 + (index - 1) * lateral_spacing for index in range(row_size))
+
+
+def _layout_rect_groupwork_templates(
+    scene_state: SceneState,
+    tables: list[TableState],
+) -> tuple[list[TableTarget], list[str]]:
+    """Arrange rect tables as compact, centered pair islands and singletons."""
+    groups = [tables[index : index + 2] for index in range(0, len(tables), 2)]
+    centers = _rect_groupwork_group_centers(len(tables))
+    targets: list[TableTarget] = []
+    assignment_notes: list[str] = []
+    geometry_notes: list[str] = []
+    rotation_deg = 0.0
+
+    for group_index, (group, center) in enumerate(zip(groups, centers)):
+        group_id = f"pair{group_index}"
+        if len(group) == 2:
+            separation = required_table_center_separation(
+                group[0],
+                rotation_deg,
+                group[1],
+                rotation_deg,
+                (0.0, 1.0),
+                gap=GROUPWORK_PAIR_SEAM_GAP_CM,
+            )
+            half_separation = separation * 0.5
+            slots = ((center[0], center[1] - half_separation), (center[0], center[1] + half_separation))
+            seat_directions = ((0.0, -1.0), (0.0, 1.0))
+            geometry_notes.append(
+                f"{group_id}|center={center[0]:.3f},{center[1]:.3f}|normal=0.000000,1.000000|gap_cm={separation:.3f}"
+            )
+        else:
+            slots = (center,)
+            seat_directions = ((0.0, -1.0),)
+
+        for table, slot, seat_direction in zip(group, slots, seat_directions):
+            targets.append(
+                TableTarget(
+                    table_id=table.table_id,
+                    target_x=slot[0],
+                    target_y=slot[1],
+                    source_rot_deg=table.rot_deg,
+                    target_rot_deg=rotation_deg,
+                    facing_target_x=slot[0] + seat_direction[0] * 100.0,
+                    facing_target_y=slot[1] + seat_direction[1] * 100.0,
+                )
+            )
+            assignment_notes.append(f"{table.table_id}->{group_id}")
+
+    return targets, [
+        "rect_template=groupwork",
+        f"groupwork_pair_count={len(groups)}",
+        f"groupwork_assignments={', '.join(assignment_notes)}",
+        f"groupwork_pair_geometry={'; '.join(geometry_notes)}",
+        f"groupwork_pair_seam_gap_cm={GROUPWORK_PAIR_SEAM_GAP_CM:.1f}",
+    ]
+
+
+def _rect_groupwork_group_centers(table_count: int) -> tuple[tuple[float, float], ...]:
+    """Return deliberate centered compositions for one to three islands."""
+    by_count = {
+        1: ((250.0, 250.0),),
+        2: ((250.0, 250.0),),
+        3: ((150.0, 250.0), (350.0, 250.0)),
+        4: ((150.0, 250.0), (350.0, 250.0)),
+        5: ((120.0, 160.0), (380.0, 160.0), (250.0, 360.0)),
+        6: ((120.0, 180.0), (380.0, 180.0), (250.0, 350.0)),
+    }
+    return by_count[table_count]
+
+
+def _layout_rect_discussion_templates(
+    scene_state: SceneState,
+    tables: list[TableState],
+) -> tuple[list[TableTarget], list[str]]:
+    """Arrange rect tables on a regular inward-facing polygon around the ROI center."""
+    center = scene_state.roi.center
+    if len(tables) == 1:
+        table = tables[0]
+        return [
+            TableTarget(
+                table_id=table.table_id,
+                target_x=center[0],
+                target_y=center[1],
+                source_rot_deg=table.rot_deg,
+                target_rot_deg=0.0,
+            )
+        ], ["rect_template=discussion", "rect_discussion_centered_singleton=true"]
+
+    # Bind the regular ring in source angular order. This remains a
+    # format-specific ID binding (not a slot-permutation optimization), while
+    # avoiding avoidable crossing paths during strength blending.
+    ordered_tables = _tables_in_source_angular_order(tables, center)
+    start_angle = _source_angle_or_default(ordered_tables[0], center, len(tables))
+    angles = tuple(start_angle + (2.0 * math.pi * index) / len(ordered_tables) for index in range(len(ordered_tables)))
+    rotations = tuple(
+        long_axis_rotation_from_facing_vector((-math.cos(angle), -math.sin(angle)), reference_rot_deg=0.0)
+        for angle in angles
+    )
+    radius = _rect_discussion_radius(scene_state, ordered_tables, angles, rotations)
+
+    targets = []
+    for table, angle, rotation_deg in zip(ordered_tables, angles, rotations):
+        x = center[0] + math.cos(angle) * radius
+        y = center[1] + math.sin(angle) * radius
+        targets.append(
+            TableTarget(
+                table_id=table.table_id,
+                target_x=x,
+                target_y=y,
+                source_rot_deg=table.rot_deg,
+                target_rot_deg=rotation_deg,
+                facing_target_x=center[0],
+                facing_target_y=center[1],
+            )
+        )
+
+    return targets, [
+        "rect_template=discussion",
+        f"rect_discussion_center=({center[0]:.1f},{center[1]:.1f})",
+        f"rect_discussion_radius_cm={radius:.3f}",
+    ]
+
+
+def _tables_in_source_angular_order(
+    tables: list[TableState],
+    center: tuple[float, float],
+) -> list[TableState]:
+    return sorted(
+        tables,
+        key=lambda table: (
+            _source_angle_or_default(table, center, len(tables)),
+            table.table_id,
+        ),
+    )
+
+
+def _source_angle_or_default(
+    table: TableState,
+    center: tuple[float, float],
+    table_count: int,
+) -> float:
+    dx = table.x - center[0]
+    dy = table.y - center[1]
+    if math.hypot(dx, dy) <= 1e-6:
+        return -math.pi * 0.5 + math.pi / max(1, table_count)
+    return math.atan2(dy, dx)
+
+
+def _rect_discussion_radius(
+    scene_state: SceneState,
+    tables: list[TableState],
+    angles: tuple[float, ...],
+    rotations: tuple[float, ...],
+) -> float:
+    """Derive an ROI-safe ring radius from rect support and the common gap."""
+    count = len(tables)
+    radius = 0.0
+    for index in range(count):
+        next_index = (index + 1) % count
+        point = (math.cos(angles[index]), math.sin(angles[index]))
+        next_point = (math.cos(angles[next_index]), math.sin(angles[next_index]))
+        separation_axis = _normalize_vector((next_point[0] - point[0], next_point[1] - point[1]))
+        required = required_table_center_separation(
+            tables[index],
+            rotations[index],
+            tables[next_index],
+            rotations[next_index],
+            separation_axis,
+            gap=INPUT_TABLE_GAP_CM,
+        )
+        chord_factor = 2.0 * math.sin(math.pi / count)
+        radius = max(radius, required / max(1e-6, chord_factor))
+
+    radius += INPUT_TABLE_GAP_CM
+    max_radius = math.inf
+    for table, angle, rotation_deg in zip(tables, angles, rotations):
+        x_min, y_min, x_max, y_max = table_allowed_center_bounds(
+            table,
+            rotation_deg,
+            x_min=scene_state.roi.x_min,
+            x_max=scene_state.roi.x_max,
+            y_min=scene_state.roi.y_min,
+            y_max=scene_state.roi.y_max,
+        )
+        direction = (math.cos(angle), math.sin(angle))
+        for coordinate, center_value, lower, upper in (
+            (direction[0], scene_state.roi.center[0], x_min, x_max),
+            (direction[1], scene_state.roi.center[1], y_min, y_max),
+        ):
+            if coordinate > 1e-9:
+                max_radius = min(max_radius, (upper - center_value) / coordinate)
+            elif coordinate < -1e-9:
+                max_radius = min(max_radius, (lower - center_value) / coordinate)
+
+    if radius > max_radius:
+        raise ValueError(
+            f"rect discussion ring cannot fit {count} tables: required_radius={radius:.3f}, max_radius={max_radius:.3f}"
+        )
+    return radius
 
 
 def _source_pose_targets(scene_state: SceneState) -> list[TableTarget]:
