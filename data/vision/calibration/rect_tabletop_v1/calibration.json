@@ -1,0 +1,233 @@
+{
+  "schema_version": 1,
+  "calibration_id": "calibration",
+  "coordinate_system": "aisi_world_cm",
+  "calibration_plane": "rect_tabletop",
+  "plane_height_cm": 74.0,
+  "processed_image": {
+    "width": 1920,
+    "height": 1080
+  },
+  "preprocessing": {
+    "camera_rotate": 0,
+    "crop": null
+  },
+  "homography": [
+    [
+      -0.47344017056665705,
+      0.027166403175090944,
+      704.1029215569816
+    ],
+    [
+      -0.016754976505633755,
+      -0.4523231372302043,
+      499.3765260425544
+    ],
+    [
+      -1.6551054138406992e-05,
+      6.368911324907365e-05,
+      1.0
+    ]
+  ],
+  "reference_points": [
+    {
+      "capture_index": 0,
+      "image": "data\\vision\\calibration\\captures\\p01.png",
+      "marker_id": 7,
+      "pixel": [
+        1452.0,
+        955.75
+      ],
+      "world_cm": [
+        40.0,
+        40.0
+      ],
+      "fit_error_cm": 1.6557645773372327,
+      "leave_one_out_error_cm": 6.1733586428862,
+      "mapped_world_cm": [
+        41.11737159274105,
+        41.22189895625623
+      ]
+    },
+    {
+      "capture_index": 1,
+      "image": "data\\vision\\calibration\\captures\\p02.png",
+      "marker_id": 7,
+      "pixel": [
+        993.0,
+        978.75
+      ],
+      "world_cm": [
+        250.0,
+        40.0
+      ],
+      "fit_error_cm": 1.9353048421548364,
+      "leave_one_out_error_cm": 2.8777521809334066,
+      "mapped_world_cm": [
+        249.1307190344461,
+        38.270909072664594
+      ]
+    },
+    {
+      "capture_index": 2,
+      "image": "data\\vision\\calibration\\captures\\p03.png",
+      "marker_id": 7,
+      "pixel": [
+        521.0,
+        991.0
+      ],
+      "world_cm": [
+        460.0,
+        40.0
+      ],
+      "fit_error_cm": 0.698303406941724,
+      "leave_one_out_error_cm": 2.586285290316835,
+      "mapped_world_cm": [
+        459.33219526523635,
+        40.20411879965763
+      ]
+    },
+    {
+      "capture_index": 3,
+      "image": "data\\vision\\calibration\\captures\\p04.png",
+      "marker_id": 7,
+      "pixel": [
+        1433.0,
+        496.0
+      ],
+      "world_cm": [
+        40.0,
+        250.0
+      ],
+      "fit_error_cm": 1.50317879453495,
+      "leave_one_out_error_cm": 2.362630108086452,
+      "mapped_world_cm": [
+        38.83200216813371,
+        249.0537825022252
+      ]
+    },
+    {
+      "capture_index": 4,
+      "image": "data\\vision\\calibration\\captures\\p05.png",
+      "marker_id": 7,
+      "pixel": [
+        979.0,
+        505.5
+      ],
+      "world_cm": [
+        250.0,
+        250.0
+      ],
+      "fit_error_cm": 0.4636078330281238,
+      "leave_one_out_error_cm": 0.5710372009866705,
+      "mapped_world_cm": [
+        250.33442232143506,
+        250.3210824407703
+      ]
+    },
+    {
+      "capture_index": 5,
+      "image": "data\\vision\\calibration\\captures\\p06.png",
+      "marker_id": 7,
+      "pixel": [
+        518.0,
+        516.0
+      ],
+      "world_cm": [
+        460.0,
+        250.0
+      ],
+      "fit_error_cm": 2.0505730339893615,
+      "leave_one_out_error_cm": 3.1144296347358718,
+      "mapped_world_cm": [
+        461.66487447307185,
+        251.1970976387238
+      ]
+    },
+    {
+      "capture_index": 6,
+      "image": "data\\vision\\calibration\\captures\\p07.png",
+      "marker_id": 7,
+      "pixel": [
+        1330.0,
+        179.25
+      ],
+      "world_cm": [
+        80.0,
+        400.0
+      ],
+      "fit_error_cm": 0.2938726560350376,
+      "leave_one_out_error_cm": 0.5309706880666529,
+      "mapped_world_cm": [
+        80.1463536035574,
+        400.2548367334017
+      ]
+    },
+    {
+      "capture_index": 7,
+      "image": "data\\vision\\calibration\\captures\\p08.png",
+      "marker_id": 7,
+      "pixel": [
+        968.25,
+        62.5
+      ],
+      "world_cm": [
+        250.0,
+        460.0
+      ],
+      "fit_error_cm": 0.5925464783292237,
+      "leave_one_out_error_cm": 0.9589548271009298,
+      "mapped_world_cm": [
+        250.40854466798547,
+        460.42918828413764
+      ]
+    },
+    {
+      "capture_index": 8,
+      "image": "data\\vision\\calibration\\captures\\p09.png",
+      "marker_id": 7,
+      "pixel": [
+        525.75,
+        73.75
+      ],
+      "world_cm": [
+        460.0,
+        460.0
+      ],
+      "fit_error_cm": 1.357235800168202,
+      "leave_one_out_error_cm": 5.063153002115456,
+      "mapped_world_cm": [
+        459.03354030926045,
+        459.04708621406036
+      ]
+    }
+  ],
+  "validation": {
+    "point_count": 9,
+    "rmse_cm": 1.3305587288759437,
+    "max_error_cm": 2.0505730339893615,
+    "errors_cm": [
+      1.6557645773372327,
+      1.9353048421548364,
+      0.698303406941724,
+      1.50317879453495,
+      0.4636078330281238,
+      2.0505730339893615,
+      0.2938726560350376,
+      0.5925464783292237,
+      1.357235800168202
+    ],
+    "leave_one_out_errors_cm": [
+      6.1733586428862,
+      2.8777521809334066,
+      2.586285290316835,
+      2.362630108086452,
+      0.5710372009866705,
+      3.1144296347358718,
+      0.5309706880666529,
+      0.9589548271009298,
+      5.063153002115456
+    ]
+  },
+  "created_at": "2026-09-08T14:21:09.979901+00:00"
+}
