@@ -1,0 +1,121 @@
+{
+    "schema_version":  1,
+    "coordinate_system":  "aisi_world_cm",
+    "calibration_plane":  "rect_tabletop",
+    "plane_height_cm":  74.0,
+    "aruco_dictionary":  "DICT_4X4_50",
+    "preprocessing":  {
+                          "camera_rotate":  0,
+                          "crop":  null
+                      },
+    "captures":  [
+                     {
+                         "image":  "captures/p01.png",
+                         "points":  [
+                                        {
+                                            "marker_id":  7,
+                                            "world_cm":  [
+                                                             40.0,
+                                                             40.0
+                                                         ]
+                                        }
+                                    ]
+                     },
+                     {
+                         "image":  "captures/p02.png",
+                         "points":  [
+                                        {
+                                            "marker_id":  7,
+                                            "world_cm":  [
+                                                             250.0,
+                                                             40.0
+                                                         ]
+                                        }
+                                    ]
+                     },
+                     {
+                         "image":  "captures/p03.png",
+                         "points":  [
+                                        {
+                                            "marker_id":  7,
+                                            "world_cm":  [
+                                                             460.0,
+                                                             40.0
+                                                         ]
+                                        }
+                                    ]
+                     },
+                     {
+                         "image":  "captures/p04.png",
+                         "points":  [
+                                        {
+                                            "marker_id":  7,
+                                            "world_cm":  [
+                                                             40.0,
+                                                             250.0
+                                                         ]
+                                        }
+                                    ]
+                     },
+                     {
+                         "image":  "captures/p05.png",
+                         "points":  [
+                                        {
+                                            "marker_id":  7,
+                                            "world_cm":  [
+                                                             250.0,
+                                                             250.0
+                                                         ]
+                                        }
+                                    ]
+                     },
+                     {
+                         "image":  "captures/p06.png",
+                         "points":  [
+                                        {
+                                            "marker_id":  7,
+                                            "world_cm":  [
+                                                             460.0,
+                                                             250.0
+                                                         ]
+                                        }
+                                    ]
+                     },
+                     {
+                         "image":  "captures/p07.png",
+                         "points":  [
+                                        {
+                                            "marker_id":  7,
+                                            "world_cm":  [
+                                                             80,
+                                                             400
+                                                         ]
+                                        }
+                                    ]
+                     },
+                     {
+                         "image":  "captures/p08.png",
+                         "points":  [
+                                        {
+                                            "marker_id":  7,
+                                            "world_cm":  [
+                                                             250.0,
+                                                             460.0
+                                                         ]
+                                        }
+                                    ]
+                     },
+                     {
+                         "image":  "captures/p09.png",
+                         "points":  [
+                                        {
+                                            "marker_id":  7,
+                                            "world_cm":  [
+                                                             460.0,
+                                                             460.0
+                                                         ]
+                                        }
+                                    ]
+                     }
+                 ]
+}

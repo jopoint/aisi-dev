@@ -28,6 +28,7 @@ import cv2
 
 from src.vision.pipeline import VisionPipeline
 from src.vision.utils import load_vision_config
+from src.vision.calibration.tabletop import load_tabletop_calibration
 
 
 def load_homography(path: str) -> np.ndarray:
@@ -349,6 +350,7 @@ def main():
     parser.add_argument("--camera-width", type=int, default=None, help="Optional requested camera capture width in pixels.")
     parser.add_argument("--camera-height", type=int, default=None, help="Optional requested camera capture height in pixels.")
     parser.add_argument("--save-live-frame", default=None, help="Optional output PNG path: save first live frame after rotation, before crop/detection.")
+    parser.add_argument("--save-live-frame-processed", default=None, help="Optional output PNG path: save first live frame after rotation and crop, matching calibration/detection pixels.")
     parser.add_argument("--exit-after-saving-live-frame", action="store_true", help="Exit camera loop immediately after saving --save-live-frame.")
     
     # Output
@@ -360,7 +362,9 @@ def main():
     parser.add_argument("--device", choices=["cuda", "cpu"], default=sam_config.get("device"), help="Device for SAM2.1 (falls back to cpu if cuda not available).")
     
     # Homography
-    parser.add_argument("--homography", help="Path to homography JSON file (optional).")
+    calibration_group = parser.add_mutually_exclusive_group()
+    calibration_group.add_argument("--homography", help="Path to legacy homography JSON file (optional).")
+    calibration_group.add_argument("--calibration", help="Path to versioned Rect-tabletop calibration profile JSON.")
     
     # Furniture filtering (loaded from configs/vision.yaml, CLI overrides)
     parser.add_argument("--table-min-area", type=float, default=furniture_config.get("table_min_area"), help="Minimum table area in pixels.")
@@ -549,14 +553,19 @@ def main():
         parser.error("--camera-width must be > 0.")
     if args.camera_height is not None and int(args.camera_height) <= 0:
         parser.error("--camera-height must be > 0.")
-    if args.save_live_frame and args.camera is None:
-        parser.error("--save-live-frame is only supported with --camera.")
-    if args.exit_after_saving_live_frame and not args.save_live_frame:
-        parser.error("--exit-after-saving-live-frame requires --save-live-frame.")
+    if (args.save_live_frame or args.save_live_frame_processed) and args.camera is None:
+        parser.error("--save-live-frame and --save-live-frame-processed are only supported with --camera.")
+    if args.exit_after_saving_live_frame and not (args.save_live_frame or args.save_live_frame_processed):
+        parser.error("--exit-after-saving-live-frame requires a live-frame save option.")
     
     # Load homography if provided
     H = None
-    if args.homography:
+    calibration_profile = None
+    if args.calibration:
+        calibration_profile = load_tabletop_calibration(args.calibration)
+        H = calibration_profile.homography
+        print(f"Loaded tabletop calibration from {args.calibration}")
+    elif args.homography:
         H = load_homography(args.homography)
         print(f"Loaded homography from {args.homography}")
     
@@ -690,6 +699,7 @@ def main():
         sam3_config_path=args.sam_config,
         sam3_checkpoint_path=args.sam_checkpoint,
         homography_matrix=H,
+        calibration_profile=calibration_profile,
         device=device,
         table_min_area=args.table_min_area,
         table_max_area=args.table_max_area,
@@ -772,6 +782,7 @@ def main():
         camera_width=args.camera_width,
         camera_height=args.camera_height,
         save_live_frame_path=args.save_live_frame,
+        save_live_frame_processed_path=args.save_live_frame_processed,
         exit_after_saving_live_frame=args.exit_after_saving_live_frame,
         show_table_ids=args.show_table_ids,
     )

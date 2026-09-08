@@ -18,6 +18,7 @@ from src.vision.detection.furniture_postprocess import postprocess_furniture_mas
 from src.aisi_sensing.sensing.calibration.homography import apply_homography
 from src.aisi_sensing.core.types import FrameEvent, DetectedEntity, Pose2D
 from src.aisi_sensing.core.timebase import now_iso
+from src.vision.calibration.tabletop import TabletopCalibration, project_axis_angle, project_point
 
 
 class VisionPipeline:
@@ -37,6 +38,7 @@ class VisionPipeline:
         sam3_checkpoint_path: Optional[str] = None,
         homography_matrix: Optional[np.ndarray] = None,
         device: str = "cuda",
+        calibration_profile: Optional[TabletopCalibration] = None,
         table_min_area: float = 5000.0,
         table_max_area: float = 50000.0,
         chair_min_area: float = 2000.0,
@@ -120,6 +122,7 @@ class VisionPipeline:
         camera_width: Optional[int] = None,
         camera_height: Optional[int] = None,
         save_live_frame_path: Optional[str] = None,
+        save_live_frame_processed_path: Optional[str] = None,
         exit_after_saving_live_frame: bool = False,
         show_table_ids: bool = False,
     ):
@@ -219,7 +222,8 @@ class VisionPipeline:
             exit_after_saving_live_frame: Exit camera loop after saving first frame.
             show_table_ids: Show table track IDs near final table overlays (rendering only).
         """
-        self.H = homography_matrix
+        self.calibration_profile = calibration_profile
+        self.H = calibration_profile.homography if calibration_profile is not None else homography_matrix
         self.table_min_area = table_min_area
         self.table_max_area = table_max_area
         self.chair_min_area = chair_min_area
@@ -319,8 +323,18 @@ class VisionPipeline:
         self.camera_width = None if camera_width is None else int(camera_width)
         self.camera_height = None if camera_height is None else int(camera_height)
         self.save_live_frame_path = str(save_live_frame_path).strip() if save_live_frame_path else None
+        self.save_live_frame_processed_path = str(save_live_frame_processed_path).strip() if save_live_frame_processed_path else None
         self.exit_after_saving_live_frame = bool(exit_after_saving_live_frame)
         self.show_table_ids = bool(show_table_ids)
+        if self.calibration_profile is not None:
+            if self.calibration_profile.camera_rotate != self.camera_rotate:
+                raise ValueError("Calibration camera_rotate does not match VisionPipeline camera_rotate")
+            if self.calibration_profile.crop != self._input_crop:
+                raise ValueError("Calibration crop does not match VisionPipeline crop")
+            print(
+                "WARNING: tabletop calibration is physically accurate for Rect table poses; "
+                "chair/person world positions remain tabletop-plane approximations."
+            )
         if self.table_obb_model and self.table_refine_every > 0:
             # Keep table geometry source consistent when OBB table mode is enabled.
             print("Table OBB model enabled: disabling SAM table refinement (--table-refine-every forced to 0).")
@@ -591,6 +605,31 @@ class VisionPipeline:
             return cv2.rotate(frame_bgr, cv2.ROTATE_90_COUNTERCLOCKWISE)
         return frame_bgr
 
+    def _validate_calibration_frame(self, frame_bgr: np.ndarray) -> None:
+        if self.calibration_profile is not None:
+            height, width = frame_bgr.shape[:2]
+            self.calibration_profile.validate_processed_frame(width, height)
+
+    def _project_world_point(self, point_px: tuple[float, float]) -> tuple[float, float]:
+        if self.calibration_profile is not None:
+            return project_point(point_px, self.calibration_profile)
+        if self.H is not None:
+            return apply_homography(point_px, self.H)
+        return point_px
+
+    def _project_table_theta(self, center_px: tuple[float, float], yaw_rad: float | None) -> float | None:
+        if yaw_rad is None:
+            return None
+        if self.calibration_profile is not None:
+            return project_axis_angle(center_px, float(yaw_rad), self.calibration_profile)
+        return float(yaw_rad)
+
+    def _world_metadata(self, **extra: object) -> dict:
+        metadata = {"homography_applied": self.H is not None, **extra}
+        if self.calibration_profile is not None:
+            metadata.update(self.calibration_profile.world_metadata())
+        return metadata
+
     @staticmethod
     def _bbox_area(bbox: List[int]) -> float:
         """Compute bbox area in pixels (clamped to non-negative extents)."""
@@ -777,6 +816,7 @@ class VisionPipeline:
         """
         if timestamp_iso is None:
             timestamp_iso = now_iso()
+        self._validate_calibration_frame(frame_bgr)
         
         # 1. Segment with SAM3
         seg_results = self.segmenter.segment_image(
@@ -814,12 +854,8 @@ class VisionPipeline:
             yaw_rad = table["yaw_rad"]
             
             # Project to floor coordinates
-            if self.H is not None:
-                center_floor = apply_homography(center_px, self.H)
-            else:
-                center_floor = center_px
-            
-            pose = Pose2D(x=center_floor[0], y=center_floor[1], theta=yaw_rad)
+            center_floor = self._project_world_point(tuple(center_px))
+            pose = Pose2D(x=center_floor[0], y=center_floor[1], theta=self._project_table_theta(tuple(center_px), yaw_rad))
             
             entity = DetectedEntity(
                 id=f"table_{i}",
@@ -834,10 +870,7 @@ class VisionPipeline:
             center_px = chair["center_px"]
             
             # Project to floor coordinates
-            if self.H is not None:
-                center_floor = apply_homography(center_px, self.H)
-            else:
-                center_floor = center_px
+            center_floor = self._project_world_point(tuple(center_px))
             
             pose = Pose2D(x=center_floor[0], y=center_floor[1], theta=None)
             
@@ -855,7 +888,7 @@ class VisionPipeline:
             frame_id=self.frame_id,
             furniture=furniture_entities,
             people=[],  # No person detection in this pipeline
-            world={"homography_applied": self.H is not None}
+            world=self._world_metadata()
         )
         
         self.frame_id += 1
@@ -893,6 +926,8 @@ class VisionPipeline:
                 if not ret:
                     break
                 frame = self._apply_input_crop(frame)
+
+                self._validate_calibration_frame(frame)
                 
                 frame_event = self.process_frame(frame)
                 f.write(json.dumps(frame_event.to_dict()) + "\n")
@@ -969,6 +1004,7 @@ class VisionPipeline:
         live_frame_id = 0
         _logged_first_frame = False
         _saved_live_frame = False
+        _saved_processed_live_frame = False
         
         try:
             while True:
@@ -995,6 +1031,20 @@ class VisionPipeline:
                         break
 
                 frame = self._apply_input_crop(frame)
+
+                if self.save_live_frame_processed_path and not _saved_processed_live_frame:
+                    _processed_path = Path(self.save_live_frame_processed_path)
+                    _processed_path.parent.mkdir(parents=True, exist_ok=True)
+                    if cv2.imwrite(str(_processed_path), frame):
+                        print(f"Saved processed live frame to {_processed_path}")
+                    else:
+                        print(f"WARNING: failed to save processed live frame to {_processed_path}")
+                    _saved_processed_live_frame = True
+                    if self.exit_after_saving_live_frame:
+                        print("Exiting after saving processed first live frame.")
+                        break
+
+                self._validate_calibration_frame(frame)
 
                 if not _logged_first_frame:
                     print(
@@ -2093,15 +2143,12 @@ class VisionPipeline:
             shape = state["shape"]
             
             # Project to floor coordinates
-            if self.H is not None:
-                center_floor = apply_homography(center_px, self.H)
-            else:
-                center_floor = center_px
+            center_floor = self._project_world_point(tuple(center_px))
             
             # Build entity
             if label == "table":
                 yaw_rad = shape.get("yaw_rad", 0.0)
-                pose = Pose2D(x=center_floor[0], y=center_floor[1], theta=yaw_rad)
+                pose = Pose2D(x=center_floor[0], y=center_floor[1], theta=self._project_table_theta(tuple(center_px), yaw_rad))
             elif label == "chair":
                 pose = Pose2D(x=center_floor[0], y=center_floor[1], theta=None)
             elif label == "person":
@@ -2127,7 +2174,7 @@ class VisionPipeline:
             frame_id=self.frame_id,
             furniture=furniture_entities,
             people=people_entities,
-            world={"homography_applied": self.H is not None, "used_box_prompts": True, "state_tracking": True}
+            world=self._world_metadata(used_box_prompts=True, state_tracking=True)
         )
         
         self.frame_id += 1
@@ -2196,7 +2243,7 @@ class VisionPipeline:
                 frame_id=frame_id,
                 furniture=[],
                 people=[],
-                world={"homography_applied": self.H is not None, "auto_proposals": True}
+                world=self._world_metadata(auto_proposals=True)
             )
             return frame_event
         
@@ -2345,16 +2392,12 @@ class VisionPipeline:
             center_px = state["center_px"]
             shape = state["shape"]
             
-            # Project to floor coordinates
-            if self.H is not None:
-                center_floor = apply_homography(center_px, self.H)
-            else:
-                center_floor = center_px
+            center_floor = self._project_world_point(tuple(center_px))
             
             # Build entity
             if label == "table":
                 yaw_rad = shape.get("yaw_rad", 0.0)
-                pose = Pose2D(x=center_floor[0], y=center_floor[1], theta=yaw_rad)
+                pose = Pose2D(x=center_floor[0], y=center_floor[1], theta=self._project_table_theta(tuple(center_px), yaw_rad))
             else:  # chair
                 pose = Pose2D(x=center_floor[0], y=center_floor[1], theta=None)
             
@@ -2388,7 +2431,7 @@ class VisionPipeline:
             frame_id=frame_id,
             furniture=furniture_entities,
             people=[],
-            world={"homography_applied": self.H is not None, "auto_proposals": True}
+            world=self._world_metadata(auto_proposals=True)
         )
         
         return frame_event
@@ -2809,6 +2852,7 @@ class VisionPipeline:
         Uses greedy nearest-center matching per class with extra IoU/area gates,
         class-specific confidence filtering, and EMA bbox smoothing for stability.
         """
+        self._validate_calibration_frame(frame_bgr)
         from collections import Counter, defaultdict, deque
 
         raw_detections = self._yolo_detector.detect(frame_bgr)
@@ -3234,10 +3278,7 @@ class VisionPipeline:
                             if _grace_rect_angle is None and _grace_yaw is not None:
                                 _grace_rect_angle = float(np.degrees(_grace_yaw))
 
-                            if self.H is not None:
-                                _cx_f, _cy_f = apply_homography([_grace_center[0], _grace_center[1]], self.H)
-                            else:
-                                _cx_f, _cy_f = _grace_center
+                            _cx_f, _cy_f = self._project_world_point((float(_grace_center[0]), float(_grace_center[1])))
 
                             furniture_entities.append(
                                 DetectedEntity(
@@ -3525,15 +3566,12 @@ class VisionPipeline:
                     if table_yaw_rad is not None:
                         track["table_last_rendered_yaw_rad"] = float(table_yaw_rad)
 
-                if self.H is not None:
-                    cx_f, cy_f = apply_homography([center_smoothed[0], center_smoothed[1]], self.H)
-                else:
-                    cx_f, cy_f = float(center_smoothed[0]), float(center_smoothed[1])
+                cx_f, cy_f = self._project_world_point((float(center_smoothed[0]), float(center_smoothed[1])))
 
                 pose = Pose2D(
                     x=float(cx_f),
                     y=float(cy_f),
-                    theta=float(table_yaw_rad) if label == "table" and table_yaw_rad is not None else None,
+                    theta=self._project_table_theta((float(center_smoothed[0]), float(center_smoothed[1])), table_yaw_rad) if label == "table" else None,
                 )
                 entity = DetectedEntity(id=track_id, kind=label, pose=pose, confidence=score)
                 if label == "person" and self.person_filter_mode == "geom+static" and not is_ghost:
@@ -3739,7 +3777,7 @@ class VisionPipeline:
             frame_id=frame_id,
             furniture=furniture_entities,
             people=people_entities,
-            world={"homography_applied": self.H is not None, "auto_proposals": "yolo"},
+            world=self._world_metadata(auto_proposals="yolo"),
         )
 
     def process_image_dir_with_proposals(
