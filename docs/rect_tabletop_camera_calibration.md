@@ -80,3 +80,48 @@ stored nine-point fit reports RMSE `1.33 cm` and maximum in-fit error `2.05 cm`.
 Those figures apply to Rect tabletop poses only. Chair/person coordinates still
 use the same homography for interface compatibility and must not be interpreted
 as floor-accurate measurements.
+
+## Current-room Vision to AISI/OSC live mode
+
+For the calibrated live path into the existing AISI Scene-to-OSC sender, use:
+
+```powershell
+.\scripts\run_current_room_vision_to_osc.ps1
+```
+
+It starts three separate processes: the current-room Rect OBB vision launcher,
+the FrameEvent-to-scene adapter, and `aisi.app.sim_scene_to_osc` on OSC port
+9000. The adapter reads `data/vision/live/current_room_rect.jsonl` and writes
+the dedicated scene `data/aisi/scenes/live/vision_live_scene.json`. This avoids
+overwriting the Room Editor's
+`data/aisi/scenes/simulated/live_scene.json`; do not start
+`run_sim_pipeline.ps1` at the same time because it would start a second OSC
+sender for the same TouchDesigner port.
+
+Only `furniture[].kind == "table"` entries are forwarded. For each valid
+table, the adapter preserves its stable vision track ID, copies calibrated AISI
+world `x`/`y` directly to `x_cm`/`y_cm`, converts `theta` from radians to the
+existing `rotation_deg` scene unit, and emits canonical `rect` dimensions
+`160 x 80 cm`. It adds no coordinate transform. Chairs and persons are emitted
+as empty lists in this explicit tables-only mode.
+
+Table order is fixed by the first valid appearance of a vision track ID (new
+simultaneous IDs are ordered by ID), so ordinary detection-order jitter cannot
+change the Scene/OSC index. A missing table retains its last pose for 15 valid
+FrameEvents, then is removed and the existing `/table/count` lifecycle channel
+removes its TouchDesigner instance. The existing count-only OSC contract has
+no inactive-slot address: after a permanent removal, later active entries are
+necessarily compacted. If the entire FrameEvent stream stops for two seconds,
+the adapter publishes an empty table list. These values are intentional,
+deterministic defaults; change them only through the adapter CLI when
+validating a different tracking cadence.
+
+For a safe offline conversion of the last completed FrameEvent, use:
+
+```powershell
+python -m aisi.app.vision_live_to_aisi_scene --once
+```
+
+All scene writes are atomic. The resulting file is compatible with the existing
+scene loader and OSC sender, but TouchDesigner/physical-room correctness still
+requires a live validation.
