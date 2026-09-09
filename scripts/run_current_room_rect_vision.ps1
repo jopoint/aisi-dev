@@ -4,6 +4,7 @@ param(
     [string]$OutputPath = "data/vision/live/current_room_rect.jsonl",
     [ValidateSet("cuda", "cpu")]
     [string]$Device = "cuda",
+    [string]$TablePoseLatencyDebugJsonl,
     [switch]$NoDisplay,
     [switch]$DryRun
 )
@@ -36,11 +37,24 @@ $PipelineArgs = @(
     "--calibration", $CalibrationProfile,
     "--device", $Device,
     "--show-table-ids",
+    "--table-bbox-smoothing-alpha", "1.0",
+    "--table-center-smoothing-alpha", "1.0",
+    "--table-yaw-smoothing-alpha", "0.7",
+    "--adaptive-table-smoothing",
+    "--adaptive-table-stationary-center-delta-px", "1.5",
+    "--adaptive-table-stationary-yaw-delta-deg", "0.5",
+    "--adaptive-table-stationary-frames", "5",
+    "--adaptive-table-moving-center-delta-px", "3.0",
+    "--adaptive-table-moving-yaw-delta-deg", "1.5",
+    "--flush-every", "1",
     "--out", $OutputPath
 )
 
 if ($NoDisplay) {
     $PipelineArgs += "--no-display"
+}
+if (-not [string]::IsNullOrWhiteSpace($TablePoseLatencyDebugJsonl)) {
+    $PipelineArgs += "--table-pose-latency-debug-jsonl", $TablePoseLatencyDebugJsonl
 }
 
 Write-Host "Current-room Rect-table vision configuration:"
@@ -48,6 +62,9 @@ Write-Host "  tables:  $TableObbModel"
 Write-Host "  chairs/persons: $GenericYoloModel"
 Write-Host "  calibration: $CalibrationProfile"
 Write-Host "  camera: index=$CameraIndex, 1920x1080, rotate=0, crop=none"
+if (-not [string]::IsNullOrWhiteSpace($TablePoseLatencyDebugJsonl)) {
+    Write-Host "  table pose latency debug: $TablePoseLatencyDebugJsonl"
+}
 
 if ($DryRun) {
     Write-Host "Dry run; command not started:"

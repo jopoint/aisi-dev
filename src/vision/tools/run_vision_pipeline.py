@@ -404,6 +404,7 @@ def main():
     parser.add_argument("--table-obb-raw-min-conf", type=float, default=None, help="Optional minimum confidence applied only to raw table OBB detections before merge/tracking.")
     parser.add_argument("--table-obb-debug-raw-overlay", action="store_true", help="Show raw table OBB detections as debug overlay items.")
     parser.add_argument("--table-obb-debug-jsonl", default=None, help="Optional JSONL path to write per-frame raw table OBB detections vs final table tracks.")
+    parser.add_argument("--table-pose-latency-debug-jsonl", default=None, help="Optional JSONL path for compact per-frame table_00 raw-to-emitted pose diagnostics.")
     parser.add_argument("--yolo-max-det", type=int, default=80, help="Max YOLO detections kept per frame (default: 80).")
     parser.add_argument("--track-ttl-frames", type=int, default=15, help="Keep unmatched tracks alive for this many frames (default: 15).")
     parser.add_argument("--conf-create", type=float, default=None, help="Min detection confidence to create a NEW track (default: --yolo-conf).")
@@ -456,6 +457,15 @@ def main():
     parser.add_argument("--table-birth-block-near-lost-dist", type=float, default=0.0, help="Suppress NEW table birth when detection center is within this px distance to a recoverable lost table track (0 = disabled).")
     parser.add_argument("--table-birth-block-near-lost-frames", type=int, default=0, help="Optional max miss_count age for near-lost birth suppression (0 = use all recoverable lost tracks).")
     parser.add_argument("--table-angle-deadband-deg", type=float, default=0.0, help="Table-only angle hysteresis deadband in degrees for final render angle (0 = disabled).")
+    parser.add_argument("--table-bbox-smoothing-alpha", type=float, default=0.20, help="EMA alpha for table bounding boxes (>0 and <=1; default: 0.20).")
+    parser.add_argument("--table-center-smoothing-alpha", type=float, default=0.20, help="EMA alpha for table center output (>0 and <=1; default: 0.20).")
+    parser.add_argument("--table-yaw-smoothing-alpha", type=float, default=0.20, help="EMA alpha for ordinary Rect-table OBB yaw updates (>0 and <=1; default: 0.20).")
+    parser.add_argument("--adaptive-table-smoothing", action="store_true", help="Adapt Rect-table smoothing from raw OBB center/yaw motion.")
+    parser.add_argument("--adaptive-table-stationary-center-delta-px", type=float, default=1.5, help="Raw center delta below this value is stationary-candidate motion (default: 1.5).")
+    parser.add_argument("--adaptive-table-stationary-yaw-delta-deg", type=float, default=0.5, help="Raw yaw delta below this value is stationary-candidate motion (default: 0.5).")
+    parser.add_argument("--adaptive-table-stationary-frames", type=int, default=5, help="Consecutive stationary-candidate frames required to enter stationary mode (default: 5).")
+    parser.add_argument("--adaptive-table-moving-center-delta-px", type=float, default=3.0, help="Raw center delta above this value exits stationary mode immediately (default: 3.0).")
+    parser.add_argument("--adaptive-table-moving-yaw-delta-deg", type=float, default=1.5, help="Raw yaw delta above this value exits stationary mode immediately (default: 1.5).")
     parser.add_argument("--table-render-grace-frames", type=int, default=0, help="Render last final table geometry for this many missing frames (0 = disabled).")
     parser.add_argument("--table-static-hold-frames", type=int, default=0, help="Consecutive static candidate frames before table hold is activated (0 = disabled).")
     parser.add_argument("--table-static-hold-center-px", type=float, default=0.0, help="Static hold threshold for center delta in px (0 = disabled).")
@@ -519,6 +529,20 @@ def main():
         parser.error("--overlay-out-dir is only supported with --image-dir.")
     if args.flush_every < 1:
         parser.error("--flush-every must be >= 1.")
+    if not (0.0 < float(args.table_bbox_smoothing_alpha) <= 1.0):
+        parser.error("--table-bbox-smoothing-alpha must be > 0 and <= 1.")
+    if not (0.0 < float(args.table_center_smoothing_alpha) <= 1.0):
+        parser.error("--table-center-smoothing-alpha must be > 0 and <= 1.")
+    if not (0.0 < float(args.table_yaw_smoothing_alpha) <= 1.0):
+        parser.error("--table-yaw-smoothing-alpha must be > 0 and <= 1.")
+    if (
+        float(args.adaptive_table_stationary_center_delta_px) < 0.0
+        or float(args.adaptive_table_stationary_yaw_delta_deg) < 0.0
+        or int(args.adaptive_table_stationary_frames) < 1
+        or float(args.adaptive_table_moving_center_delta_px) <= float(args.adaptive_table_stationary_center_delta_px)
+        or float(args.adaptive_table_moving_yaw_delta_deg) <= float(args.adaptive_table_stationary_yaw_delta_deg)
+    ):
+        parser.error("adaptive table smoothing thresholds must define a positive hysteresis.")
     if args.table_obb_max_det is not None and int(args.table_obb_max_det) < 0:
         parser.error("--table-obb-max-det must be >= 0.")
     if args.table_obb_raw_min_conf is not None and not (0.0 <= float(args.table_obb_raw_min_conf) <= 1.0):
@@ -598,10 +622,15 @@ def main():
                 print(f"Table OBB raw filter: top_k={int(args.table_obb_max_det)}")
             if args.table_obb_raw_min_conf is not None:
                 print(f"Table OBB raw filter: min_conf>={float(args.table_obb_raw_min_conf)}")
-            if args.table_obb_debug_raw_overlay or args.table_obb_debug_jsonl:
+            if (
+                args.table_obb_debug_raw_overlay
+                or args.table_obb_debug_jsonl
+                or args.table_pose_latency_debug_jsonl
+            ):
                 print(
                     f"Table OBB debug: raw_overlay={args.table_obb_debug_raw_overlay} "
-                    f"jsonl={args.table_obb_debug_jsonl}"
+                    f"jsonl={args.table_obb_debug_jsonl} "
+                    f"pose_latency_jsonl={args.table_pose_latency_debug_jsonl}"
                 )
             table_new_conf_create = args.table_new_conf_create if args.table_new_conf_create is not None else args.conf_create
             table_new_min_bbox_area = args.table_new_min_bbox_area if args.table_new_min_bbox_area is not None else args.table_min_bbox_area
@@ -717,6 +746,7 @@ def main():
         table_obb_raw_min_conf=args.table_obb_raw_min_conf,
         table_obb_debug_raw_overlay=args.table_obb_debug_raw_overlay,
         table_obb_debug_jsonl=args.table_obb_debug_jsonl,
+        table_pose_latency_debug_jsonl=args.table_pose_latency_debug_jsonl,
         yolo_max_det=args.yolo_max_det,
         track_ttl_frames=args.track_ttl_frames,
         conf_create=args.conf_create,
@@ -768,6 +798,15 @@ def main():
         table_birth_block_near_lost_dist=args.table_birth_block_near_lost_dist,
         table_birth_block_near_lost_frames=args.table_birth_block_near_lost_frames,
         table_angle_deadband_deg=args.table_angle_deadband_deg,
+        table_bbox_smoothing_alpha=args.table_bbox_smoothing_alpha,
+        table_center_smoothing_alpha=args.table_center_smoothing_alpha,
+        table_yaw_smoothing_alpha=args.table_yaw_smoothing_alpha,
+        adaptive_table_smoothing=args.adaptive_table_smoothing,
+        adaptive_table_stationary_center_delta_px=args.adaptive_table_stationary_center_delta_px,
+        adaptive_table_stationary_yaw_delta_deg=args.adaptive_table_stationary_yaw_delta_deg,
+        adaptive_table_stationary_frames=args.adaptive_table_stationary_frames,
+        adaptive_table_moving_center_delta_px=args.adaptive_table_moving_center_delta_px,
+        adaptive_table_moving_yaw_delta_deg=args.adaptive_table_moving_yaw_delta_deg,
         table_render_grace_frames=args.table_render_grace_frames,
         table_static_hold_frames=args.table_static_hold_frames,
         table_static_hold_center_px=args.table_static_hold_center_px,

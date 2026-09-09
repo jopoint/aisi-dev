@@ -81,6 +81,26 @@ Those figures apply to Rect tabletop poses only. Chair/person coordinates still
 use the same homography for interface compatibility and must not be interpreted
 as floor-accurate measurements.
 
+### Table-pose latency diagnostics
+
+The live path can append one compact JSON object for each active `table_00`
+frame without changing tracking or the normal FrameEvent output:
+
+```powershell
+.\scripts\run_current_room_rect_vision.ps1 `
+  -TablePoseLatencyDebugJsonl data\vision\debug\table_00_pose_latency.jsonl
+```
+
+Read the live log with:
+
+```powershell
+Get-Content data\vision\debug\table_00_pose_latency.jsonl -Wait
+```
+
+Each line contains the raw OBB center/yaw, EMA-bbox center, center-smoothed
+position, and the emitted calibrated world `x/y` and table `theta`, all for the
+same `frame_id`.
+
 ## Current-room Vision to AISI/OSC live mode
 
 For the calibrated live path into the existing AISI Scene-to-OSC sender, use:
@@ -125,3 +145,37 @@ python -m aisi.app.vision_live_to_aisi_scene --once
 All scene writes are atomic. The resulting file is compatible with the existing
 scene loader and OSC sender, but TouchDesigner/physical-room correctness still
 requires a live validation.
+
+## Tracking-only projection validation
+
+For an isolated one-Rect-table validation path, use:
+
+```powershell
+.\scripts\run_current_room_tracking_only.ps1
+```
+
+The OSC sender runs with `--tracking-only`. It accepts exactly one scene table
+with `type=rect`, emits it at OSC index `0` (`table_00` in the current Vision
+tracker), emits `/table/count = 1`, and bypasses `compute_target_layout(...)`
+entirely. Source x/y/rotation are sent unchanged in the existing source
+channels. The existing target channels remain present for compatibility, but
+mirror the source pose exactly; this yields a zero motion vector and no
+generated target pose. Persons and chairs are suppressed.
+
+Tracking-only Rect rotation is unwrapped at the OSC boundary modulo 180 degrees,
+because a 160 x 80 Rect footprint is geometrically unchanged by a half turn.
+For example, scene rotations `88, 89, 270, 271` become the continuous source
+sequence `88, 89, 90, 91` before the existing TouchDesigner sign inversion.
+The mirrored target rotation uses that same unwrapped value. The continuity
+state is reset when the accepted table disappears or when the sender restarts;
+regular layout mode is unchanged.
+
+The active manual TouchDesigner project is not represented authoritatively in
+this repository, so it is not modified here. In the active graph, configure a
+temporary tracking-only output route that renders only the existing source
+contours: the source inner contour to TABLETOP and the source outer footprint
+to FLOOR. Disable/bypass target-contour and motion-line geometry in that route;
+do not alter any calibration, homography, projector, mask, or blend node. The
+source expressions must read `table/0/source_x`, `table/0/source_y`, and
+`table/0/source_rot` from `null_osc_raw (Null CHOP)`; do not use the mirrored
+target channels for the tracking contour.

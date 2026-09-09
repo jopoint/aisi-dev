@@ -21,6 +21,178 @@ from src.aisi_sensing.core.timebase import now_iso
 from src.vision.calibration.tabletop import TabletopCalibration, project_axis_angle, project_point
 
 
+def normalize_unoriented_axis_yaw(theta_rad: float) -> float:
+    """Normalize a rectangular long axis to its physically equivalent pi range."""
+    theta = float(theta_rad)
+    while theta <= -0.5 * np.pi:
+        theta += np.pi
+    while theta > 0.5 * np.pi:
+        theta -= np.pi
+    return theta
+
+
+def smallest_unoriented_axis_delta(theta_a: float, theta_b: float) -> float:
+    """Return the shortest delta for an axis where theta and theta + pi match."""
+    return normalize_unoriented_axis_yaw(float(theta_a) - float(theta_b))
+
+
+def update_table_obb_yaw(
+    current_yaw_rad: float,
+    previous_yaw_rad: float | None,
+    smoothing_alpha: float = 0.2,
+    turn_snap_rad: float = float(np.deg2rad(20.0)),
+) -> float:
+    """Update a tracked rectangular-table axis without rejecting real turns.
+
+    The OBB long axis is inherently 180-degree ambiguous, which is resolved by
+    the pi-periodic normalization and delta above.  A large remaining delta is
+    therefore a real axis change (or detector noise), not an ambiguity: snap to
+    the current OBB measurement instead of retaining a stale track orientation.
+    """
+    current = normalize_unoriented_axis_yaw(current_yaw_rad)
+    if previous_yaw_rad is None:
+        return current
+    previous = normalize_unoriented_axis_yaw(previous_yaw_rad)
+    delta = smallest_unoriented_axis_delta(current, previous)
+    if abs(delta) > float(turn_snap_rad):
+        return current
+    return normalize_unoriented_axis_yaw(previous + float(smoothing_alpha) * delta)
+
+
+def validate_table_center_smoothing_alpha(value: float) -> float:
+    """Return a valid table-center EMA alpha, rejecting unsafe values."""
+    alpha = float(value)
+    if not (0.0 < alpha <= 1.0):
+        raise ValueError("table_center_smoothing_alpha must be > 0 and <= 1")
+    return alpha
+
+
+def validate_table_bbox_smoothing_alpha(value: float) -> float:
+    """Return a valid table-bbox EMA alpha, rejecting unsafe values."""
+    alpha = float(value)
+    if not (0.0 < alpha <= 1.0):
+        raise ValueError("table_bbox_smoothing_alpha must be > 0 and <= 1")
+    return alpha
+
+
+def validate_table_yaw_smoothing_alpha(value: float) -> float:
+    """Return a valid Rect-table yaw smoothing alpha."""
+    alpha = float(value)
+    if not (0.0 < alpha <= 1.0):
+        raise ValueError("table_yaw_smoothing_alpha must be > 0 and <= 1")
+    return alpha
+
+
+def update_adaptive_table_smoothing_state(
+    previous_raw_center_px: Optional[Tuple[float, float]],
+    previous_raw_yaw_rad: Optional[float],
+    stationary: bool,
+    stationary_candidate_frames: int,
+    current_raw_center_px: Tuple[float, float],
+    current_raw_yaw_rad: Optional[float],
+    *,
+    enter_center_delta_px: float,
+    enter_yaw_delta_deg: float,
+    enter_frames: int,
+    exit_center_delta_px: float,
+    exit_yaw_delta_deg: float,
+) -> Tuple[bool, int]:
+    """Update a Rect-table smoothing state from consecutive raw OBB poses."""
+    if (
+        previous_raw_center_px is None
+        or previous_raw_yaw_rad is None
+        or current_raw_yaw_rad is None
+    ):
+        return False, 0
+
+    center_delta_px = float(np.hypot(
+        float(current_raw_center_px[0]) - float(previous_raw_center_px[0]),
+        float(current_raw_center_px[1]) - float(previous_raw_center_px[1]),
+    ))
+    yaw_delta_deg = abs(float(np.degrees(smallest_unoriented_axis_delta(
+        float(current_raw_yaw_rad),
+        float(previous_raw_yaw_rad),
+    ))))
+    low_motion = (
+        center_delta_px < float(enter_center_delta_px)
+        and yaw_delta_deg < float(enter_yaw_delta_deg)
+    )
+    movement_exceeds_exit = (
+        center_delta_px > float(exit_center_delta_px)
+        or yaw_delta_deg > float(exit_yaw_delta_deg)
+    )
+
+    if stationary:
+        if movement_exceeds_exit:
+            return False, 0
+        return True, int(enter_frames)
+
+    candidates = int(stationary_candidate_frames) + 1 if low_motion else 0
+    return candidates >= int(enter_frames), candidates
+
+
+def adaptive_table_smoothing_alphas(
+    stationary: bool,
+    moving_bbox_alpha: float,
+    moving_center_alpha: float,
+    moving_yaw_alpha: float,
+) -> Tuple[float, float, float]:
+    """Return configured moving alphas or the fixed low-jitter stationary set."""
+    if stationary:
+        return 0.25, 0.25, 0.25
+    return (
+        float(moving_bbox_alpha),
+        float(moving_center_alpha),
+        float(moving_yaw_alpha),
+    )
+
+
+def smooth_tracking_center(
+    previous_center: Tuple[float, float],
+    detected_center: Tuple[float, float],
+    alpha: float,
+) -> Tuple[float, float]:
+    """Apply an EMA to a tracked detection center."""
+    return (
+        (1.0 - alpha) * float(previous_center[0]) + alpha * float(detected_center[0]),
+        (1.0 - alpha) * float(previous_center[1]) + alpha * float(detected_center[1]),
+    )
+
+
+def table_pose_latency_record(
+    *,
+    frame_id: int,
+    table_id: str,
+    raw_obb_center_px: Optional[Tuple[float, float]],
+    tracked_bbox_center_px: Tuple[float, float],
+    center_smoothed_px: Tuple[float, float],
+    emitted_world_xy_cm: Tuple[float, float],
+    raw_obb_yaw_rad: Optional[float],
+    emitted_table_theta_rad: Optional[float],
+) -> Dict:
+    """Build one JSON-safe, per-table latency diagnostic record."""
+    return {
+        "frame_id": int(frame_id),
+        "table_id": str(table_id),
+        "raw_obb_center_px": None if raw_obb_center_px is None else [
+            float(raw_obb_center_px[0]), float(raw_obb_center_px[1])
+        ],
+        "tracked_bbox_center_px": [
+            float(tracked_bbox_center_px[0]), float(tracked_bbox_center_px[1])
+        ],
+        "center_smoothed_px": [
+            float(center_smoothed_px[0]), float(center_smoothed_px[1])
+        ],
+        "emitted_world_xy_cm": [
+            float(emitted_world_xy_cm[0]), float(emitted_world_xy_cm[1])
+        ],
+        "raw_obb_yaw_rad": None if raw_obb_yaw_rad is None else float(raw_obb_yaw_rad),
+        "emitted_table_theta_rad": (
+            None if emitted_table_theta_rad is None else float(emitted_table_theta_rad)
+        ),
+    }
+
+
 class VisionPipeline:
     """
     Vision pipeline for furniture detection and tracking.
@@ -111,8 +283,18 @@ class VisionPipeline:
         table_static_hold_center_px: float = 0.0,
         table_static_hold_angle_deg: float = 0.0,
         table_static_hold_area_frac: float = 0.0,
+        table_bbox_smoothing_alpha: float = 0.20,
+        table_center_smoothing_alpha: float = 0.20,
+        table_yaw_smoothing_alpha: float = 0.20,
+        adaptive_table_smoothing: bool = False,
+        adaptive_table_stationary_center_delta_px: float = 1.5,
+        adaptive_table_stationary_yaw_delta_deg: float = 0.5,
+        adaptive_table_stationary_frames: int = 5,
+        adaptive_table_moving_center_delta_px: float = 3.0,
+        adaptive_table_moving_yaw_delta_deg: float = 1.5,
         table_obb_debug_raw_overlay: bool = False,
         table_obb_debug_jsonl: Optional[str] = None,
+        table_pose_latency_debug_jsonl: Optional[str] = None,
         crop_x: Optional[int] = None,
         crop_y: Optional[int] = None,
         crop_w: Optional[int] = None,
@@ -210,6 +392,9 @@ class VisionPipeline:
             table_static_hold_area_frac: Static hold relative area threshold (0=off).
             table_obb_debug_raw_overlay: Show raw OBB table detections as debug overlay items.
             table_obb_debug_jsonl: Optional JSONL path for per-frame raw OBB vs final table track debug output.
+            table_pose_latency_debug_jsonl: Optional JSONL path for compact per-frame table_00 pose diagnostics.
+            table_yaw_smoothing_alpha: EMA alpha for ordinary Rect-table OBB yaw updates.
+            adaptive_table_smoothing: Enable raw-OBB-motion-based table smoothing adaptation.
             crop_x: Optional input crop X offset in pixels.
             crop_y: Optional input crop Y offset in pixels.
             crop_w: Optional input crop width in pixels.
@@ -308,6 +493,11 @@ class VisionPipeline:
         )
         self.table_obb_debug_raw_overlay = bool(table_obb_debug_raw_overlay)
         self.table_obb_debug_jsonl = str(table_obb_debug_jsonl).strip() if table_obb_debug_jsonl else None
+        self.table_pose_latency_debug_jsonl = (
+            str(table_pose_latency_debug_jsonl).strip()
+            if table_pose_latency_debug_jsonl
+            else None
+        )
         if crop_x is None and crop_y is None and crop_w is None and crop_h is None:
             self._input_crop = None
         else:
@@ -385,7 +575,7 @@ class VisionPipeline:
         self._bbox_ema_alpha = {
             "chair": 0.30,
             "person": 0.30,
-            "table": 0.20,
+            "table": validate_table_bbox_smoothing_alpha(table_bbox_smoothing_alpha),
         }
         self._hard_jump_px = {
             "chair": 90.0,
@@ -393,6 +583,34 @@ class VisionPipeline:
             "table": 130.0,
         }
         self._center_smooth_alpha = 0.20
+        self._table_center_smoothing_alpha = validate_table_center_smoothing_alpha(
+            table_center_smoothing_alpha
+        )
+        self._table_yaw_smoothing_alpha = validate_table_yaw_smoothing_alpha(
+            table_yaw_smoothing_alpha
+        )
+        self.adaptive_table_smoothing = bool(adaptive_table_smoothing)
+        self.adaptive_table_stationary_center_delta_px = float(
+            adaptive_table_stationary_center_delta_px
+        )
+        self.adaptive_table_stationary_yaw_delta_deg = float(
+            adaptive_table_stationary_yaw_delta_deg
+        )
+        self.adaptive_table_stationary_frames = int(adaptive_table_stationary_frames)
+        self.adaptive_table_moving_center_delta_px = float(
+            adaptive_table_moving_center_delta_px
+        )
+        self.adaptive_table_moving_yaw_delta_deg = float(
+            adaptive_table_moving_yaw_delta_deg
+        )
+        if (
+            self.adaptive_table_stationary_center_delta_px < 0.0
+            or self.adaptive_table_stationary_yaw_delta_deg < 0.0
+            or self.adaptive_table_stationary_frames < 1
+            or self.adaptive_table_moving_center_delta_px <= self.adaptive_table_stationary_center_delta_px
+            or self.adaptive_table_moving_yaw_delta_deg <= self.adaptive_table_stationary_yaw_delta_deg
+        ):
+            raise ValueError("adaptive table smoothing thresholds must define a positive hysteresis")
         self._tracks: Dict[str, Dict[str, Dict]] = {
             "chair": {},
             "table": {},
@@ -492,10 +710,15 @@ class VisionPipeline:
                         f"angle<{self.table_static_hold_angle_deg}deg "
                         f"area<{self.table_static_hold_area_frac}"
                     )
-                if self.table_obb_debug_raw_overlay or self.table_obb_debug_jsonl:
+                if (
+                    self.table_obb_debug_raw_overlay
+                    or self.table_obb_debug_jsonl
+                    or self.table_pose_latency_debug_jsonl
+                ):
                     print(
                         f"Table OBB debug: raw_overlay={self.table_obb_debug_raw_overlay} "
-                        f"jsonl={self.table_obb_debug_jsonl}"
+                        f"jsonl={self.table_obb_debug_jsonl} "
+                        f"pose_latency_jsonl={self.table_pose_latency_debug_jsonl}"
                     )
             print(
                 f"Tracking: ttl={self.track_ttl_frames} conf_create={self.conf_create} conf_keep={self.conf_keep} "
@@ -2993,23 +3216,12 @@ class VisionPipeline:
         furniture_entities: List[DetectedEntity] = []
         people_entities: List[DetectedEntity] = []
         overlay_items: List[Dict] = []
-        theta_gate_rad = float(np.deg2rad(20.0))
-
+        pose_latency_records: List[Dict] = []
         def _normalize_theta_half_pi(theta_rad: float) -> float:
-            theta = float(theta_rad)
-            while theta <= -0.5 * np.pi:
-                theta += np.pi
-            while theta > 0.5 * np.pi:
-                theta -= np.pi
-            return theta
+            return normalize_unoriented_axis_yaw(theta_rad)
 
         def _smallest_theta_diff(theta_a: float, theta_b: float) -> float:
-            diff = float(theta_a - theta_b)
-            while diff <= -0.5 * np.pi:
-                diff += np.pi
-            while diff > 0.5 * np.pi:
-                diff -= np.pi
-            return diff
+            return smallest_unoriented_axis_delta(theta_a, theta_b)
 
         def _table_shape_area_px(bbox_px: List[int], poly_px: Optional[List]) -> float:
             if poly_px is not None and len(poly_px) == 4:
@@ -3026,7 +3238,6 @@ class VisionPipeline:
 
         for label in ("chair", "table", "person"):
             class_tracks = self._tracks[label]
-            alpha_new = float(self._bbox_ema_alpha[label])
             if self.no_ghosting:
                 ttl_frames = 0
                 reacquire_max_age_label = 0
@@ -3081,12 +3292,47 @@ class VisionPipeline:
                 old_center = old_track.get("center", self._bbox_center(old_bbox))
                 old_center_smoothed = old_track.get("center_smoothed", old_center)
 
-                updated_bbox = self._ema_bbox(old_bbox, bbox, alpha_new)
+                if label == "table" and self.adaptive_table_smoothing:
+                    raw_center = det.get("obb_center_px")
+                    raw_center_xy = (
+                        (float(raw_center[0]), float(raw_center[1]))
+                        if raw_center is not None and len(raw_center) >= 2
+                        else self._bbox_center(bbox)
+                    )
+                    stationary, candidate_frames = update_adaptive_table_smoothing_state(
+                        old_track.get("adaptive_raw_center_px"),
+                        old_track.get("adaptive_raw_yaw_rad"),
+                        bool(old_track.get("adaptive_stationary", False)),
+                        int(old_track.get("adaptive_stationary_candidate_frames", 0)),
+                        raw_center_xy,
+                        det.get("obb_yaw_rad"),
+                        enter_center_delta_px=self.adaptive_table_stationary_center_delta_px,
+                        enter_yaw_delta_deg=self.adaptive_table_stationary_yaw_delta_deg,
+                        enter_frames=self.adaptive_table_stationary_frames,
+                        exit_center_delta_px=self.adaptive_table_moving_center_delta_px,
+                        exit_yaw_delta_deg=self.adaptive_table_moving_yaw_delta_deg,
+                    )
+                    old_track["adaptive_raw_center_px"] = raw_center_xy
+                    old_track["adaptive_raw_yaw_rad"] = det.get("obb_yaw_rad")
+                    old_track["adaptive_stationary"] = stationary
+                    old_track["adaptive_stationary_candidate_frames"] = candidate_frames
+
+                bbox_alpha, center_alpha, _ = adaptive_table_smoothing_alphas(
+                    bool(old_track.get("adaptive_stationary", False))
+                    if label == "table" and self.adaptive_table_smoothing
+                    else False,
+                    self._bbox_ema_alpha[label],
+                    self._table_center_smoothing_alpha if label == "table" else self._center_smooth_alpha,
+                    self._table_yaw_smoothing_alpha,
+                )
+
+                updated_bbox = self._ema_bbox(old_bbox, bbox, bbox_alpha)
                 ucx, ucy = self._bbox_center(updated_bbox)
                 det_center = self._bbox_center(bbox)
-                center_smoothed = (
-                    (1.0 - self._center_smooth_alpha) * float(old_center_smoothed[0]) + self._center_smooth_alpha * float(det_center[0]),
-                    (1.0 - self._center_smooth_alpha) * float(old_center_smoothed[1]) + self._center_smooth_alpha * float(det_center[1]),
+                center_smoothed = smooth_tracking_center(
+                    old_center_smoothed,
+                    det_center,
+                    center_alpha,
                 )
 
                 class_tracks[track_id]["bbox"] = updated_bbox
@@ -3231,6 +3477,16 @@ class VisionPipeline:
                     class_tracks[track_id]["obb_yaw_rad"] = det.get("obb_yaw_rad")
                     class_tracks[track_id]["table_confirm_count"] = 1
                     class_tracks[track_id]["table_confirmed"] = self.table_new_confirm_frames <= 1
+                    if self.adaptive_table_smoothing:
+                        raw_center = det.get("obb_center_px")
+                        class_tracks[track_id]["adaptive_raw_center_px"] = (
+                            (float(raw_center[0]), float(raw_center[1]))
+                            if raw_center is not None and len(raw_center) >= 2
+                            else (float(ucx), float(ucy))
+                        )
+                        class_tracks[track_id]["adaptive_raw_yaw_rad"] = det.get("obb_yaw_rad")
+                        class_tracks[track_id]["adaptive_stationary"] = False
+                        class_tracks[track_id]["adaptive_stationary_candidate_frames"] = 0
                     dbg_new_table_tracks_created += 1
                 if label == "person":
                     _hist = deque(maxlen=max(1, int(self.person_static_window)))
@@ -3332,16 +3588,18 @@ class VisionPipeline:
                             raw_theta = track.get("obb_yaw_rad")
                             if raw_theta is not None:
                                 theta_now = _normalize_theta_half_pi(float(raw_theta))
-                                if prev_theta_track is None:
-                                    table_yaw_rad = theta_now
-                                else:
-                                    prev_theta_norm = _normalize_theta_half_pi(float(prev_theta_track))
-                                    d_theta = _smallest_theta_diff(theta_now, prev_theta_norm)
-                                    if abs(d_theta) > theta_gate_rad:
-                                        table_yaw_rad = prev_theta_norm
-                                        theta_rejected = True
-                                    else:
-                                        table_yaw_rad = _normalize_theta_half_pi((0.8 * prev_theta_norm) + (0.2 * theta_now))
+                                _, _, yaw_alpha = adaptive_table_smoothing_alphas(
+                                    bool(track.get("adaptive_stationary", False))
+                                    if self.adaptive_table_smoothing else False,
+                                    self._bbox_ema_alpha["table"],
+                                    self._table_center_smoothing_alpha,
+                                    self._table_yaw_smoothing_alpha,
+                                )
+                                table_yaw_rad = update_table_obb_yaw(
+                                    theta_now,
+                                    prev_theta_track,
+                                    smoothing_alpha=yaw_alpha,
+                                )
                             elif prev_theta_track is not None:
                                 table_yaw_rad = _normalize_theta_half_pi(float(prev_theta_track))
 
@@ -3365,16 +3623,18 @@ class VisionPipeline:
                             raw_theta = orient_dbg.get("yaw_rad")
                             if raw_theta is not None:
                                 theta_now = _normalize_theta_half_pi(float(raw_theta))
-                                if prev_theta_track is None:
-                                    table_yaw_rad = theta_now
-                                else:
-                                    prev_theta_norm = _normalize_theta_half_pi(float(prev_theta_track))
-                                    d_theta = _smallest_theta_diff(theta_now, prev_theta_norm)
-                                    if abs(d_theta) > theta_gate_rad:
-                                        table_yaw_rad = prev_theta_norm
-                                        theta_rejected = True
-                                    else:
-                                        table_yaw_rad = _normalize_theta_half_pi((0.8 * prev_theta_norm) + (0.2 * theta_now))
+                                _, _, yaw_alpha = adaptive_table_smoothing_alphas(
+                                    bool(track.get("adaptive_stationary", False))
+                                    if self.adaptive_table_smoothing else False,
+                                    self._bbox_ema_alpha["table"],
+                                    self._table_center_smoothing_alpha,
+                                    self._table_yaw_smoothing_alpha,
+                                )
+                                table_yaw_rad = update_table_obb_yaw(
+                                    theta_now,
+                                    prev_theta_track,
+                                    smoothing_alpha=yaw_alpha,
+                                )
                             elif prev_theta_track is not None:
                                 table_yaw_rad = _normalize_theta_half_pi(float(prev_theta_track))
 
@@ -3574,6 +3834,31 @@ class VisionPipeline:
                     theta=self._project_table_theta((float(center_smoothed[0]), float(center_smoothed[1])), table_yaw_rad) if label == "table" else None,
                 )
                 entity = DetectedEntity(id=track_id, kind=label, pose=pose, confidence=score)
+                if (
+                    self.table_pose_latency_debug_jsonl
+                    and label == "table"
+                    and track_id == "table_00"
+                    and not is_ghost
+                ):
+                    raw_center = track.get("obb_center_px")
+                    raw_center_xy = None
+                    if raw_center is not None and len(raw_center) >= 2:
+                        raw_center_xy = (float(raw_center[0]), float(raw_center[1]))
+                    tracked_center = track.get("center", self._bbox_center(updated_bbox))
+                    pose_latency_records.append(table_pose_latency_record(
+                        frame_id=frame_id,
+                        table_id=track_id,
+                        raw_obb_center_px=raw_center_xy,
+                        tracked_bbox_center_px=(
+                            float(tracked_center[0]), float(tracked_center[1])
+                        ),
+                        center_smoothed_px=(
+                            float(center_smoothed[0]), float(center_smoothed[1])
+                        ),
+                        emitted_world_xy_cm=(float(pose.x), float(pose.y)),
+                        raw_obb_yaw_rad=track.get("obb_yaw_rad"),
+                        emitted_table_theta_rad=pose.theta,
+                    ))
                 if label == "person" and self.person_filter_mode == "geom+static" and not is_ghost:
                     _hist = track.get("person_center_hist")
                     if _hist is not None and len(_hist) >= max(1, int(self.person_static_window)):
@@ -3748,6 +4033,13 @@ class VisionPipeline:
             _dbg_path.parent.mkdir(parents=True, exist_ok=True)
             with open(_dbg_path, "a", encoding="utf-8") as _dbg_f:
                 _dbg_f.write(json.dumps(_dbg_payload) + "\n")
+
+        if self.table_pose_latency_debug_jsonl and pose_latency_records:
+            _latency_path = Path(self.table_pose_latency_debug_jsonl)
+            _latency_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(_latency_path, "a", encoding="utf-8") as _latency_f:
+                for _record in pose_latency_records:
+                    _latency_f.write(json.dumps(_record) + "\n")
 
         self._dbg_frame_id = frame_id
 

@@ -88,6 +88,14 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_INTERVAL_SECONDS,
         help="Send interval in seconds (default: 0.05).",
     )
+    parser.add_argument(
+        "--tracking-only",
+        action="store_true",
+        help=(
+            "Use exactly one canonical Rect source table without layout synthesis. "
+            "Compatibility target channels mirror the source pose."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -193,6 +201,99 @@ def get_target_for_index(index: int, source_table: dict[str, Any], targets: list
     )
 
 
+def tracking_only_tables(tables: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], str | None]:
+    """Select the one canonical Rect source table accepted by tracking-only mode."""
+    if len(tables) != 1:
+        return [], f"expected exactly one table, got {len(tables)}"
+    table = tables[0]
+    if not isinstance(table, dict):
+        return [], "expected the single table to be an object"
+    table_type = table.get("type")
+    if not isinstance(table_type, str) or table_type.strip().lower() != "rect":
+        return [], "expected the single table to declare type='rect'"
+    return [table], None
+
+
+def source_pose_targets(tables: list[dict[str, Any]]) -> list[dict[str, float]]:
+    """Return compatibility target values equal to source poses without generating a layout."""
+    return [
+        {
+            "x_cm": float(table.get("x_cm", 0.0)),
+            "y_cm": float(table.get("y_cm", 0.0)),
+            "rotation_deg": float(table.get("rotation_deg", 0.0)),
+        }
+        for table in tables
+    ]
+
+
+class TrackingOnlyRotationUnwrapper:
+    """Keep the tracking-only Rect source rotation continuous modulo 180 degrees."""
+
+    def __init__(self) -> None:
+        self._continuous_rotation_by_id: dict[str, float] = {}
+
+    def reset(self) -> None:
+        """Forget continuity state at a tracking-session reset."""
+        self._continuous_rotation_by_id.clear()
+
+    def unwrap_tables(self, tables: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Copy tables with shortest-angle-continuous rotation_deg values.
+
+        A Rect footprint is invariant under a 180-degree turn. For each input
+        angle choose ``theta + k * 180`` nearest to the preceding output.
+        Output is deliberately unbounded so TouchDesigner never interpolates a
+        numerically distant but geometrically equivalent orientation as a turn.
+        """
+        active_ids: set[str] = set()
+        unwrapped_tables: list[dict[str, Any]] = []
+        for index, table in enumerate(tables):
+            table_id = str(table.get("id", f"table_{index}"))
+            active_ids.add(table_id)
+            incoming = float(table.get("rotation_deg", 0.0))
+            previous = self._continuous_rotation_by_id.get(table_id)
+            if previous is None:
+                continuous = incoming
+            else:
+                delta = (incoming - previous + 90.0) % 180.0 - 90.0
+                continuous = previous + delta
+            self._continuous_rotation_by_id[table_id] = continuous
+            unwrapped_table = dict(table)
+            unwrapped_table["rotation_deg"] = continuous
+            unwrapped_tables.append(unwrapped_table)
+
+        # A missing accepted table ends its continuity session deterministically.
+        for table_id in list(self._continuous_rotation_by_id):
+            if table_id not in active_ids:
+                del self._continuous_rotation_by_id[table_id]
+        return unwrapped_tables
+
+
+def prepare_scene_output(
+    scene: dict[str, Any],
+    layout_mode: str,
+    transformation_strength: float,
+    tracking_only: bool,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, float]], str | None]:
+    """Choose regular layout output or isolated source-only tracking output."""
+    tables = scene.get("tables", [])
+    if not isinstance(tables, list):
+        tables = []
+    persons = scene.get("persons", [])
+    if not isinstance(persons, list):
+        persons = []
+    chairs = scene.get("chairs", [])
+    if not isinstance(chairs, list):
+        chairs = []
+
+    if tracking_only:
+        selected_tables, reason = tracking_only_tables(tables)
+        # This mode deliberately neither reads people/chairs nor calls layout synthesis.
+        return selected_tables, [], [], source_pose_targets(selected_tables), reason
+
+    targets = compute_target_layout(scene, layout_mode, transformation_strength=transformation_strength)
+    return tables, persons, chairs, targets, None
+
+
 def send_tables(client: SimpleUDPClient, tables: list[dict[str, Any]], targets: list[dict[str, Any]]) -> list[str]:
     """Send all tables via OSC and return short debug summaries."""
     summaries: list[str] = []
@@ -255,8 +356,11 @@ def print_startup(args: argparse.Namespace, scene_path: Path) -> None:
     print(f"OSC-Ziel: {args.host}:{args.port}")
     print(f"Scene-Datei: {scene_path}")
     print("Lese live Szene und sende Tabellen, Personen und Stühle per OSC. Mit STRG+C beenden.")
-    print(f"Layout mode: {DEFAULT_LAYOUT_MODE}")
-    print("Controls: 1=input, 2=groupwork, 3=discussion, q=quit")
+    if args.tracking_only:
+        print("Tracking-only: one Rect source table; target compatibility channels mirror source; no layout synthesis.")
+    else:
+        print(f"Layout mode: {DEFAULT_LAYOUT_MODE}")
+        print("Controls: 1=input, 2=groupwork, 3=discussion, q=quit")
 
 
 def print_layout_options() -> None:
@@ -327,23 +431,26 @@ def main() -> None:
 
     print_startup(args, scene_path)
 
-    thread = threading.Thread(
-        target=input_thread,
-        args=(layout_state, state_lock),
-        daemon=True,
-    )
-    thread.start()
+    if not args.tracking_only:
+        thread = threading.Thread(
+            target=input_thread,
+            args=(layout_state, state_lock),
+            daemon=True,
+        )
+        thread.start()
 
     last_missing_notice = 0.0
     last_bad_json_notice = 0.0
     last_debug_print = 0.0
     last_learning_format_poll = 0.0
     last_file_mode: str | None = None
+    last_tracking_rejection: str | None = None
+    tracking_rotation_unwrapper = TrackingOnlyRotationUnwrapper() if args.tracking_only else None
 
     try:
         while not stop_event.is_set():
             now = time.monotonic()
-            if now - last_learning_format_poll >= LEARNING_FORMAT_POLL_SECONDS:
+            if not args.tracking_only and now - last_learning_format_poll >= LEARNING_FORMAT_POLL_SECONDS:
                 last_file_mode = apply_layout_mode_from_file(
                     file_path,
                     state_lock,
@@ -377,24 +484,25 @@ def main() -> None:
                 time.sleep(args.interval)
                 continue
 
-            tables = scene.get("tables", [])
-            if not isinstance(tables, list):
-                tables = []
-
-            persons = scene.get("persons", [])
-            if not isinstance(persons, list):
-                persons = []
-
-            chairs = scene.get("chairs", [])
-            if not isinstance(chairs, list):
-                chairs = []
-
             _, show_persons, show_chairs, transformation_strength = load_learning_settings(file_path)
 
             with state_lock:
                 layout_mode = current_layout_mode
 
-            targets = compute_target_layout(scene, layout_mode, transformation_strength=transformation_strength)
+            tables, persons, chairs, targets, tracking_rejection = prepare_scene_output(
+                scene,
+                layout_mode,
+                transformation_strength,
+                tracking_only=args.tracking_only,
+            )
+            if tracking_rotation_unwrapper is not None:
+                tables = tracking_rotation_unwrapper.unwrap_tables(tables)
+                # Tracking-only targets are compatibility mirrors, not layout output.
+                targets = source_pose_targets(tables)
+            if tracking_rejection != last_tracking_rejection:
+                if tracking_rejection is not None:
+                    print(f"Tracking-only: sending zero tables ({tracking_rejection}).")
+                last_tracking_rejection = tracking_rejection
             client.send_message("/table/count", len(tables))
             client.send_message("/person/count", len(persons))
             client.send_message("/chair/count", len(chairs))
