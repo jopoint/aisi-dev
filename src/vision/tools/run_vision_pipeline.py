@@ -448,9 +448,11 @@ def main():
     parser.add_argument("--table-new-conf-create", type=float, default=None, help="Optional stricter confidence to create NEW table tracks (default: --conf-create).")
     parser.add_argument("--table-new-min-bbox-area", type=int, default=None, help="Optional stricter min bbox area to create NEW table tracks (default: --table-min-bbox-area).")
     parser.add_argument("--table-new-min-bbox-minside", type=int, default=None, help="Optional stricter min bbox short-side to create NEW table tracks (default: --table-min-bbox-minside).")
-    parser.add_argument("--table-new-confirm-frames", type=int, default=1, help="Frames required before a NEW table track is shown (1 = disabled).")
+    parser.add_argument("--table-new-confirm-frames", type=int, default=2, help="Consecutive frames required before allocating a NEW table track (1 = disabled).")
     parser.add_argument("--table-new-suppress-iou", type=float, default=0.0, help="Suppress NEW table tracks if IoU with existing confirmed table >= value (0 = disabled).")
     parser.add_argument("--table-new-suppress-center-dist-px", type=float, default=0.0, help="Suppress NEW table tracks if center distance to existing confirmed table <= px (0 = disabled).")
+    parser.add_argument("--table-new-fragment-area-ratio", type=float, default=0.70, help="Suppress a NEW table candidate when it is <= this fraction of an established overlapping table bbox (default: 0.70).")
+    parser.add_argument("--table-new-fragment-overlap-ratio", type=float, default=0.60, help="Minimum candidate coverage by an established table bbox for fragment suppression (default: 0.60).")
     parser.add_argument("--table-protect-existing-tracks", action="store_true", help="Prefer continuity for tables: suppress new table births while recoverable lost table tracks exist.")
     parser.add_argument("--table-recover-lost-tracks", action="store_true", help="Enable table-specific lost-track recovery before new table birth.")
     parser.add_argument("--table-lost-track-ttl", type=int, default=15, help="Recoverable miss-count TTL for lost table tracks when recovery mode is enabled (default: 15).")
@@ -640,7 +642,9 @@ def main():
                 f"new_min_area={table_new_min_bbox_area} new_min_minside={table_new_min_bbox_minside} "
                 f"confirm_frames={args.table_new_confirm_frames} "
                 f"suppress_iou>={args.table_new_suppress_iou} "
-                f"suppress_center_dist<={args.table_new_suppress_center_dist_px}px"
+                f"suppress_center_dist<={args.table_new_suppress_center_dist_px}px "
+                f"fragment_area<={args.table_new_fragment_area_ratio:.2f}x "
+                f"fragment_coverage>={args.table_new_fragment_overlap_ratio:.2f}"
             )
             if args.table_protect_existing_tracks or args.table_recover_lost_tracks:
                 print(
@@ -792,6 +796,8 @@ def main():
         table_new_confirm_frames=args.table_new_confirm_frames,
         table_new_suppress_iou=args.table_new_suppress_iou,
         table_new_suppress_center_dist_px=args.table_new_suppress_center_dist_px,
+        table_new_fragment_area_ratio=args.table_new_fragment_area_ratio,
+        table_new_fragment_overlap_ratio=args.table_new_fragment_overlap_ratio,
         table_protect_existing_tracks=args.table_protect_existing_tracks,
         table_recover_lost_tracks=args.table_recover_lost_tracks,
         table_lost_track_ttl=args.table_lost_track_ttl,

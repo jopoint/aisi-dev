@@ -385,6 +385,16 @@ def _motion_expr(math_dat_path: str, source_geo_path: str, target_geo_path: str,
     )
 
 
+def _active_study_visibility_expression(osc_path: str) -> str:
+    """Return a direct TD dependency which is one only in STUDY/ACTIVE."""
+
+    return (
+        "(lambda raw: float(raw is not None and raw['study_mode'] is not None "
+        "and raw['study_mode'].eval() == 1 and raw['study_phase'] is not None "
+        "and raw['study_phase'].eval() == 2))(op(%r))" % osc_path
+    )
+
+
 def _create_motion_line_geo(
     parent,
     name: str,
@@ -394,6 +404,7 @@ def _create_motion_line_geo(
     target_geo_path: str,
     segment_prefix: str,
     material_path: str | None,
+    study_state_osc_path: str,
 ):
     """Create one dynamic line Geometry COMP; TouchDesigner-only."""
 
@@ -422,7 +433,10 @@ def _create_motion_line_geo(
         geo.par.rz.expr = _motion_expr(
             math_dat_path, source_geo_path, target_geo_path, f"{segment_prefix}_angle_deg"
         )
-    geo.par.sx.expr = _motion_expr(math_dat_path, source_geo_path, target_geo_path, f"{segment_prefix}_visible")
+    geo.par.sx.expr = (
+        f"({_motion_expr(math_dat_path, source_geo_path, target_geo_path, f'{segment_prefix}_visible')}) "
+        f"* ({_active_study_visibility_expression(study_state_osc_path)})"
+    )
     geo.par.tz = 0.03
 
     arrow_length_expr = _motion_expr(
@@ -493,6 +507,7 @@ def create_study_motion_line_geos(
     tabletop_geometry_name: str = "rect_motion_line_tabletop_geo",
     math_dat_name: str = "study_motion_math",
     material_path: str | None = None,
+    study_state_osc_path: str = "/project1/comp_io/null_osc_raw",
 ):
     """Create and return ``(floor_geo, tabletop_geo)`` under the Study COMP.
 
@@ -526,6 +541,7 @@ def create_study_motion_line_geos(
         target_geo_path=target_geo_path,
         segment_prefix="floor",
         material_path=material_path,
+        study_state_osc_path=study_state_osc_path,
     )
     tabletop_geo = _create_motion_line_geo(
         parent,
@@ -535,6 +551,7 @@ def create_study_motion_line_geos(
         target_geo_path=target_geo_path,
         segment_prefix="tabletop",
         material_path=material_path,
+        study_state_osc_path=study_state_osc_path,
     )
     math_dat.nodeX = parent.nodeX + 175
     math_dat.nodeY = parent.nodeY - 260

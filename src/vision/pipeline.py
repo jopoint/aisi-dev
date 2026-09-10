@@ -269,9 +269,11 @@ class VisionPipeline:
         table_new_conf_create: Optional[float] = None,
         table_new_min_bbox_area: Optional[int] = None,
         table_new_min_bbox_minside: Optional[int] = None,
-        table_new_confirm_frames: int = 1,
+        table_new_confirm_frames: int = 2,
         table_new_suppress_iou: float = 0.0,
         table_new_suppress_center_dist_px: float = 0.0,
+        table_new_fragment_area_ratio: float = 0.70,
+        table_new_fragment_overlap_ratio: float = 0.60,
         table_protect_existing_tracks: bool = False,
         table_recover_lost_tracks: bool = False,
         table_lost_track_ttl: int = 15,
@@ -376,9 +378,13 @@ class VisionPipeline:
             table_new_conf_create: Optional stricter min confidence for creating new table tracks.
             table_new_min_bbox_area: Optional stricter min bbox area for creating new table tracks.
             table_new_min_bbox_minside: Optional stricter min short-side for creating new table tracks.
-            table_new_confirm_frames: Frames required before a new table track becomes visible (1=off).
+            table_new_confirm_frames: Consecutive detections required before allocating a new table track (1=off).
             table_new_suppress_iou: Suppress creating new table tracks if IoU with existing table is above this value.
             table_new_suppress_center_dist_px: Suppress creating new table tracks if center too close to existing table.
+            table_new_fragment_area_ratio: Treat a candidate no larger than this fraction of an
+                established table's bbox as a possible occlusion fragment.
+            table_new_fragment_overlap_ratio: Minimum fraction of that candidate covered by the
+                established table bbox before suppressing its new-track birth.
             table_protect_existing_tracks: Prefer table continuity by suppressing new births while recoverable lost tracks remain.
             table_recover_lost_tracks: Enable table-specific lost-track recovery before allowing new births.
             table_lost_track_ttl: Max miss_count for table tracks to remain recoverable when recovery mode is enabled.
@@ -472,6 +478,8 @@ class VisionPipeline:
         self.table_new_confirm_frames = int(max(1, table_new_confirm_frames))
         self.table_new_suppress_iou = float(max(0.0, table_new_suppress_iou))
         self.table_new_suppress_center_dist_px = float(max(0.0, table_new_suppress_center_dist_px))
+        self.table_new_fragment_area_ratio = float(min(1.0, max(0.0, table_new_fragment_area_ratio)))
+        self.table_new_fragment_overlap_ratio = float(min(1.0, max(0.0, table_new_fragment_overlap_ratio)))
         self.table_protect_existing_tracks = bool(table_protect_existing_tracks)
         self.table_recover_lost_tracks = bool(table_recover_lost_tracks)
         self.table_lost_track_ttl = int(max(1, table_lost_track_ttl))
@@ -622,6 +630,9 @@ class VisionPipeline:
             "person": 0,
         }
         self._person_new_ids_since_log = 0
+        # Must exist before the first live frame; reset_tracks() also clears
+        # this buffer when the operator requests a fresh tracker session.
+        self._pending_table_births: List[Dict] = []
         self._table_obb_detector = None
 
         self.frame_id = 0
@@ -685,7 +696,9 @@ class VisionPipeline:
                     f"new_min_minside={self.table_new_min_bbox_minside} "
                     f"confirm_frames={self.table_new_confirm_frames} "
                     f"suppress_iou>={self.table_new_suppress_iou} "
-                    f"suppress_center_dist<={self.table_new_suppress_center_dist_px}px"
+                    f"suppress_center_dist<={self.table_new_suppress_center_dist_px}px "
+                    f"fragment_area<={self.table_new_fragment_area_ratio:.2f}x "
+                    f"fragment_coverage>={self.table_new_fragment_overlap_ratio:.2f}"
                 )
                 if self.table_protect_existing_tracks or self.table_recover_lost_tracks:
                     print(
@@ -771,6 +784,10 @@ class VisionPipeline:
             "person": 0,
         }
         self._person_new_ids_since_log = 0
+        # Candidate table detections wait here before receiving a persistent
+        # ID. Unlike an unconfirmed track, they cannot compete for an
+        # established track's association.
+        self._pending_table_births: List[Dict] = []
 
     def _apply_input_crop(self, frame_bgr: np.ndarray) -> np.ndarray:
         """Apply optional fixed input crop, clamped to frame bounds."""
@@ -884,6 +901,87 @@ class VisionPipeline:
         if union <= 0:
             return 0.0
         return inter / union
+
+    @staticmethod
+    def _bbox_intersection_area(box_a: List[int], box_b: List[int]) -> float:
+        """Return the pixel-space intersection area of two axis-aligned boxes."""
+        ax1, ay1, ax2, ay2 = [int(v) for v in box_a]
+        bx1, by1, bx2, by2 = [int(v) for v in box_b]
+        return float(max(0, min(ax2, bx2) - max(ax1, bx1)) * max(0, min(ay2, by2) - max(ay1, by1)))
+
+    def _is_table_fragment_of_track(self, candidate_bbox: List[int], track_bbox: List[int]) -> bool:
+        """Return whether an unmatched candidate is plausibly an occlusion fragment.
+
+        This intentionally uses only relative image geometry. The association
+        stage runs before world projection, while comparing a candidate area to
+        the nearby established track makes the test robust to perspective.
+        A genuine new table that merely appears near another table is retained
+        unless it is both substantially smaller and mostly contained by it.
+        """
+        candidate_area = self._bbox_area(candidate_bbox)
+        track_area = self._bbox_area(track_bbox)
+        if candidate_area <= 0.0 or track_area <= 0.0:
+            return False
+        if candidate_area > track_area * float(self.table_new_fragment_area_ratio):
+            return False
+        coverage = self._bbox_intersection_area(candidate_bbox, track_bbox) / candidate_area
+        return coverage >= float(self.table_new_fragment_overlap_ratio)
+
+    def _advance_pending_table_birth(self, bbox: List[int], frame_id: int) -> bool:
+        """Confirm a consecutive unmatched full-table candidate before ID allocation.
+
+        Pending candidates are deliberately not inserted into ``_tracks``.
+        They therefore cannot steal a detection from an established table while
+        an occlusion fragment is present. A candidate must be geometrically
+        consistent in consecutive frames under the existing association gates.
+        """
+        required = int(self.table_new_confirm_frames)
+        if required <= 1:
+            return True
+
+        # Confirmation is consecutive: candidates absent in the immediately
+        # preceding frame are discarded rather than retaining stale history.
+        self._pending_table_births = [
+            candidate
+            for candidate in self._pending_table_births
+            if int(candidate.get("last_seen_frame", -1)) >= int(frame_id) - 1
+        ]
+        candidate_center = self._bbox_center(bbox)
+        max_dist = max(1e-6, float(self._class_match_dist_px.get("table", self.reacquire_max_dist)))
+        min_iou = float(self._class_match_iou_min.get("table", self.reacquire_min_iou))
+        best_index = None
+        best_score = None
+        for index, pending in enumerate(self._pending_table_births):
+            if int(pending.get("last_seen_frame", -1)) != int(frame_id) - 1:
+                continue
+            pending_bbox = pending.get("bbox")
+            if not isinstance(pending_bbox, list) or len(pending_bbox) != 4:
+                continue
+            iou = self._bbox_iou(pending_bbox, bbox)
+            distance = self._center_dist(self._bbox_center(pending_bbox), candidate_center)
+            if iou < min_iou or distance > max_dist:
+                continue
+            score = 0.7 * iou + 0.3 * (1.0 - min(1.0, distance / max_dist))
+            if best_score is None or score > best_score:
+                best_index = index
+                best_score = score
+
+        if best_index is None:
+            self._pending_table_births.append({
+                "bbox": list(bbox),
+                "last_seen_frame": int(frame_id),
+                "confirm_count": 1,
+            })
+            return False
+
+        pending = self._pending_table_births[best_index]
+        pending["bbox"] = list(bbox)
+        pending["last_seen_frame"] = int(frame_id)
+        pending["confirm_count"] = int(pending.get("confirm_count", 1)) + 1
+        if int(pending["confirm_count"]) < required:
+            return False
+        del self._pending_table_births[best_index]
+        return True
 
     @staticmethod
     def _bbox_center(bbox: List[int]) -> Tuple[float, float]:
@@ -3212,6 +3310,12 @@ class VisionPipeline:
         dbg_new_table_tracks_created = 0
         dbg_recoverable_lost_table_track_count = 0
         dbg_blocked_new_table_births_near_lost = 0
+        dbg_suppressed_table_fragment_births = 0
+        # Debug-only association audit. It is serialized only when
+        # --table-obb-debug-jsonl is enabled; it has no role in matching.
+        dbg_table_associations: List[Dict] = []
+        dbg_table_deleted_track_ids: List[str] = []
+        dbg_table_new_track_ids: List[str] = []
 
         furniture_entities: List[DetectedEntity] = []
         people_entities: List[DetectedEntity] = []
@@ -3255,6 +3359,22 @@ class VisionPipeline:
             # Detections are already filtered with conf_keep and class rules above.
             detections = sorted(by_label.get(label, []), key=lambda d: float(d["score"]), reverse=True)
             available_det_idxs = set(range(len(detections)))
+            # Preserve the pre-update table boxes for new-birth suppression.
+            # If one half of an occluded table is associated first, the live
+            # track bbox may otherwise shrink before the sibling fragment is
+            # evaluated for a new ID.
+            table_birth_reference_tracks = (
+                {
+                    track_id: {
+                        "bbox": list(track.get("bbox", [])),
+                        "miss_count": int(track.get("miss_count", 0)),
+                        "table_confirmed": bool(track.get("table_confirmed", True)),
+                    }
+                    for track_id, track in class_tracks.items()
+                }
+                if label == "table"
+                else {}
+            )
 
             active_track_ids = [tid for tid, t in class_tracks.items() if int(t.get("miss_count", 0)) == 0]
             ghost_track_ids = [
@@ -3269,6 +3389,21 @@ class VisionPipeline:
             matches = self._greedy_track_match(detections, class_tracks, active_track_ids, available_det_idxs, label)
             if label == "table":
                 dbg_matched_active_table_tracks += len(matches)
+                for _tid, _didx in matches.items():
+                    _track_bbox = [int(value) for value in class_tracks[_tid].get("bbox", [0, 0, 0, 0])]
+                    _det_bbox = [int(value) for value in detections[_didx].get("bbox_px", [0, 0, 0, 0])]
+                    _iou = self._bbox_iou(_track_bbox, _det_bbox)
+                    _distance = self._center_dist(self._bbox_center(_track_bbox), self._bbox_center(_det_bbox))
+                    _max_distance = max(1e-6, float(self._class_match_dist_px["table"]))
+                    _score = 0.7 * _iou + 0.3 * (1.0 - min(1.0, _distance / _max_distance))
+                    dbg_table_associations.append({
+                        "phase": "active",
+                        "track_id": _tid,
+                        "tracking_detection_index": int(_didx),
+                        "iou": float(_iou),
+                        "center_distance_px": float(_distance),
+                        "association_score": float(_score),
+                    })
             for _tid, _didx in matches.items():
                 available_det_idxs.discard(_didx)
 
@@ -3277,6 +3412,21 @@ class VisionPipeline:
                 reacquire_matches = self._greedy_track_match(detections, class_tracks, ghost_track_ids, available_det_idxs, label)
                 if label == "table":
                     dbg_matched_lost_table_tracks += len(reacquire_matches)
+                    for _tid, _didx in reacquire_matches.items():
+                        _track_bbox = [int(value) for value in class_tracks[_tid].get("bbox", [0, 0, 0, 0])]
+                        _det_bbox = [int(value) for value in detections[_didx].get("bbox_px", [0, 0, 0, 0])]
+                        _iou = self._bbox_iou(_track_bbox, _det_bbox)
+                        _distance = self._center_dist(self._bbox_center(_track_bbox), self._bbox_center(_det_bbox))
+                        _max_distance = max(1e-6, float(self._class_match_dist_px["table"]))
+                        _score = 0.7 * _iou + 0.3 * (1.0 - min(1.0, _distance / _max_distance))
+                        dbg_table_associations.append({
+                            "phase": "reacquire",
+                            "track_id": _tid,
+                            "tracking_detection_index": int(_didx),
+                            "iou": float(_iou),
+                            "center_distance_px": float(_distance),
+                            "association_score": float(_score),
+                        })
                 for _tid, _didx in reacquire_matches.items():
                     available_det_idxs.discard(_didx)
                 matches.update(reacquire_matches)
@@ -3380,6 +3530,8 @@ class VisionPipeline:
                     stale_ids.append(tid)
             for tid in stale_ids:
                 del class_tracks[tid]
+                if label == "table":
+                    dbg_table_deleted_track_ids.append(tid)
 
             # New track creation from unmatched detections uses conf_create.
             for det_idx in sorted(list(available_det_idxs)):
@@ -3425,12 +3577,23 @@ class VisionPipeline:
                         continue
 
                     suppress_new_table = False
-                    for _existing_id, _existing in class_tracks.items():
-                        if int(_existing.get("miss_count", 0)) > 0:
+                    for _existing_id, _existing in table_birth_reference_tracks.items():
+                        # Include one freshly-missed confirmed track: this is
+                        # the common full-table -> two-fragment occlusion
+                        # transition, and its last full bbox remains the best
+                        # reference for rejecting a competing fragment birth.
+                        if int(_existing.get("miss_count", 0)) > 1:
                             continue
                         if not bool(_existing.get("table_confirmed", True)):
                             continue
                         _existing_bbox = [int(v) for v in _existing.get("bbox", [0, 0, 0, 0])]
+                        if len(_existing_bbox) != 4:
+                            continue
+
+                        if self._is_table_fragment_of_track(bbox, _existing_bbox):
+                            suppress_new_table = True
+                            dbg_suppressed_table_fragment_births += 1
+                            break
 
                         if self.table_new_suppress_iou > 0.0:
                             _iou = self._bbox_iou(bbox, _existing_bbox)
@@ -3446,6 +3609,13 @@ class VisionPipeline:
                                 break
 
                     if suppress_new_table:
+                        continue
+
+                    # Do not allocate an ID for the first unmatched full-size
+                    # observation. Pending candidates never participate in
+                    # association, so fragments cannot compete with a stable
+                    # table while they wait for confirmation.
+                    if not self._advance_pending_table_birth(bbox, frame_id):
                         continue
                 else:
                     if score < float(self.conf_create):
@@ -3467,6 +3637,7 @@ class VisionPipeline:
                     "prev_theta": class_tracks.get(track_id, {}).get("prev_theta"),
                 }
                 if label == "table":
+                    dbg_table_new_track_ids.append(track_id)
                     class_tracks[track_id]["table_motion_state"] = "moving"
                     class_tracks[track_id]["table_stable_count"] = 0
                     class_tracks[track_id]["table_center_shift_px"] = 0.0
@@ -3475,8 +3646,8 @@ class VisionPipeline:
                     class_tracks[track_id]["obb_poly_px"] = det.get("obb_poly_px")
                     class_tracks[track_id]["obb_center_px"] = det.get("obb_center_px")
                     class_tracks[track_id]["obb_yaw_rad"] = det.get("obb_yaw_rad")
-                    class_tracks[track_id]["table_confirm_count"] = 1
-                    class_tracks[track_id]["table_confirmed"] = self.table_new_confirm_frames <= 1
+                    class_tracks[track_id]["table_confirm_count"] = self.table_new_confirm_frames
+                    class_tracks[track_id]["table_confirmed"] = True
                     if self.adaptive_table_smoothing:
                         raw_center = det.get("obb_center_px")
                         class_tracks[track_id]["adaptive_raw_center_px"] = (
@@ -3994,28 +4165,53 @@ class VisionPipeline:
                 })
 
         if self.table_obb_debug_jsonl and self._table_obb_detector is not None:
+            _emitted_table_poses = {
+                entity.id: {
+                    "world_x_cm": float(entity.pose.x),
+                    "world_y_cm": float(entity.pose.y),
+                    "world_theta_rad": None if entity.pose.theta is None else float(entity.pose.theta),
+                }
+                for entity in furniture_entities
+                if entity.kind == "table"
+            }
             _final_tables = []
             for _item in overlay_items:
                 if _item.get("label") != "table":
                     continue
                 _shape = _item.get("shape", {})
+                _track_id = str(_item.get("id"))
+                _track = self._tracks["table"].get(_track_id, {})
                 _final_tables.append({
-                    "id": _item.get("id"),
+                    "id": _track_id,
                     "score": float(_item.get("score", 0.0)),
                     "bbox_px": _shape.get("bbox_px"),
                     "center_px": _shape.get("center_px"),
                     "poly_px": _shape.get("poly_px"),
                     "motion_state": _shape.get("motion_state"),
                     "fallback_reason": _shape.get("fallback_reason"),
+                    "age_frames": int(_track.get("age", 0)),
+                    "miss_count": int(_track.get("miss_count", 0)),
+                    "raw_obb_center_px": _track.get("obb_center_px"),
+                    "raw_obb_yaw_rad": _track.get("obb_yaw_rad"),
+                    "emitted_world": _emitted_table_poses.get(_track_id),
                 })
             _raw_tables = []
-            for _det in raw_table_obb_detections:
+            for _raw_index, _det in enumerate(raw_table_obb_detections):
+                _raw_bbox = _det.get("bbox_px")
+                _raw_width = None
+                _raw_height = None
+                if isinstance(_raw_bbox, list) and len(_raw_bbox) == 4:
+                    _raw_width = int(_raw_bbox[2]) - int(_raw_bbox[0])
+                    _raw_height = int(_raw_bbox[3]) - int(_raw_bbox[1])
                 _raw_tables.append({
+                    "raw_detection_index": int(_raw_index),
                     "score": float(_det.get("score", 0.0)),
-                    "bbox_px": _det.get("bbox_px"),
+                    "bbox_px": _raw_bbox,
                     "center_px": _det.get("obb_center_px"),
                     "poly_px": _det.get("obb_poly_px"),
                     "yaw_rad": _det.get("obb_yaw_rad"),
+                    "width_px": _raw_width,
+                    "height_px": _raw_height,
                 })
             _dbg_payload = {
                 "frame_id": int(frame_id),
@@ -4027,7 +4223,11 @@ class VisionPipeline:
                 "matched_lost_table_tracks": int(dbg_matched_lost_table_tracks),
                 "new_table_tracks_created": int(dbg_new_table_tracks_created),
                 "blocked_new_table_births_near_lost": int(dbg_blocked_new_table_births_near_lost),
+                "suppressed_table_fragment_births": int(dbg_suppressed_table_fragment_births),
                 "recoverable_lost_table_track_count": int(dbg_recoverable_lost_table_track_count),
+                "table_associations": dbg_table_associations,
+                "new_table_track_ids": dbg_table_new_track_ids,
+                "deleted_table_track_ids": dbg_table_deleted_track_ids,
             }
             _dbg_path = Path(self.table_obb_debug_jsonl)
             _dbg_path.parent.mkdir(parents=True, exist_ok=True)

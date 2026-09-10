@@ -9,6 +9,7 @@ from td_builders.study_target_floor import (
     TABLETOP_INNER_WIDTH_CM,
     TD_UNITS_PER_CM,
     STUDY_OVERLAP_CALLBACKS_DAT_SOURCE,
+    _active_study_visibility_expression,
     _overlap_visibility_expression,
     _target_transform_expressions,
     study_tabletop_target_visible,
@@ -22,6 +23,10 @@ from td_builders.study_target_floor import (
 class StudyTargetFloorBuilderTests(unittest.TestCase):
     def test_tabletop_target_gate_hides_tracking_with_overlap(self) -> None:
         self.assertFalse(study_tabletop_target_visible(0, 1, 1.0))
+
+    def test_tabletop_target_gate_hides_home_and_ready(self) -> None:
+        self.assertFalse(study_tabletop_target_visible(1, 1, 1.0, 0))
+        self.assertFalse(study_tabletop_target_visible(1, 1, 1.0, 1))
 
     def test_tabletop_target_gate_hides_study_floor_only_with_overlap(self) -> None:
         self.assertFalse(study_tabletop_target_visible(1, 0, 1.0))
@@ -44,6 +49,13 @@ class StudyTargetFloorBuilderTests(unittest.TestCase):
         self.assertIn("study_overlap_state", expression)
         self.assertIn("study_mode", expression)
         self.assertIn("study_condition", expression)
+        self.assertIn("study_phase", expression)
+
+    def test_floor_target_active_gate_requires_study_active(self) -> None:
+        expression = _active_study_visibility_expression("/project1/comp_io/null_osc_raw")
+        self.assertIn("study_mode", expression)
+        self.assertIn("study_phase", expression)
+        self.assertIn("== 2", expression)
 
     def test_target_transform_uses_the_same_td_axis_signs_as_source_geometry(self) -> None:
         source_x, source_y = 187.5914, 241.9824

@@ -1,0 +1,123 @@
+{
+  "schema_version": 1,
+  "home_positions": {
+    "P_left": {"x_cm": 190, "y_cm": 395},
+    "P_right": {"x_cm": 310, "y_cm": 395}
+  },
+  "trials": [
+    {
+      "task_id": "T1",
+      "variant": "A",
+      "source_pose": {"x_cm": 120, "y_cm": 150, "rotation_deg": 90},
+      "target_pose": {"x_cm": 380, "y_cm": 150, "rotation_deg": 90},
+      "home_pose_reference": "P_left",
+      "participant_start_positions": [
+        {"id": "P1", "x_cm": 200, "y_cm": 440, "radius_cm": 40},
+        {"id": "P2", "x_cm": 300, "y_cm": 440, "radius_cm": 40}
+      ],
+      "notes": "Confirmed horizontal A layout."
+    },
+    {
+      "task_id": "T1",
+      "variant": "B",
+      "source_pose": {"x_cm": 380, "y_cm": 150, "rotation_deg": 90},
+      "target_pose": {"x_cm": 120, "y_cm": 150, "rotation_deg": 90},
+      "home_pose_reference": "P_right",
+      "participant_start_positions": [
+        {"id": "P1", "x_cm": 200, "y_cm": 440, "radius_cm": 40},
+        {"id": "P2", "x_cm": 300, "y_cm": 440, "radius_cm": 40}
+      ],
+      "notes": "Confirmed horizontal mirror layout."
+    },
+    {
+      "task_id": "T2",
+      "variant": "A",
+      "source_pose": {"x_cm": 370, "y_cm": 145, "rotation_deg": 90},
+      "target_pose": {"x_cm": 150, "y_cm": 285, "rotation_deg": 0},
+      "home_pose_reference": "P_right",
+      "participant_start_positions": [
+        {"id": "P1", "x_cm": 200, "y_cm": 440, "radius_cm": 40},
+        {"id": "P2", "x_cm": 300, "y_cm": 440, "radius_cm": 40}
+      ],
+      "notes": "Confirmed diagonal A layout."
+    },
+    {
+      "task_id": "T2",
+      "variant": "B",
+      "source_pose": {"x_cm": 130, "y_cm": 145, "rotation_deg": 90},
+      "target_pose": {"x_cm": 350, "y_cm": 285, "rotation_deg": 0},
+      "home_pose_reference": "P_left",
+      "participant_start_positions": [
+        {"id": "P1", "x_cm": 200, "y_cm": 440, "radius_cm": 40},
+        {"id": "P2", "x_cm": 300, "y_cm": 440, "radius_cm": 40}
+      ],
+      "notes": "Confirmed diagonal B layout."
+    },
+    {
+      "task_id": "T3",
+      "variant": "A",
+      "source_pose": {"x_cm": 260, "y_cm": 180, "rotation_deg": -20},
+      "target_pose": {"x_cm": 116, "y_cm": 270, "rotation_deg": -130},
+      "home_pose_reference": "P_right",
+      "distractor_tables": [
+        {"x_cm": 185, "y_cm": 105, "rotation_deg": 150},
+        {"x_cm": 385, "y_cm": 150, "rotation_deg": 70}
+      ],
+      "participant_start_positions": [
+        {"id": "P1", "x_cm": 200, "y_cm": 440, "radius_cm": 40},
+        {"id": "P2", "x_cm": 300, "y_cm": 440, "radius_cm": 40}
+      ],
+      "notes": "Confirmed asymmetric layout with two distractor tables."
+    },
+    {
+      "task_id": "T3",
+      "variant": "B",
+      "source_pose": {"x_cm": 240, "y_cm": 180, "rotation_deg": 20},
+      "target_pose": {"x_cm": 384, "y_cm": 270, "rotation_deg": 130},
+      "home_pose_reference": "P_left",
+      "distractor_tables": [
+        {"x_cm": 315, "y_cm": 105, "rotation_deg": 30},
+        {"x_cm": 115, "y_cm": 150, "rotation_deg": 110}
+      ],
+      "participant_start_positions": [
+        {"id": "P1", "x_cm": 200, "y_cm": 440, "radius_cm": 40},
+        {"id": "P2", "x_cm": 300, "y_cm": 440, "radius_cm": 40}
+      ],
+      "notes": "Mirror of T3A across x=250; B rotations are reduced modulo the Rect's 180-degree symmetry."
+    },
+    {
+      "task_id": "T4",
+      "variant": "A",
+      "source_pose": {"x_cm": 120, "y_cm": 125, "rotation_deg": 115},
+      "target_pose": {"x_cm": 380, "y_cm": 375, "rotation_deg": 65},
+      "home_pose_reference": "P_left",
+      "distractor_tables": [
+        {"x_cm": 350, "y_cm": 100, "rotation_deg": 65},
+        {"x_cm": 100, "y_cm": 420, "rotation_deg": -20},
+        {"x_cm": 250, "y_cm": 250, "rotation_deg": 115}
+      ],
+      "participant_start_positions": [
+        {"id": "P1", "x_cm": 200, "y_cm": 440, "radius_cm": 40},
+        {"id": "P2", "x_cm": 300, "y_cm": 440, "radius_cm": 40}
+      ],
+      "notes": "Non-orthogonal, spatially ambiguous high-complexity task: crossing diagonal relationships with a central oblique distractor."
+    },
+    {
+      "task_id": "T4",
+      "variant": "B",
+      "source_pose": {"x_cm": 380, "y_cm": 125, "rotation_deg": 65},
+      "target_pose": {"x_cm": 120, "y_cm": 375, "rotation_deg": 115},
+      "home_pose_reference": "P_right",
+      "distractor_tables": [
+        {"x_cm": 150, "y_cm": 100, "rotation_deg": 115},
+        {"x_cm": 400, "y_cm": 420, "rotation_deg": 20},
+        {"x_cm": 250, "y_cm": 250, "rotation_deg": 65}
+      ],
+      "participant_start_positions": [
+        {"id": "P1", "x_cm": 200, "y_cm": 440, "radius_cm": 40},
+        {"id": "P2", "x_cm": 300, "y_cm": 440, "radius_cm": 40}
+      ],
+      "notes": "Mirror of T4A across x=250 using Rect 180-degree orientation symmetry; non-orthogonal, spatially ambiguous high-complexity task."
+    }
+  ]
+}

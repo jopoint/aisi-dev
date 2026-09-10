@@ -4,6 +4,7 @@ param(
     [string]$OutputPath = "data/vision/live/current_room_rect.jsonl",
     [ValidateSet("cuda", "cpu")]
     [string]$Device = "cuda",
+    [string]$TableObbDebugJsonl,
     [string]$TablePoseLatencyDebugJsonl,
     [switch]$NoDisplay,
     [switch]$DryRun
@@ -46,6 +47,7 @@ $PipelineArgs = @(
     "--adaptive-table-stationary-frames", "5",
     "--adaptive-table-moving-center-delta-px", "3.0",
     "--adaptive-table-moving-yaw-delta-deg", "1.5",
+    "--table-new-confirm-frames", "2",
     "--flush-every", "1",
     "--out", $OutputPath
 )
@@ -56,6 +58,9 @@ if ($NoDisplay) {
 if (-not [string]::IsNullOrWhiteSpace($TablePoseLatencyDebugJsonl)) {
     $PipelineArgs += "--table-pose-latency-debug-jsonl", $TablePoseLatencyDebugJsonl
 }
+if (-not [string]::IsNullOrWhiteSpace($TableObbDebugJsonl)) {
+    $PipelineArgs += "--table-obb-debug-jsonl", $TableObbDebugJsonl
+}
 
 Write-Host "Current-room Rect-table vision configuration:"
 Write-Host "  tables:  $TableObbModel"
@@ -64,6 +69,9 @@ Write-Host "  calibration: $CalibrationProfile"
 Write-Host "  camera: index=$CameraIndex, 1920x1080, rotate=0, crop=none"
 if (-not [string]::IsNullOrWhiteSpace($TablePoseLatencyDebugJsonl)) {
     Write-Host "  table pose latency debug: $TablePoseLatencyDebugJsonl"
+}
+if (-not [string]::IsNullOrWhiteSpace($TableObbDebugJsonl)) {
+    Write-Host "  table OBB association debug: $TableObbDebugJsonl"
 }
 
 if ($DryRun) {

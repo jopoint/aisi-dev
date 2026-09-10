@@ -1,6 +1,8 @@
 [CmdletBinding()]
 param(
     [switch]$NoDisplay,
+    [string]$TableObbDebugJsonl,
+    [string]$TablePoseLatencyDebugJsonl,
     [switch]$DryRun
 )
 
@@ -38,6 +40,12 @@ $VisionCommand = "& '$VisionLauncher'"
 if ($NoDisplay) {
     $VisionCommand += " -NoDisplay"
 }
+if (-not [string]::IsNullOrWhiteSpace($TableObbDebugJsonl)) {
+    $VisionCommand += " -TableObbDebugJsonl '$TableObbDebugJsonl'"
+}
+if (-not [string]::IsNullOrWhiteSpace($TablePoseLatencyDebugJsonl)) {
+    $VisionCommand += " -TablePoseLatencyDebugJsonl '$TablePoseLatencyDebugJsonl'"
+}
 $AdapterCommand = "& '$AisiPython' -m aisi.app.vision_live_to_aisi_scene --input '$VisionInput' --output '$VisionScene' --poll-seconds 0.01"
 $OscCommand = "& '$AisiPython' -m aisi.app.sim_scene_to_osc --scene '$VisionScene' --tracking-only --tracking-table-id table_00 --host 127.0.0.1 --port 9000 --interval 0.01"
 
@@ -46,6 +54,12 @@ Write-Host "  Vision FrameEvents: $VisionInput"
 Write-Host "  Dedicated scene:    $VisionScene"
 Write-Host "  No layout synthesis, people, chairs, or generated target pose."
 Write-Host "  Target OSC compatibility values equal source, so motion vectors are zero."
+if (-not [string]::IsNullOrWhiteSpace($TableObbDebugJsonl)) {
+    Write-Host "  Table association debug: $TableObbDebugJsonl"
+}
+if (-not [string]::IsNullOrWhiteSpace($TablePoseLatencyDebugJsonl)) {
+    Write-Host "  Table pose debug:        $TablePoseLatencyDebugJsonl"
+}
 
 if ($DryRun) {
     Write-Host "Dry run; no processes started:"

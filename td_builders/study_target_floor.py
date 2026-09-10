@@ -148,6 +148,7 @@ def create_study_target_floor_geo(
     geo.par.tx.expr = x_expr
     geo.par.ty.expr = y_expr
     geo.par.rz.expr = rot_expr
+    geo.par.sx.expr = _active_study_visibility_expression(osc_path)
     if material_path is not None and hasattr(geo.par, "material"):
         geo.par.material = material_path
     geo.nodeX = parent.nodeX + 250
@@ -159,21 +160,34 @@ def _overlap_visibility_expression(
     overlap_chop_path: str,
     osc_path: str,
 ) -> str:
-    """Return the Study/Dual/overlap gate for the tabletop target Geometry."""
+    """Return the active-Study/Dual/overlap gate for the tabletop target."""
 
     return (
         "(lambda state, raw: float("
         "state is not None and state['overlap'] is not None and state['overlap'].eval() == 1 "
         "and raw is not None and raw['study_mode'] is not None and raw['study_mode'].eval() == 1 "
-        "and raw['study_condition'] is not None and raw['study_condition'].eval() == 1"
+        "and raw['study_condition'] is not None and raw['study_condition'].eval() == 1 "
+        "and raw['study_phase'] is not None and raw['study_phase'].eval() == 2"
         "))(op(%r), op(%r))" % (overlap_chop_path, osc_path)
     )
 
 
-def study_tabletop_target_visible(study_mode: int, study_condition: int, overlap: float) -> bool:
+def study_tabletop_target_visible(
+    study_mode: int, study_condition: int, overlap: float, study_phase: int = 2
+) -> bool:
     """Return the same gate semantics as the target Geometry COMP expression."""
 
-    return study_mode == 1 and study_condition == 1 and overlap == 1
+    return study_mode == 1 and study_condition == 1 and study_phase == 2 and overlap == 1
+
+
+def _active_study_visibility_expression(osc_path: str) -> str:
+    """Return the direct STUDY/ACTIVE gate for the floor target Geometry."""
+
+    return (
+        "(lambda raw: float(raw is not None and raw['study_mode'] is not None "
+        "and raw['study_mode'].eval() == 1 and raw['study_phase'] is not None "
+        "and raw['study_phase'].eval() == 2))(op(%r))" % osc_path
+    )
 
 
 STUDY_OVERLAP_CALLBACKS_DAT_SOURCE = '''def _first_channel_sample(chop, channel_name):
