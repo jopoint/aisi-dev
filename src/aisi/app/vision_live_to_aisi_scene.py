@@ -26,6 +26,7 @@ RECT_TABLE_TYPE = "rect"
 DEFAULT_POLL_SECONDS = 0.05
 DEFAULT_MISSING_FRAMES = 15
 DEFAULT_STREAM_STALE_SECONDS = 2.0
+SCENE_FILE_RETRY_DELAYS_SECONDS = (0.005, 0.010, 0.020)
 
 
 def default_input_path() -> Path:
@@ -128,6 +129,25 @@ def build_scene(tables: list[dict[str, Any]], frame: FrameEvent | None) -> dict[
     }
 
 
+def _is_transient_windows_file_lock(error: OSError) -> bool:
+    """Return whether Windows reported a replace/open sharing race."""
+
+    return isinstance(error, PermissionError) or getattr(error, "winerror", None) in {5, 32}
+
+
+def _replace_with_retry(temp_path: str, destination: Path) -> None:
+    """Replace a scene file with bounded retries for transient Windows locks."""
+
+    for delay in (*SCENE_FILE_RETRY_DELAYS_SECONDS, None):
+        try:
+            os.replace(temp_path, destination)
+            return
+        except OSError as error:
+            if not _is_transient_windows_file_lock(error) or delay is None:
+                raise
+            time.sleep(delay)
+
+
 def atomic_write_scene(path: str | Path, scene: dict[str, Any]) -> None:
     """Atomically replace the scene file, so OSC never reads partial JSON."""
     destination = Path(path)
@@ -142,7 +162,7 @@ def atomic_write_scene(path: str | Path, scene: dict[str, Any]) -> None:
             json.dump(scene, handle, indent=2)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temp_name, destination)
+        _replace_with_retry(temp_name, destination)
     except Exception:
         if temp_name is not None:
             Path(temp_name).unlink(missing_ok=True)

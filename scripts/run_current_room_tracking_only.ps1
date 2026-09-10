@@ -39,9 +39,9 @@ if ($NoDisplay) {
     $VisionCommand += " -NoDisplay"
 }
 $AdapterCommand = "& '$AisiPython' -m aisi.app.vision_live_to_aisi_scene --input '$VisionInput' --output '$VisionScene' --poll-seconds 0.01"
-$OscCommand = "& '$AisiPython' -m aisi.app.sim_scene_to_osc --scene '$VisionScene' --tracking-only --host 127.0.0.1 --port 9000 --interval 0.01"
+$OscCommand = "& '$AisiPython' -m aisi.app.sim_scene_to_osc --scene '$VisionScene' --tracking-only --tracking-table-id table_00 --host 127.0.0.1 --port 9000 --interval 0.01"
 
-Write-Host "Current-room tracking-only mode: one Rect source table -> OSC 9000"
+Write-Host "Current-room tracking-only mode: Rect table table_00 -> OSC 9000"
 Write-Host "  Vision FrameEvents: $VisionInput"
 Write-Host "  Dedicated scene:    $VisionScene"
 Write-Host "  No layout synthesis, people, chairs, or generated target pose."

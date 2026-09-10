@@ -1,7 +1,8 @@
 """Minimal operator control for the Study Mode OSC state.
 
 This process is intentionally independent of live vision/tracking and layout
-generation.  It only publishes the four Study Mode channels to TouchDesigner.
+generation. It publishes Study Mode state and its fixed Study target pose to
+TouchDesigner.
 """
 
 from __future__ import annotations
@@ -20,6 +21,9 @@ except ImportError:
 
 DEFAULT_OSC_HOST = "127.0.0.1"
 DEFAULT_OSC_PORT = 9000
+DEFAULT_TARGET_X_CM = 250.0
+DEFAULT_TARGET_Y_CM = 250.0
+DEFAULT_TARGET_ROT_DEG = 0.0
 
 
 class StudyMode(IntEnum):
@@ -42,25 +46,31 @@ class StudyPhase(IntEnum):
 
 @dataclass(frozen=True)
 class StudyState:
-    """The complete, integer-backed state shared with TouchDesigner."""
+    """The complete Study state shared with TouchDesigner."""
 
     mode: StudyMode = StudyMode.TRACKING
     condition: StudyCondition = StudyCondition.FLOOR_ONLY
     phase: StudyPhase = StudyPhase.HOME
     target_overlap: bool = False
+    target_x: float = DEFAULT_TARGET_X_CM
+    target_y: float = DEFAULT_TARGET_Y_CM
+    target_rot: float = DEFAULT_TARGET_ROT_DEG
 
-    def osc_messages(self) -> tuple[tuple[str, int], ...]:
-        """Return the complete state as integer OSC values."""
+    def osc_messages(self) -> tuple[tuple[str, int | float], ...]:
+        """Return the complete state, including the fixed Study target pose."""
         return (
             ("/study/mode", int(self.mode)),
             ("/study/condition", int(self.condition)),
             ("/study/phase", int(self.phase)),
             ("/study/target_overlap", int(self.target_overlap)),
+            ("/study/target_x", self.target_x),
+            ("/study/target_y", self.target_y),
+            ("/study/target_rot", self.target_rot),
         )
 
 
 class OscMessageClient(Protocol):
-    def send_message(self, address: str, value: int) -> None:
+    def send_message(self, address: str, value: int | float) -> None:
         """Send one OSC message."""
 
 
@@ -97,6 +107,16 @@ class StudyStateController:
     def set_target_overlap(self, target_overlap: bool) -> bool:
         return self._update(replace(self.state, target_overlap=bool(target_overlap)))
 
+    def set_target_pose(self, target_x: float, target_y: float, target_rot: float) -> bool:
+        return self._update(
+            replace(
+                self.state,
+                target_x=float(target_x),
+                target_y=float(target_y),
+                target_rot=float(target_rot),
+            )
+        )
+
     def _update(self, updated: StudyState) -> bool:
         if updated == self.state:
             return False
@@ -121,6 +141,9 @@ class StudyControlUi:
         self._mode = tk.IntVar(value=int(controller.state.mode))
         self._condition = tk.IntVar(value=int(controller.state.condition))
         self._phase = tk.IntVar(value=int(controller.state.phase))
+        self._target_x = tk.StringVar(value=str(controller.state.target_x))
+        self._target_y = tk.StringVar(value=str(controller.state.target_y))
+        self._target_rot = tk.StringVar(value=str(controller.state.target_rot))
         self._summary = tk.StringVar()
 
         container = ttk.Frame(self.root, padding=12)
@@ -152,9 +175,22 @@ class StudyControlUi:
             self._on_phase,
             row=2,
         )
-        ttk.Separator(container, orient="horizontal").grid(row=3, column=0, columnspan=4, sticky="ew", pady=8)
+        ttk.Label(container, text="STUDY TARGET (cm / deg)").grid(
+            row=3, column=0, sticky="w", padx=(0, 8), pady=3
+        )
+        for column, (label, variable) in enumerate(
+            (("X", self._target_x), ("Y", self._target_y), ("Rotation", self._target_rot)), start=1
+        ):
+            ttk.Label(container, text=label).grid(row=4, column=column, sticky="w", padx=(0, 3), pady=2)
+            ttk.Entry(container, textvariable=variable, width=10).grid(
+                row=5, column=column, sticky="w", padx=(0, 6), pady=2
+            )
+        ttk.Button(container, text="Set Target", command=self._on_target_pose).grid(
+            row=5, column=0, sticky="w", pady=2
+        )
+        ttk.Separator(container, orient="horizontal").grid(row=6, column=0, columnspan=4, sticky="ew", pady=8)
         ttk.Label(container, textvariable=self._summary, justify="left").grid(
-            row=4, column=0, columnspan=4, sticky="w"
+            row=7, column=0, columnspan=4, sticky="w"
         )
         self._refresh_summary()
 
@@ -179,6 +215,17 @@ class StudyControlUi:
         self._controller.set_phase(StudyPhase(self._phase.get()))
         self._refresh_summary()
 
+    def _on_target_pose(self) -> None:
+        try:
+            target_x = float(self._target_x.get())
+            target_y = float(self._target_y.get())
+            target_rot = float(self._target_rot.get())
+        except ValueError:
+            self._summary.set("Target X, Y, and Rotation must be numeric.")
+            return
+        self._controller.set_target_pose(target_x, target_y, target_rot)
+        self._refresh_summary()
+
     def _refresh_summary(self) -> None:
         state = self._controller.state
         self._summary.set(
@@ -186,7 +233,8 @@ class StudyControlUi:
             f"mode: {state.mode.name} ({int(state.mode)})\n"
             f"condition: {state.condition.name} ({int(state.condition)})\n"
             f"phase: {state.phase.name} ({int(state.phase)})\n"
-            f"target_overlap: {int(state.target_overlap)}"
+            f"target_overlap: {int(state.target_overlap)}\n"
+            f"target: x={state.target_x:g} cm, y={state.target_y:g} cm, rot={state.target_rot:g}°"
         )
 
     def run(self) -> None:
@@ -201,6 +249,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--condition", type=int, choices=[0, 1], default=0, help="Initial condition (0=FLOOR_ONLY, 1=DUAL_SURFACE).")
     parser.add_argument("--phase", type=int, choices=[0, 1, 2, 3], default=0, help="Initial phase (0=HOME through 3=COMPLETE).")
     parser.add_argument("--target-overlap", type=int, choices=[0, 1], default=0, help="Development/test initial target overlap value.")
+    parser.add_argument("--target-x", type=float, default=DEFAULT_TARGET_X_CM, help="Initial fixed Study target X in cm.")
+    parser.add_argument("--target-y", type=float, default=DEFAULT_TARGET_Y_CM, help="Initial fixed Study target Y in cm.")
+    parser.add_argument("--target-rot", type=float, default=DEFAULT_TARGET_ROT_DEG, help="Initial fixed Study target rotation in degrees.")
     parser.add_argument("--no-ui", action="store_true", help="Publish the initial state once and exit.")
     return parser.parse_args()
 
@@ -212,6 +263,9 @@ def main() -> None:
         condition=StudyCondition(args.condition),
         phase=StudyPhase(args.phase),
         target_overlap=bool(args.target_overlap),
+        target_x=args.target_x,
+        target_y=args.target_y,
+        target_rot=args.target_rot,
     )
     controller = StudyStateController(
         StudyStatePublisher(SimpleUDPClient(args.host, args.port)),
@@ -221,7 +275,8 @@ def main() -> None:
     print(
         f"Study Control OSC target: {args.host}:{args.port}; "
         f"mode={initial_state.mode.name}, condition={initial_state.condition.name}, "
-        f"phase={initial_state.phase.name}, target_overlap={int(initial_state.target_overlap)}"
+        f"phase={initial_state.phase.name}, target_overlap={int(initial_state.target_overlap)}, "
+        f"target=({initial_state.target_x:g}, {initial_state.target_y:g}, {initial_state.target_rot:g})"
     )
     if args.no_ui:
         return

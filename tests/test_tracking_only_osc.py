@@ -125,14 +125,54 @@ class TrackingOnlyOscTests(unittest.TestCase):
         self.assertEqual(sent["/table/0/type"], "rect")
         self.assertEqual(sent["/table/0/type_id"], 2)
 
-    def test_tracking_only_rejects_missing_non_rect_or_multiple_tables(self) -> None:
-        for tables in ([], [{**_rect_table(0.0), "type": "summit"}], [_rect_table(0.0), _rect_table(0.0)]):
+    def test_tracking_only_selects_requested_id_and_ignores_other_detected_tables(self) -> None:
+        desired = _rect_table(0.0)
+        ignored = {**_rect_table(45.0), "id": "table_01"}
+
+        selected, _persons, _chairs, targets, reason = prepare_scene_output(
+            {"tables": [desired, ignored]}, "input", transformation_strength=0.5, tracking_only=True
+        )
+
+        self.assertIsNone(reason)
+        self.assertEqual(selected, [desired])
+        self.assertEqual(targets, [{"x_cm": 312.5, "y_cm": 187.25, "rotation_deg": 0.0}])
+
+    def test_tracking_only_rejects_missing_requested_table_with_clear_reason(self) -> None:
+        selected, _persons, _chairs, targets, reason = prepare_scene_output(
+            {"tables": [{**_rect_table(0.0), "id": "table_01"}]},
+            "input",
+            transformation_strength=0.5,
+            tracking_only=True,
+            tracking_table_id="table_00",
+        )
+
+        self.assertEqual(selected, [])
+        self.assertEqual(targets, [])
+        self.assertEqual(reason, "requested tracking table 'table_00' not found")
+
+    def test_tracking_only_rejects_missing_or_non_rect_requested_table(self) -> None:
+        for tables in ([], [{**_rect_table(0.0), "type": "summit"}]):
             selected, _persons, _chairs, targets, reason = prepare_scene_output(
                 {"tables": tables}, "input", transformation_strength=0.5, tracking_only=True
             )
             self.assertEqual(selected, [])
             self.assertEqual(targets, [])
-            self.assertIsNotNone(reason)
+        self.assertIsNotNone(reason)
+
+    def test_standard_layout_mode_preserves_multiple_tables(self) -> None:
+        tables = [_rect_table(0.0), {**_rect_table(45.0), "id": "table_01"}]
+        generated = [
+            {"x_cm": 10.0, "y_cm": 20.0, "rotation_deg": 0.0},
+            {"x_cm": 30.0, "y_cm": 40.0, "rotation_deg": 45.0},
+        ]
+        with patch("aisi.app.sim_scene_to_osc.compute_target_layout", return_value=generated):
+            selected, _persons, _chairs, targets, reason = prepare_scene_output(
+                {"tables": tables}, "input", transformation_strength=0.5, tracking_only=False
+            )
+
+        self.assertEqual(selected, tables)
+        self.assertEqual(targets, generated)
+        self.assertIsNone(reason)
 
     def test_standard_layout_mode_does_not_apply_tracking_unwrap(self) -> None:
         generated = [{"x_cm": 1.0, "y_cm": 2.0, "rotation_deg": -179.0}]

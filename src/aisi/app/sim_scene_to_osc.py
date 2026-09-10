@@ -38,7 +38,9 @@ LEARNING_FORMAT_POLL_SECONDS = 1.0
 DEFAULT_SHOW_PERSONS = True
 DEFAULT_SHOW_CHAIRS = True
 DEFAULT_TRANSFORMATION_STRENGTH = 0.5
+DEFAULT_TRACKING_TABLE_ID = "table_00"
 VALID_LEARNING_FORMATS = {"input", "groupwork", "discussion"}
+SCENE_READ_RETRY_DELAYS_SECONDS = (0.005, 0.010, 0.020)
 
 current_layout_mode = DEFAULT_LAYOUT_MODE
 stop_event = threading.Event()
@@ -96,13 +98,53 @@ def parse_args() -> argparse.Namespace:
             "Compatibility target channels mirror the source pose."
         ),
     )
+    parser.add_argument(
+        "--tracking-table-id",
+        default=DEFAULT_TRACKING_TABLE_ID,
+        help="Table ID selected in tracking-only mode (default: table_00).",
+    )
     return parser.parse_args()
 
 
-def load_scene(scene_path: Path) -> dict[str, Any]:
-    """Load the live scene JSON file."""
-    with scene_path.open("r", encoding="utf-8") as handle:
-        return json.load(handle)
+def _is_transient_windows_file_lock(error: OSError) -> bool:
+    """Return whether Windows reported a replace/open sharing race."""
+
+    return isinstance(error, PermissionError) or getattr(error, "winerror", None) in {5, 32}
+
+
+def load_scene(
+    scene_path: Path,
+    *,
+    retry_delays: tuple[float, ...] = SCENE_READ_RETRY_DELAYS_SECONDS,
+    sleep: Any = time.sleep,
+) -> dict[str, Any]:
+    """Load a live scene, retrying only bounded transient Windows locks."""
+
+    for delay in (*retry_delays, None):
+        try:
+            with scene_path.open("r", encoding="utf-8") as handle:
+                return json.load(handle)
+        except OSError as error:
+            if not _is_transient_windows_file_lock(error) or delay is None:
+                raise
+            sleep(delay)
+
+
+class RetainingSceneReader:
+    """Retain the last valid scene when the live file is briefly locked."""
+
+    def __init__(self) -> None:
+        self.last_valid_scene: dict[str, Any] | None = None
+
+    def load(self, scene_path: Path) -> dict[str, Any] | None:
+        try:
+            scene = load_scene(scene_path)
+        except OSError as error:
+            if not _is_transient_windows_file_lock(error):
+                raise
+            return None
+        self.last_valid_scene = scene
+        return scene
 
 
 def load_learning_format(path: Path) -> str | None:
@@ -201,16 +243,23 @@ def get_target_for_index(index: int, source_table: dict[str, Any], targets: list
     )
 
 
-def tracking_only_tables(tables: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], str | None]:
-    """Select the one canonical Rect source table accepted by tracking-only mode."""
-    if len(tables) != 1:
-        return [], f"expected exactly one table, got {len(tables)}"
-    table = tables[0]
-    if not isinstance(table, dict):
-        return [], "expected the single table to be an object"
+def tracking_only_tables(
+    tables: list[dict[str, Any]], tracking_table_id: str = DEFAULT_TRACKING_TABLE_ID
+) -> tuple[list[dict[str, Any]], str | None]:
+    """Select the explicitly configured Rect source table for tracking-only mode."""
+
+    requested_id = str(tracking_table_id).strip()
+    if not requested_id:
+        return [], "tracking table ID must not be empty"
+    table = next(
+        (candidate for candidate in tables if isinstance(candidate, dict) and str(candidate.get("id", "")) == requested_id),
+        None,
+    )
+    if table is None:
+        return [], f"requested tracking table {requested_id!r} not found"
     table_type = table.get("type")
     if not isinstance(table_type, str) or table_type.strip().lower() != "rect":
-        return [], "expected the single table to declare type='rect'"
+        return [], f"requested tracking table {requested_id!r} must declare type='rect'"
     return [table], None
 
 
@@ -273,6 +322,7 @@ def prepare_scene_output(
     layout_mode: str,
     transformation_strength: float,
     tracking_only: bool,
+    tracking_table_id: str = DEFAULT_TRACKING_TABLE_ID,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, float]], str | None]:
     """Choose regular layout output or isolated source-only tracking output."""
     tables = scene.get("tables", [])
@@ -286,7 +336,7 @@ def prepare_scene_output(
         chairs = []
 
     if tracking_only:
-        selected_tables, reason = tracking_only_tables(tables)
+        selected_tables, reason = tracking_only_tables(tables, tracking_table_id)
         # This mode deliberately neither reads people/chairs nor calls layout synthesis.
         return selected_tables, [], [], source_pose_targets(selected_tables), reason
 
@@ -357,7 +407,10 @@ def print_startup(args: argparse.Namespace, scene_path: Path) -> None:
     print(f"Scene-Datei: {scene_path}")
     print("Lese live Szene und sende Tabellen, Personen und Stühle per OSC. Mit STRG+C beenden.")
     if args.tracking_only:
-        print("Tracking-only: one Rect source table; target compatibility channels mirror source; no layout synthesis.")
+        print(
+            f"Tracking-only: Rect source table {args.tracking_table_id!r}; "
+            "target compatibility channels mirror source; no layout synthesis."
+        )
     else:
         print(f"Layout mode: {DEFAULT_LAYOUT_MODE}")
         print("Controls: 1=input, 2=groupwork, 3=discussion, q=quit")
@@ -445,6 +498,7 @@ def main() -> None:
     last_learning_format_poll = 0.0
     last_file_mode: str | None = None
     last_tracking_rejection: str | None = None
+    scene_reader = RetainingSceneReader()
     tracking_rotation_unwrapper = TrackingOnlyRotationUnwrapper() if args.tracking_only else None
 
     try:
@@ -468,7 +522,14 @@ def main() -> None:
                 continue
 
             try:
-                scene = load_scene(scene_path)
+                scene = scene_reader.load(scene_path)
+                if scene is None:
+                    now = time.monotonic()
+                    if now - last_bad_json_notice >= 1.0:
+                        print("Scene-Datei ist kurz gesperrt; behalte die letzte gültige OSC-Szene.")
+                        last_bad_json_notice = now
+                    time.sleep(args.interval)
+                    continue
             except json.JSONDecodeError:
                 now = time.monotonic()
                 if now - last_bad_json_notice >= 1.0:
@@ -494,6 +555,7 @@ def main() -> None:
                 layout_mode,
                 transformation_strength,
                 tracking_only=args.tracking_only,
+                tracking_table_id=args.tracking_table_id,
             )
             if tracking_rotation_unwrapper is not None:
                 tables = tracking_rotation_unwrapper.unwrap_tables(tables)
