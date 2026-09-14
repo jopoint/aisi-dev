@@ -225,35 +225,162 @@ def onCook(scriptOp):
 '''
 
 
+STUDY_TABLETOP_VISIBILITY_CALLBACKS_DAT_SOURCE = '''def _first_channel_sample(chop, *channel_names):
+    """Return one input sample, accepting TD's slash/underscore OSC aliases."""
+
+    if chop is None:
+        return None
+    for channel_name in channel_names:
+        channel = chop[channel_name]
+        if channel is not None and len(channel) >= 1:
+            return channel[0]
+    return None
+
+
+def onCook(scriptOp):
+    """Publish the native-export gate for the Study tabletop target."""
+
+    inputs = scriptOp.inputs
+    state = inputs[0] if len(inputs) > 0 else None
+    mode = _first_channel_sample(state, 'study/mode', 'study_mode')
+    condition = _first_channel_sample(state, 'study/condition', 'study_condition')
+    phase = _first_channel_sample(state, 'study/phase', 'study_phase')
+    overlap = _first_channel_sample(state, 'overlap')
+    visible = float(mode == 1 and condition == 1 and phase == 2 and overlap == 1)
+    scriptOp.clear()
+    channel = scriptOp.appendChan('rect_target_tabletop_geo:sx')
+    channel[0] = visible
+'''
+
+
 POSE_CHANNEL_NAMES = ("tx", "ty", "rz")
 
 
-def study_pose_callbacks_dat_source(
-    source_pose_name: str,
-    source_geometry_path: str,
-    target_pose_name: str,
-    target_geometry_path: str,
-) -> str:
-    """Return shared Script CHOP callbacks for the two Study pose extractors."""
+def _configure_pose_object_chop(object_chop, geometry_path: str, reference_path: str) -> None:
+    """Configure a native Object CHOP as a Geo-transform dependency bridge.
 
-    pose_paths = repr({source_pose_name: source_geometry_path, target_pose_name: target_geometry_path})
-    return f'''POSE_GEOMETRY_PATHS = {pose_paths}
-POSE_CHANNEL_NAMES = ('tx', 'ty', 'rz')
+    Object CHOP owns real dependencies on both Object COMP transforms. Using
+    the Study parent as its reference makes the emitted transform equivalent to
+    the sibling Geo COMP's local ``tx``, ``ty``, and ``rz`` values. This avoids
+    relying on an imperative parameter read inside a source-less Script CHOP.
+    """
 
-def _geo_parameter_value(geometry_path, parameter_name):
-    geo = op(geometry_path)
-    if geo is None or not hasattr(geo.par, parameter_name):
-        return 0.0
-    return getattr(geo.par, parameter_name).eval()
+    required = ("target", "reference", "compute", "nameformat", "outputrange")
+    missing = [name for name in required if not hasattr(object_chop.par, name)]
+    if missing:
+        operator_name = getattr(object_chop, "path", "<new Object CHOP>")
+        raise ValueError(
+            f"{operator_name} cannot configure Object CHOP transform dependency; "
+            f"missing parameter(s): {', '.join(missing)}"
+        )
+    object_chop.par.target = geometry_path
+    object_chop.par.reference = reference_path
+    object_chop.par.compute = "transform"
+    object_chop.par.nameformat = "channel"
+    object_chop.par.outputrange = "currentframe"
 
-def onCook(scriptOp):
-    geometry_path = POSE_GEOMETRY_PATHS.get(scriptOp.name)
-    scriptOp.clear()
-    for parameter_name in POSE_CHANNEL_NAMES:
-        channel = scriptOp.appendChan(parameter_name)
-        channel[0] = (_geo_parameter_value(geometry_path, parameter_name)
-                      if geometry_path is not None else 0.0)
-'''
+
+def _configure_visibility_export_chop(export_chop, export_root_path: str) -> None:
+    """Configure CHOP-name export to the fixed tabletop target ``sx`` Par."""
+
+    required = ("exportmethod", "autoexportroot")
+    missing = [name for name in required if not hasattr(export_chop.par, name)]
+    if missing:
+        operator_name = getattr(export_chop, "path", "<new visibility Null CHOP>")
+        raise ValueError(
+            f"{operator_name} cannot configure CHOP export; "
+            f"missing parameter(s): {', '.join(missing)}"
+        )
+    export_chop.par.exportmethod = "autoname"
+    export_chop.par.autoexportroot = export_root_path
+    export_chop.export = True
+
+
+def _configure_visibility_state_select_chop(select_chop, osc_chop_path: str) -> None:
+    """Select the three Study-state channels needed by the visibility gate."""
+
+    required = ("chop", "channames")
+    missing = [name for name in required if not hasattr(select_chop.par, name)]
+    if missing:
+        operator_name = getattr(select_chop, "path", "<new visibility Select CHOP>")
+        raise ValueError(
+            f"{operator_name} cannot configure Study-state selection; "
+            f"missing parameter(s): {', '.join(missing)}"
+        )
+    select_chop.par.chop = osc_chop_path
+    select_chop.par.channames = "study/mode study/condition study/phase"
+
+
+def create_study_target_tabletop_visibility_state(
+    study_component_path: str = "/project1/comp_study_visualization",
+    *,
+    osc_path: str = "/project1/comp_io/null_osc_raw",
+    overlap_chop_name: str = "study_overlap_state",
+    geometry_name: str = "rect_target_tabletop_geo",
+    state_chop_name: str = "study_target_tabletop_visibility_state",
+    inputs_name: str = "study_target_tabletop_visibility_inputs",
+    callbacks_name: str = "study_target_tabletop_visibility_callbacks",
+    visibility_chop_name: str = "study_target_tabletop_visibility",
+    export_chop_name: str = "study_target_tabletop_visibility_export",
+):
+    """Create the input-driven CHOP export that owns tabletop-target visibility.
+
+    The Script CHOP receives a Merge CHOP input containing both the live Study
+    OSC state and the native overlap result. A local Select CHOP establishes
+    the OSC dependency and limits it to exactly ``study/mode``,
+    ``study/condition``, and ``study/phase``. The final Null CHOP exports its
+    only channel, ``rect_target_tabletop_geo:sx``, directly to the Geometry
+    COMP parameter. No Geometry parameter expression is involved.
+    """
+
+    parent = op(study_component_path)
+    if parent is None:
+        raise ValueError(f"Study component not found: {study_component_path}")
+    geo = parent.op(geometry_name)
+    overlap_state = parent.op(overlap_chop_name)
+    raw_state = op(osc_path)
+    required = {
+        f"{parent.path}/{geometry_name}": geo,
+        f"{parent.path}/{overlap_chop_name}": overlap_state,
+        osc_path: raw_state,
+    }
+    missing = [path for path, operator in required.items() if operator is None]
+    if missing:
+        raise ValueError(f"Missing required Study operator(s): {', '.join(missing)}")
+    created_names = (state_chop_name, inputs_name, callbacks_name, visibility_chop_name, export_chop_name)
+    existing = [name for name in created_names if parent.op(name) is not None]
+    if existing:
+        raise ValueError(f"Refusing to replace existing operator(s): {', '.join(existing)}")
+
+    # Remove the opaque pull expression before the CHOP export becomes owner
+    # of the same parameter. The constant fallback is inactive while export is
+    # enabled, but leaves a safe hidden default if the export is ever disabled.
+    geo.par.sx.expr = ""
+    geo.par.sx = 0.0
+    visibility_state = parent.create(selectCHOP, state_chop_name)
+    _configure_visibility_state_select_chop(visibility_state, raw_state.path)
+    visibility_inputs = parent.create(mergeCHOP, inputs_name)
+    visibility_inputs.inputConnectors[0].connect(visibility_state)
+    visibility_inputs.inputConnectors[1].connect(overlap_state)
+    callbacks = parent.create(textDAT, callbacks_name)
+    callbacks.text = STUDY_TABLETOP_VISIBILITY_CALLBACKS_DAT_SOURCE
+    visibility = parent.create(scriptCHOP, visibility_chop_name)
+    visibility.inputConnectors[0].connect(visibility_inputs)
+    visibility.par.callbacks = callbacks
+    visibility_export = parent.create(nullCHOP, export_chop_name)
+    visibility_export.inputConnectors[0].connect(visibility)
+    _configure_visibility_export_chop(visibility_export, parent.path)
+    visibility_state.nodeX = parent.nodeX + 250
+    visibility_state.nodeY = parent.nodeY - 550
+    visibility_inputs.nodeX = parent.nodeX + 425
+    visibility_inputs.nodeY = parent.nodeY - 550
+    callbacks.nodeX = parent.nodeX + 425
+    callbacks.nodeY = parent.nodeY - 625
+    visibility.nodeX = parent.nodeX + 600
+    visibility.nodeY = parent.nodeY - 550
+    visibility_export.nodeX = parent.nodeX + 775
+    visibility_export.nodeY = parent.nodeY - 550
+    return visibility_export
 
 
 def create_study_overlap_state(
@@ -265,16 +392,15 @@ def create_study_overlap_state(
     source_pose_name: str = "study_source_pose",
     target_pose_name: str = "study_target_pose",
     pose_merge_name: str = "study_overlap_pose_inputs",
-    pose_callbacks_name: str = "study_pose_callbacks",
     callbacks_name: str = "study_overlap_callbacks",
     overlap_chop_name: str = "study_overlap_state",
 ):
     """Create a CHOP-cooked public overlap state for Study target visibility.
 
-    Two Script CHOPs explicitly extract the source and target Geo COMP
-    transforms.  Their merged output drives the Script CHOP, which invokes the
+    Two Object CHOPs natively depend on the source and target Geo COMP
+    transforms. Their merged output drives the Script CHOP, which invokes the
     existing Study Motion SAT function and publishes a single ``overlap``
-    channel.  This deliberately moves the dynamic dependency out of a Geometry
+    channel. This deliberately moves the dynamic dependency out of a Geometry
     parameter expression, without introducing a second overlap algorithm.
     """
 
@@ -289,7 +415,6 @@ def create_study_overlap_state(
         source_pose_name,
         target_pose_name,
         pose_merge_name,
-        pose_callbacks_name,
         callbacks_name,
         overlap_chop_name,
     )
@@ -299,17 +424,10 @@ def create_study_overlap_state(
 
     source_geometry_path = f"{parent.path}/{source_geometry_name}"
     target_geometry_path = f"{parent.path}/{target_floor_geometry_name}"
-    pose_callbacks = parent.create(textDAT, pose_callbacks_name)
-    pose_callbacks.text = study_pose_callbacks_dat_source(
-        source_pose_name,
-        source_geometry_path,
-        target_pose_name,
-        target_geometry_path,
-    )
-    source_pose = parent.create(scriptCHOP, source_pose_name)
-    source_pose.par.callbacks = pose_callbacks
-    target_pose = parent.create(scriptCHOP, target_pose_name)
-    target_pose.par.callbacks = pose_callbacks
+    source_pose = parent.create(objectCHOP, source_pose_name)
+    _configure_pose_object_chop(source_pose, source_geometry_path, parent.path)
+    target_pose = parent.create(objectCHOP, target_pose_name)
+    _configure_pose_object_chop(target_pose, target_geometry_path, parent.path)
     pose_merge = parent.create(mergeCHOP, pose_merge_name)
     pose_merge.inputConnectors[0].connect(source_pose)
     pose_merge.inputConnectors[1].connect(target_pose)
@@ -324,10 +442,8 @@ def create_study_overlap_state(
     target_pose.nodeY = parent.nodeY - 510
     pose_merge.nodeX = parent.nodeX + 225
     pose_merge.nodeY = parent.nodeY - 465
-    pose_callbacks.nodeX = parent.nodeX + 225
-    pose_callbacks.nodeY = parent.nodeY - 550
     callbacks.nodeX = parent.nodeX + 225
-    callbacks.nodeY = parent.nodeY - 625
+    callbacks.nodeY = parent.nodeY - 550
     overlap_state.nodeX = parent.nodeX + 400
     overlap_state.nodeY = parent.nodeY - 465
     return overlap_state
@@ -388,12 +504,13 @@ def create_study_target_tabletop_geo(
     geo.par.tx.expr = x_expr
     geo.par.ty.expr = y_expr
     geo.par.rz.expr = rot_expr
-    geo.par.sx.expr = _overlap_visibility_expression(
-        overlap_state.path,
-        "/project1/comp_io/null_osc_raw",
-    )
     if material_path is not None and hasattr(geo.par, "material"):
         geo.par.material = material_path
     geo.nodeX = parent.nodeX + 250
     geo.nodeY = parent.nodeY - 260
+    create_study_target_tabletop_visibility_state(
+        study_component_path,
+        overlap_chop_name=overlap_state.name,
+        geometry_name=geometry_name,
+    )
     return geo

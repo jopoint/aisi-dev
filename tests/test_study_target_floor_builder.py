@@ -9,11 +9,14 @@ from td_builders.study_target_floor import (
     TABLETOP_INNER_WIDTH_CM,
     TD_UNITS_PER_CM,
     STUDY_OVERLAP_CALLBACKS_DAT_SOURCE,
+    STUDY_TABLETOP_VISIBILITY_CALLBACKS_DAT_SOURCE,
+    _configure_pose_object_chop,
+    _configure_visibility_export_chop,
+    _configure_visibility_state_select_chop,
     _active_study_visibility_expression,
     _overlap_visibility_expression,
     _target_transform_expressions,
     study_tabletop_target_visible,
-    study_pose_callbacks_dat_source,
     target_world_to_td,
     rect_target_floor_dash_segments,
     rect_target_tabletop_dash_segments,
@@ -86,72 +89,62 @@ class StudyTargetFloorBuilderTests(unittest.TestCase):
         self.assertIn("study/target_rot", expressions)
         self.assertNotIn("table/0/target_", expressions)
 
-    def test_pose_script_callback_outputs_source_tx_ty_rz(self) -> None:
-        callback_source = study_pose_callbacks_dat_source(
-            "study_source_pose", "/source_geo", "study_target_pose", "/target_geo"
-        )
-        namespace: dict[str, object] = {}
+    def test_pose_object_chop_has_native_geo_transform_dependencies(self) -> None:
+        class Parameters:
+            target = None
+            reference = None
+            compute = None
+            nameformat = None
+            outputrange = None
 
-        class Value:
+        class ObjectChop:
+            path = "/study/study_source_pose"
+            par = Parameters()
+
+        chop = ObjectChop()
+        _configure_pose_object_chop(chop, "/study/rect_floor_outer_geo", "/study")
+
+        self.assertEqual(chop.par.target, "/study/rect_floor_outer_geo")
+        self.assertEqual(chop.par.reference, "/study")
+        self.assertEqual(chop.par.compute, "transform")
+        self.assertEqual(chop.par.nameformat, "channel")
+        self.assertEqual(chop.par.outputrange, "currentframe")
+
+    def test_pose_object_chop_fails_clearly_when_the_td_api_is_incomplete(self) -> None:
+        class ObjectChop:
+            path = "/study/study_source_pose"
+
+            class par:
+                target = None
+
+        with self.assertRaisesRegex(ValueError, "missing parameter\\(s\\): reference"):
+            _configure_pose_object_chop(ObjectChop(), "/study/source", "/study")
+
+    def test_visibility_callback_requires_active_study_dual_surface_and_overlap(self) -> None:
+        namespace: dict[str, object] = {}
+        exec(STUDY_TABLETOP_VISIBILITY_CALLBACKS_DAT_SOURCE, namespace)
+
+        class Channel:
             def __init__(self, value: float) -> None:
                 self.value = value
 
-            def eval(self) -> float:
+            def __len__(self) -> int:
+                return 1
+
+            def __getitem__(self, index: int) -> float:
+                if index != 0:
+                    raise AssertionError("unexpected sample index")
                 return self.value
 
-        class Parameters:
-            tx, ty, rz = Value(1.25), Value(-0.5), Value(37.0)
+        class Input:
+            def __init__(self, values: dict[str, float]) -> None:
+                self.values = values
 
-            def __getitem__(self, name: str) -> Value:
-                return getattr(self, name)
+            def __getitem__(self, name: str):
+                return Channel(self.values[name]) if name in self.values else None
 
-        class Geo:
-            par = Parameters()
-
-        namespace["op"] = lambda path: Geo() if path == "/source_geo" else None
-        exec(callback_source, namespace)
-
-        class Channel:
-            def __init__(self) -> None:
-                self.value = None
-
-            def __setitem__(self, index: int, value: float) -> None:
-                self.assertEqual(index, 0)
-                self.value = value
-
-            def assertEqual(self, actual: int, expected: int) -> None:
-                if actual != expected:
-                    raise AssertionError("unexpected sample index")
-
-        class ScriptOp:
-            name = "study_source_pose"
-
-            def __init__(self) -> None:
-                self.channels: dict[str, Channel] = {}
-
-            def clear(self) -> None:
-                self.channels.clear()
-
-            def appendChan(self, name: str) -> Channel:
-                channel = Channel()
-                self.channels[name] = channel
-                return channel
-
-        script_op = ScriptOp()
-        namespace["onCook"](script_op)
-        self.assertEqual(tuple(script_op.channels), ("tx", "ty", "rz"))
-        self.assertEqual([channel.value for channel in script_op.channels.values()], [1.25, -0.5, 37.0])
-
-    def test_pose_script_callback_outputs_zeroes_when_target_geo_is_missing(self) -> None:
-        callback_source = study_pose_callbacks_dat_source(
-            "study_source_pose", "/source_geo", "study_target_pose", "/target_geo"
-        )
-        namespace: dict[str, object] = {"op": lambda _path: None}
-        exec(callback_source, namespace)
-
-        class Channel:
-            def __init__(self) -> None:
-                self.value = None
+        class Output:
+            value = None
 
             def __setitem__(self, index: int, value: float) -> None:
                 if index != 0:
@@ -159,23 +152,57 @@ class StudyTargetFloorBuilderTests(unittest.TestCase):
                 self.value = value
 
         class ScriptOp:
-            name = "study_target_pose"
-
-            def __init__(self) -> None:
-                self.channels: dict[str, Channel] = {}
+            def __init__(self, values: dict[str, float]) -> None:
+                self.inputs = [Input(values)]
+                self.output = Output()
 
             def clear(self) -> None:
-                self.channels.clear()
+                return None
 
-            def appendChan(self, name: str) -> Channel:
-                channel = Channel()
-                self.channels[name] = channel
-                return channel
+            def appendChan(self, name: str) -> Output:
+                if name != "rect_target_tabletop_geo:sx":
+                    raise AssertionError(f"unexpected output channel: {name}")
+                return self.output
 
-        script_op = ScriptOp()
-        namespace["onCook"](script_op)
-        self.assertEqual(tuple(script_op.channels), ("tx", "ty", "rz"))
-        self.assertEqual([channel.value for channel in script_op.channels.values()], [0.0, 0.0, 0.0])
+        on_cook = namespace["onCook"]
+        for values, expected in (
+            ({"study_mode": 0, "study_condition": 1, "study_phase": 2, "overlap": 1}, 0.0),
+            ({"study_mode": 1, "study_condition": 0, "study_phase": 2, "overlap": 1}, 0.0),
+            ({"study_mode": 1, "study_condition": 1, "study_phase": 1, "overlap": 1}, 0.0),
+            ({"study_mode": 1, "study_condition": 1, "study_phase": 2, "overlap": 0}, 0.0),
+            ({"study/mode": 1, "study/condition": 1, "study/phase": 2, "overlap": 1}, 1.0),
+        ):
+            script_op = ScriptOp(values)
+            on_cook(script_op)
+            self.assertEqual(script_op.output.value, expected)
+
+    def test_visibility_export_uses_the_geo_parameter_channel_name(self) -> None:
+        class Parameters:
+            exportmethod = None
+            autoexportroot = None
+
+        class ExportChop:
+            par = Parameters()
+            export = False
+
+        chop = ExportChop()
+        _configure_visibility_export_chop(chop, "/project1/comp_study_visualization")
+        self.assertEqual(chop.par.exportmethod, "autoname")
+        self.assertEqual(chop.par.autoexportroot, "/project1/comp_study_visualization")
+        self.assertTrue(chop.export)
+
+    def test_visibility_state_select_reads_exactly_the_three_study_channels(self) -> None:
+        class Parameters:
+            chop = None
+            channames = None
+
+        class SelectChop:
+            par = Parameters()
+
+        chop = SelectChop()
+        _configure_visibility_state_select_chop(chop, "/project1/comp_io/null_osc_raw")
+        self.assertEqual(chop.par.chop, "/project1/comp_io/null_osc_raw")
+        self.assertEqual(chop.par.channames, "study/mode study/condition study/phase")
 
     def test_overlap_state_callback_handles_missing_pose_channels(self) -> None:
         namespace: dict[str, object] = {}
