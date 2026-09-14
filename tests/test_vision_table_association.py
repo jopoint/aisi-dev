@@ -13,24 +13,64 @@ def _det(x1: int, y1: int, x2: int, y2: int) -> dict:
     return {"bbox_px": [x1, y1, x2, y2], "score": 0.9}
 
 
+def _obb_det(bbox: list[int], long_side: float, short_side: float) -> dict:
+    """Synthetic table detection whose OBB metrics are explicit and stable."""
+    return {
+        "bbox_px": bbox,
+        "score": 0.9,
+        "obb_poly_px": [
+            [0.0, 0.0], [long_side, 0.0],
+            [long_side, short_side], [0.0, short_side],
+        ],
+    }
+
+
 def _track(bbox: list[int], *, miss_count: int = 0) -> dict:
     return {"bbox": bbox, "miss_count": miss_count, "age": 1}
 
 
 def _pipeline() -> VisionPipeline:
     pipeline = VisionPipeline.__new__(VisionPipeline)
-    pipeline._class_match_dist_px = {"table": 150.0}
+    pipeline._class_match_dist_px = {"table": 120.0}
     pipeline._class_match_iou_min = {"table": 0.05}
     pipeline.reacquire_max_dist = 150.0
     pipeline.reacquire_min_iou = 0.05
     pipeline.table_new_confirm_frames = 2
     pipeline.table_new_fragment_area_ratio = 0.70
     pipeline.table_new_fragment_overlap_ratio = 0.60
+    pipeline.table_full_anchor_aspect_min = 1.80
+    pipeline.table_full_anchor_aspect_max = 2.15
+    pipeline.table_full_anchor_area_ratio = 0.70
+    pipeline.table_full_anchor_long_side_ratio = 0.75
+    pipeline.table_full_anchor_follow_center_alpha = 0.20
+    pipeline.table_lost_anchor_reacquire_coverage_ratio = 0.60
     pipeline._pending_table_births = []
     return pipeline
 
 
 class VisionTableAssociationTests(unittest.TestCase):
+    @staticmethod
+    def _lost_anchor_track(
+        bbox: list[int],
+        anchor_bbox: list[int],
+        *,
+        long_side: float,
+        short_side: float,
+        area: float,
+        miss_count: int,
+    ) -> dict:
+        return {
+            **_track(bbox, miss_count=miss_count),
+            "table_confirmed": True,
+            "table_full_anchor": {
+                "bbox": anchor_bbox,
+                "obb_long_side": long_side,
+                "obb_short_side": short_side,
+                "obb_area": area,
+                "obb_aspect_ratio": long_side / short_side,
+            },
+        }
+
     def test_fresh_pipeline_initializes_pending_births_before_first_unmatched_table(self) -> None:
         # Avoid loading a vision model; this covers the real __init__ path that
         # previously omitted the pending-birth buffer.
@@ -81,6 +121,109 @@ class VisionTableAssociationTests(unittest.TestCase):
         )
         self.assertEqual(matches, {"table_00": 0})
 
+    def test_recorded_table_04_candidate_reacquires_lost_table_02_anchor(self) -> None:
+        pipeline = _pipeline()
+        candidate = _obb_det([976, 178, 1247, 540], 321.4094, 171.1286)
+        tracks = {
+            "table_02": self._lost_anchor_track(
+                [969, 399, 1165, 558], [929, 265, 1219, 662],
+                long_side=356.35, short_side=180.36, area=63068.0, miss_count=15,
+            )
+        }
+        matches, audit = pipeline._table_anchor_reacquisition_matches(
+            [candidate], tracks, {0}, table_ttl_frames=15,
+        )
+        self.assertEqual(matches, {"table_02": 0})
+        evidence = audit[0]["eligible_lost_tracks"][0]
+        self.assertAlmostEqual(evidence["center_distance_px"], 111.0, delta=1.0)
+        self.assertGreater(evidence["anchor_candidate_coverage"], 0.68)
+        self.assertEqual(evidence["plausibility_reasons"], [])
+        self.assertEqual(audit[0]["final_action"], "reacquired_existing_id")
+
+    def test_recorded_table_05_candidate_reacquires_lost_table_00_anchor(self) -> None:
+        pipeline = _pipeline()
+        candidate = _obb_det([1203, 320, 1458, 690], 335.3080, 177.0544)
+        tracks = {
+            "table_00": self._lost_anchor_track(
+                [1263, 306, 1465, 464], [1222, 225, 1494, 611],
+                long_side=348.08, short_side=180.36, area=62780.0, miss_count=15,
+            )
+        }
+        matches, audit = pipeline._table_anchor_reacquisition_matches(
+            [candidate], tracks, {0}, table_ttl_frames=15,
+        )
+        self.assertEqual(matches, {"table_00": 0})
+        evidence = audit[0]["eligible_lost_tracks"][0]
+        self.assertAlmostEqual(evidence["center_distance_px"], 91.2, delta=1.0)
+        self.assertGreater(evidence["anchor_candidate_coverage"], 0.72)
+        self.assertEqual(evidence["plausibility_reasons"], [])
+
+    def test_small_occlusion_fragment_cannot_anchor_reacquire(self) -> None:
+        pipeline = _pipeline()
+        fragment = _obb_det([100, 100, 200, 260], 175.1, 109.6)
+        tracks = {
+            "table_00": self._lost_anchor_track(
+                [100, 100, 300, 260], [100, 100, 300, 260],
+                long_side=345.0, short_side=177.0, area=61100.0, miss_count=3,
+            )
+        }
+        matches, audit = pipeline._table_anchor_reacquisition_matches(
+            [fragment], tracks, {0}, table_ttl_frames=15,
+        )
+        self.assertEqual(matches, {})
+        self.assertEqual(
+            audit[0]["eligible_lost_tracks"][0]["plausibility_reasons"],
+            ["implausible_aspect", "implausible_area", "implausible_long_side"],
+        )
+
+    def test_lost_track_outside_ttl_cannot_anchor_reacquire(self) -> None:
+        pipeline = _pipeline()
+        full = _obb_det([100, 100, 300, 260], 345.0, 177.0)
+        tracks = {
+            "table_00": self._lost_anchor_track(
+                [100, 100, 300, 260], [100, 100, 300, 260],
+                long_side=345.0, short_side=177.0, area=61100.0, miss_count=16,
+            )
+        }
+        matches, audit = pipeline._table_anchor_reacquisition_matches(
+            [full], tracks, {0}, table_ttl_frames=15,
+        )
+        self.assertEqual(matches, {})
+        self.assertEqual(audit[0]["eligible_lost_tracks"], [])
+
+    def test_distant_genuine_fifth_table_does_not_steal_lost_id(self) -> None:
+        pipeline = _pipeline()
+        fifth = _obb_det([700, 100, 900, 260], 345.0, 177.0)
+        tracks = {
+            "table_00": self._lost_anchor_track(
+                [100, 100, 300, 260], [100, 100, 300, 260],
+                long_side=345.0, short_side=177.0, area=61100.0, miss_count=3,
+            )
+        }
+        matches, audit = pipeline._table_anchor_reacquisition_matches(
+            [fifth], tracks, {0}, table_ttl_frames=15,
+        )
+        self.assertEqual(matches, {})
+        self.assertIn("not_anchor_continuous", audit[0]["eligible_lost_tracks"][0]["rejection_reasons"])
+
+    def test_two_nearby_lost_tracks_use_deterministic_best_anchor_match(self) -> None:
+        pipeline = _pipeline()
+        candidate = _obb_det([150, 100, 350, 260], 345.0, 177.0)
+        tracks = {
+            "table_01": self._lost_anchor_track(
+                [140, 100, 340, 260], [140, 100, 340, 260],
+                long_side=345.0, short_side=177.0, area=61100.0, miss_count=3,
+            ),
+            "table_00": self._lost_anchor_track(
+                [100, 100, 300, 260], [100, 100, 300, 260],
+                long_side=345.0, short_side=177.0, area=61100.0, miss_count=3,
+            ),
+        }
+        matches, _ = pipeline._table_anchor_reacquisition_matches(
+            [candidate], tracks, {0}, table_ttl_frames=15,
+        )
+        self.assertEqual(matches, {"table_01": 0})
+
     def test_four_stable_full_size_tables_confirm_to_exactly_four_births(self) -> None:
         pipeline = _pipeline()
         tables = [
@@ -111,6 +254,88 @@ class VisionTableAssociationTests(unittest.TestCase):
         # Suppressed fragments never enter the pending-birth buffer and hence
         # never allocate table_04/table_05-style persistent IDs.
         self.assertEqual(pipeline._pending_table_births, [])
+
+    def test_full_anchor_cannot_ratchet_down_from_gradual_shrink(self) -> None:
+        pipeline = _pipeline()
+        track: dict = {}
+        anchor_metrics = {"long_side": 200.0, "short_side": 100.0, "area": 20000.0, "aspect_ratio": 2.0}
+        pipeline._set_table_full_anchor(track, [100, 100, 300, 200], anchor_metrics)
+        # Each apparent observation is individually plausible, but smaller.
+        # They must not cumulatively replace the full-table dimensions.
+        for scale in (0.95, 0.92, 0.93):
+            metrics = {
+                "long_side": 200.0 * scale,
+                "short_side": 100.0 * scale,
+                "area": 20000.0 * scale * scale,
+                "aspect_ratio": 2.0,
+            }
+            pipeline._update_table_full_anchor(track, [100, 100, 290, 195], metrics)
+        anchor = track["table_full_anchor"]
+        self.assertEqual(anchor["obb_long_side"], 200.0)
+        self.assertEqual(anchor["obb_short_side"], 100.0)
+        self.assertEqual(anchor["obb_area"], 20000.0)
+
+    def test_partial_table_motion_moves_anchor_center_without_shrinking_it(self) -> None:
+        pipeline = _pipeline()
+        track: dict = {}
+        metrics = {"long_side": 200.0, "short_side": 100.0, "area": 20000.0, "aspect_ratio": 2.0}
+        pipeline._set_table_full_anchor(track, [100, 100, 300, 200], metrics)
+        fragment = {"long_side": 120.0, "short_side": 100.0, "area": 12000.0, "aspect_ratio": 1.2}
+        pipeline._update_table_full_anchor(track, [180, 100, 300, 200], fragment)
+        anchor = track["table_full_anchor"]
+        self.assertEqual(anchor["obb_area"], 20000.0)
+        self.assertGreater(pipeline._bbox_center(anchor["bbox"])[0], 200.0)
+
+    def test_full_size_observation_refreshes_anchor(self) -> None:
+        pipeline = _pipeline()
+        track: dict = {}
+        pipeline._set_table_full_anchor(
+            track, [100, 100, 300, 200],
+            {"long_side": 200.0, "short_side": 100.0, "area": 20000.0, "aspect_ratio": 2.0},
+        )
+        returned_full = {"long_side": 210.0, "short_side": 105.0, "area": 22050.0, "aspect_ratio": 2.0}
+        pipeline._update_table_full_anchor(track, [140, 100, 350, 205], returned_full)
+        self.assertEqual(track["table_full_anchor"]["bbox"], [140, 100, 350, 205])
+        self.assertEqual(track["table_full_anchor"]["obb_area"], 22050.0)
+
+    def test_recorded_false_birth_obb_shapes_are_locally_implausible(self) -> None:
+        pipeline = _pipeline()
+        anchor = {"obb_long_side": 345.0, "obb_short_side": 177.0, "obb_area": 61100.0, "obb_aspect_ratio": 1.95}
+        table_04 = {"long_side": 175.1, "short_side": 109.6, "area": 19186.0, "aspect_ratio": 1.60}
+        table_05 = {"long_side": 231.4, "short_side": 134.8, "area": 31205.5, "aspect_ratio": 1.72}
+        for candidate in (table_04, table_05):
+            self.assertEqual(
+                pipeline._table_obb_plausibility_reasons(candidate, anchor),
+                ("implausible_aspect", "implausible_area", "implausible_long_side"),
+            )
+
+    def test_obb_metrics_use_polygon_side_lengths(self) -> None:
+        metrics = VisionPipeline._table_obb_metrics({
+            "obb_poly_px": [[0, 0], [200, 0], [200, 100], [0, 100]],
+        })
+        self.assertEqual(metrics, {
+            "long_side": 200.0,
+            "short_side": 100.0,
+            "area": 20000.0,
+            "aspect_ratio": 2.0,
+        })
+
+    def test_full_size_candidate_near_or_far_remains_plausible(self) -> None:
+        pipeline = _pipeline()
+        anchor = {"obb_long_side": 345.0, "obb_short_side": 177.0, "obb_area": 61100.0, "obb_aspect_ratio": 1.95}
+        candidate = {"long_side": 330.0, "short_side": 170.0, "area": 56100.0, "aspect_ratio": 1.94}
+        self.assertEqual(pipeline._table_obb_plausibility_reasons(candidate, anchor), ())
+
+    def test_distant_candidate_is_outside_the_local_anchor_gate(self) -> None:
+        pipeline = _pipeline()
+        self.assertFalse(
+            pipeline._is_table_birth_near_anchor([600, 100, 700, 180], [100, 100, 300, 260])
+        )
+        # A candidate that overlaps the full anchor is intentionally local
+        # even when its center lies beyond the standard association distance.
+        self.assertTrue(
+            pipeline._is_table_birth_near_anchor([280, 100, 380, 180], [100, 100, 300, 260])
+        )
 
     def test_fragment_disappearing_leaves_original_track_available_for_continuity(self) -> None:
         pipeline = _pipeline()
@@ -147,7 +372,22 @@ class VisionTableAssociationTests(unittest.TestCase):
 
     def test_reset_initializes_a_clean_tracker_session(self) -> None:
         pipeline = _pipeline()
-        pipeline._tracks = {"chair": {}, "table": {"table_170": _track([1, 1, 2, 2])}, "person": {}}
+        pipeline._tracks = {
+            "chair": {},
+            "table": {
+                "table_170": {
+                    **_track([1, 1, 2, 2]),
+                    "table_full_anchor": {
+                        "bbox": [1, 1, 2, 2],
+                        "obb_long_side": 2.0,
+                        "obb_short_side": 1.0,
+                        "obb_area": 2.0,
+                        "obb_aspect_ratio": 2.0,
+                    },
+                }
+            },
+            "person": {},
+        }
         pipeline._next_id = {"chair": 4, "table": 171, "person": 2}
         pipeline._person_new_ids_since_log = 3
         pipeline._pending_table_births = [{"bbox": [1, 1, 2, 2], "last_seen_frame": 5, "confirm_count": 1}]

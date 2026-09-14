@@ -480,6 +480,18 @@ class VisionPipeline:
         self.table_new_suppress_center_dist_px = float(max(0.0, table_new_suppress_center_dist_px))
         self.table_new_fragment_area_ratio = float(min(1.0, max(0.0, table_new_fragment_area_ratio)))
         self.table_new_fragment_overlap_ratio = float(min(1.0, max(0.0, table_new_fragment_overlap_ratio)))
+        # Full-table anchors are intentionally independent of association.
+        # Their dimensions never ratchet down from a series of occlusion
+        # fragments; only their center follows partial observations.
+        self.table_full_anchor_aspect_min = 1.80
+        self.table_full_anchor_aspect_max = 2.15
+        self.table_full_anchor_area_ratio = 0.70
+        self.table_full_anchor_long_side_ratio = 0.75
+        self.table_full_anchor_follow_center_alpha = 0.20
+        # A returning full table may cover only part of its held anchor after
+        # an occlusion.  This is intentionally stricter than any-pixel bbox
+        # intersection used by the local birth gate.
+        self.table_lost_anchor_reacquire_coverage_ratio = 0.60
         self.table_protect_existing_tracks = bool(table_protect_existing_tracks)
         self.table_recover_lost_tracks = bool(table_recover_lost_tracks)
         self.table_lost_track_ttl = int(max(1, table_lost_track_ttl))
@@ -926,6 +938,255 @@ class VisionPipeline:
             return False
         coverage = self._bbox_intersection_area(candidate_bbox, track_bbox) / candidate_area
         return coverage >= float(self.table_new_fragment_overlap_ratio)
+
+    @staticmethod
+    def _table_obb_metrics(det: Dict) -> Optional[Dict[str, float]]:
+        """Return orientation-independent OBB dimensions from detector corners."""
+        poly = det.get("obb_poly_px")
+        if not isinstance(poly, list) or len(poly) != 4:
+            return None
+        try:
+            points = [(float(point[0]), float(point[1])) for point in poly]
+        except (IndexError, TypeError, ValueError):
+            return None
+        edges = [
+            float(np.hypot(
+                points[(index + 1) % 4][0] - points[index][0],
+                points[(index + 1) % 4][1] - points[index][1],
+            ))
+            for index in range(4)
+        ]
+        first = 0.5 * (edges[0] + edges[2])
+        second = 0.5 * (edges[1] + edges[3])
+        long_side = max(first, second)
+        short_side = min(first, second)
+        if long_side <= 0.0 or short_side <= 0.0:
+            return None
+        area = long_side * short_side
+        return {
+            "long_side": long_side,
+            "short_side": short_side,
+            "area": area,
+            "aspect_ratio": long_side / short_side,
+        }
+
+    def _table_obb_plausibility_reasons(
+        self,
+        candidate_metrics: Optional[Dict[str, float]],
+        anchor: Optional[Dict],
+    ) -> tuple[str, ...]:
+        """Return local full-table plausibility failures against one anchor."""
+        if candidate_metrics is None or not isinstance(anchor, dict):
+            # No OBB geometry means this optional local gate cannot decide;
+            # containment suppression remains available.
+            return ()
+        try:
+            anchor_area = float(anchor["obb_area"])
+            anchor_long = float(anchor["obb_long_side"])
+            aspect = float(candidate_metrics["aspect_ratio"])
+            area = float(candidate_metrics["area"])
+            long_side = float(candidate_metrics["long_side"])
+        except (KeyError, TypeError, ValueError):
+            return ()
+        if anchor_area <= 0.0 or anchor_long <= 0.0:
+            return ()
+        reasons: list[str] = []
+        if not (
+            float(self.table_full_anchor_aspect_min)
+            <= aspect
+            <= float(self.table_full_anchor_aspect_max)
+        ):
+            reasons.append("implausible_aspect")
+        if area < anchor_area * float(self.table_full_anchor_area_ratio):
+            reasons.append("implausible_area")
+        if long_side < anchor_long * float(self.table_full_anchor_long_side_ratio):
+            reasons.append("implausible_long_side")
+        return tuple(reasons)
+
+    def _set_table_full_anchor(
+        self,
+        track: Dict,
+        bbox: List[int],
+        metrics: Dict[str, float],
+    ) -> None:
+        """Set the dimensions and shape of a confirmed full-table anchor."""
+        track["table_full_anchor"] = {
+            "bbox": [int(value) for value in bbox],
+            "obb_long_side": float(metrics["long_side"]),
+            "obb_short_side": float(metrics["short_side"]),
+            "obb_area": float(metrics["area"]),
+            "obb_aspect_ratio": float(metrics["aspect_ratio"]),
+        }
+
+    def _move_table_full_anchor_center(self, track: Dict, observed_bbox: List[int]) -> None:
+        """Move, but never resize, an anchor during a partial observation."""
+        anchor = track.get("table_full_anchor")
+        if not isinstance(anchor, dict):
+            return
+        anchor_bbox = anchor.get("bbox")
+        if not isinstance(anchor_bbox, list) or len(anchor_bbox) != 4:
+            return
+        anchor_center = self._bbox_center(anchor_bbox)
+        observed_center = self._bbox_center(observed_bbox)
+        alpha = float(self.table_full_anchor_follow_center_alpha)
+        dx = (observed_center[0] - anchor_center[0]) * alpha
+        dy = (observed_center[1] - anchor_center[1]) * alpha
+        anchor["bbox"] = [
+            int(round(value + (dx if index % 2 == 0 else dy)))
+            for index, value in enumerate(anchor_bbox)
+        ]
+
+    def _is_table_birth_near_anchor(
+        self,
+        candidate_bbox: List[int],
+        anchor_bbox: List[int],
+    ) -> bool:
+        """Use existing association-scale locality for anchor birth checks."""
+        center_distance = self._center_dist(
+            self._bbox_center(candidate_bbox), self._bbox_center(anchor_bbox)
+        )
+        return (
+            center_distance <= float(self._class_match_dist_px["table"])
+            or self._bbox_intersection_area(candidate_bbox, anchor_bbox) > 0.0
+        )
+
+    def _table_anchor_candidate_coverage(
+        self,
+        candidate_bbox: List[int],
+        anchor_bbox: List[int],
+    ) -> float:
+        """Return the fraction of a candidate footprint covered by an anchor."""
+        candidate_area = self._bbox_area(candidate_bbox)
+        if candidate_area <= 0.0:
+            return 0.0
+        return self._bbox_intersection_area(candidate_bbox, anchor_bbox) / candidate_area
+
+    def _table_anchor_reacquisition_matches(
+        self,
+        detections: List[Dict],
+        tracks: Dict[str, Dict],
+        available_det_indices: set,
+        *,
+        table_ttl_frames: int,
+    ) -> tuple[Dict[str, int], List[Dict]]:
+        """Match plausible full-table detections to recently lost full anchors.
+
+        This deliberately runs only after the normal active/ghost greedy
+        association has failed.  It never changes that association's gates;
+        instead it gives a briefly lost confirmed table one anchor-based
+        recovery opportunity before an unmatched detection can enter the
+        pending new-birth buffer.
+        """
+        eligible: List[tuple[str, Dict, Dict, List[int]]] = []
+        for track_id, track in tracks.items():
+            miss_count = int(track.get("miss_count", 0))
+            anchor = track.get("table_full_anchor")
+            anchor_bbox = anchor.get("bbox") if isinstance(anchor, dict) else None
+            if (
+                miss_count <= 1
+                or miss_count > int(table_ttl_frames)
+                or not bool(track.get("table_confirmed", True))
+                or not isinstance(anchor_bbox, list)
+                or len(anchor_bbox) != 4
+            ):
+                continue
+            eligible.append((track_id, track, anchor, [int(value) for value in anchor_bbox]))
+
+        max_distance = max(1e-6, float(self._class_match_dist_px["table"]))
+        candidate_debug: List[Dict] = []
+        candidate_pairs: List[tuple[float, float, float, str, int]] = []
+        for det_idx in sorted(available_det_indices):
+            det = detections[det_idx]
+            bbox = [int(value) for value in det["bbox_px"]]
+            metrics = self._table_obb_metrics(det)
+            evaluations: List[Dict] = []
+            for track_id, track, anchor, anchor_bbox in eligible:
+                distance = self._center_dist(
+                    self._bbox_center(bbox), self._bbox_center(anchor_bbox)
+                )
+                coverage = self._table_anchor_candidate_coverage(bbox, anchor_bbox)
+                plausibility_reasons = self._table_obb_plausibility_reasons(metrics, anchor)
+                spatial = (
+                    distance <= max_distance
+                    or coverage >= float(self.table_lost_anchor_reacquire_coverage_ratio)
+                )
+                rejection_reasons = list(plausibility_reasons)
+                if not spatial:
+                    rejection_reasons.append("not_anchor_continuous")
+                evaluations.append({
+                    "track_id": track_id,
+                    "miss_count": int(track.get("miss_count", 0)),
+                    "anchor_bbox": anchor_bbox,
+                    "anchor_obb": anchor,
+                    "center_distance_px": float(distance),
+                    "anchor_candidate_coverage": float(coverage),
+                    "spatial_continuity": bool(spatial),
+                    "plausibility_reasons": list(plausibility_reasons),
+                    "rejection_reasons": rejection_reasons,
+                })
+                if not rejection_reasons:
+                    # Higher is better; distance, coverage, ID and detection
+                    # index make otherwise equal cases deterministic.
+                    score = (
+                        0.60 * (1.0 - min(1.0, distance / max_distance))
+                        + 0.40 * coverage
+                    )
+                    candidate_pairs.append((score, distance, coverage, track_id, det_idx))
+            candidate_debug.append({
+                "tracking_detection_index": int(det_idx),
+                "bbox_px": bbox,
+                "obb": metrics,
+                "eligible_lost_tracks": evaluations,
+                "selected_reacquisition_track": None,
+                "final_action": "no_anchor_reacquisition",
+            })
+
+        # One detection and one lost track can participate at most once.
+        matches: Dict[str, int] = {}
+        used_detections: set = set()
+        for score, distance, coverage, track_id, det_idx in sorted(
+            candidate_pairs,
+            key=lambda item: (-item[0], item[1], -item[2], item[3], item[4]),
+        ):
+            if track_id in matches or det_idx in used_detections:
+                continue
+            matches[track_id] = det_idx
+            used_detections.add(det_idx)
+            for entry in candidate_debug:
+                if entry["tracking_detection_index"] == det_idx:
+                    entry["selected_reacquisition_track"] = track_id
+                    entry["final_action"] = "reacquired_existing_id"
+                    break
+        return matches, candidate_debug
+
+    def _update_table_full_anchor(
+        self,
+        track: Dict,
+        observed_bbox: List[int],
+        observed_metrics: Optional[Dict[str, float]],
+    ) -> None:
+        """Keep a non-ratcheting full-table anchor for one confirmed track.
+
+        An anchor is initialized at confirmed birth. It may be replaced only
+        by a full-table observation that passes the OBB shape/size checks and
+        is not smaller than the anchor. This deliberately prevents a sequence
+        of 95/92/93% fragments from shrinking the reference frame by frame.
+        Partial observations move the anchor center with the established 20%
+        damping while retaining its dimensions and OBB shape.
+        """
+        anchor = track.get("table_full_anchor")
+        if not isinstance(anchor, dict):
+            if observed_metrics is not None:
+                self._set_table_full_anchor(track, observed_bbox, observed_metrics)
+            return
+
+        reasons = self._table_obb_plausibility_reasons(observed_metrics, anchor)
+        anchor_area = float(anchor.get("obb_area", 0.0))
+        observed_area = float(observed_metrics["area"]) if observed_metrics is not None else 0.0
+        if not reasons and observed_metrics is not None and observed_area >= anchor_area:
+            self._set_table_full_anchor(track, observed_bbox, observed_metrics)
+            return
+        self._move_table_full_anchor_center(track, observed_bbox)
 
     def _advance_pending_table_birth(self, bbox: List[int], frame_id: int) -> bool:
         """Confirm a consecutive unmatched full-table candidate before ID allocation.
@@ -3316,6 +3577,8 @@ class VisionPipeline:
         dbg_table_associations: List[Dict] = []
         dbg_table_deleted_track_ids: List[str] = []
         dbg_table_new_track_ids: List[str] = []
+        dbg_table_birth_candidates: List[Dict] = []
+        dbg_table_anchor_reacquisition_candidates: List[Dict] = []
 
         furniture_entities: List[DetectedEntity] = []
         people_entities: List[DetectedEntity] = []
@@ -3367,6 +3630,7 @@ class VisionPipeline:
                 {
                     track_id: {
                         "bbox": list(track.get("bbox", [])),
+                        "table_full_anchor": dict(track.get("table_full_anchor") or {}),
                         "miss_count": int(track.get("miss_count", 0)),
                         "table_confirmed": bool(track.get("table_confirmed", True)),
                     }
@@ -3430,6 +3694,40 @@ class VisionPipeline:
                 for _tid, _didx in reacquire_matches.items():
                     available_det_idxs.discard(_didx)
                 matches.update(reacquire_matches)
+
+            # Phase 2b: a confirmed table that has been lost for more than
+            # one frame may have a shrunken live bbox after occlusion. Before
+            # it can be replaced by a fresh ID, try its non-ratcheting full
+            # anchor against still-unmatched, full-table candidates.
+            if label == "table" and not self.no_ghosting:
+                anchor_reacquire_matches, anchor_reacquire_debug = (
+                    self._table_anchor_reacquisition_matches(
+                        detections,
+                        class_tracks,
+                        available_det_idxs,
+                        table_ttl_frames=ttl_frames,
+                    )
+                )
+                dbg_table_anchor_reacquisition_candidates.extend(anchor_reacquire_debug)
+                if anchor_reacquire_matches:
+                    dbg_matched_lost_table_tracks += len(anchor_reacquire_matches)
+                    for _tid, _didx in anchor_reacquire_matches.items():
+                        _anchor = class_tracks[_tid]["table_full_anchor"]
+                        _anchor_bbox = [int(value) for value in _anchor["bbox"]]
+                        _det_bbox = [int(value) for value in detections[_didx]["bbox_px"]]
+                        _distance = self._center_dist(
+                            self._bbox_center(_det_bbox), self._bbox_center(_anchor_bbox)
+                        )
+                        _coverage = self._table_anchor_candidate_coverage(_det_bbox, _anchor_bbox)
+                        dbg_table_associations.append({
+                            "phase": "anchor_reacquire",
+                            "track_id": _tid,
+                            "tracking_detection_index": int(_didx),
+                            "center_distance_px": float(_distance),
+                            "anchor_candidate_coverage": float(_coverage),
+                        })
+                        available_det_idxs.discard(_didx)
+                    matches.update(anchor_reacquire_matches)
 
             # Update matched tracks
             matched_track_ids = set(matches.keys())
@@ -3505,6 +3803,10 @@ class VisionPipeline:
                     class_tracks[track_id]["table_confirm_count"] = _confirm_count
                     if _confirm_count >= self.table_new_confirm_frames:
                         class_tracks[track_id]["table_confirmed"] = True
+                    if bool(class_tracks[track_id].get("table_confirmed", False)):
+                        self._update_table_full_anchor(
+                            class_tracks[track_id], bbox, self._table_obb_metrics(det)
+                        )
                 if label == "person":
                     _hist = class_tracks[track_id].get("person_center_hist")
                     if _hist is None:
@@ -3576,7 +3878,45 @@ class VisionPipeline:
                     if min(bw, bh) < int(self.table_new_min_bbox_minside):
                         continue
 
+                    candidate_obb_metrics = self._table_obb_metrics(det)
                     suppress_new_table = False
+                    suppression_reasons: list[str] = []
+                    nearest_confirmed = None
+                    for _existing_id, _existing in table_birth_reference_tracks.items():
+                        if int(_existing.get("miss_count", 0)) > 1:
+                            continue
+                        if not bool(_existing.get("table_confirmed", True)):
+                            continue
+                        _existing_bbox = [int(v) for v in _existing.get("bbox", [0, 0, 0, 0])]
+                        if len(_existing_bbox) != 4:
+                            continue
+                        _anchor = _existing.get("table_full_anchor")
+                        _anchor_bbox = (
+                            [int(v) for v in _anchor.get("bbox", [])]
+                            if isinstance(_anchor, dict) and isinstance(_anchor.get("bbox"), list)
+                            and len(_anchor["bbox"]) == 4
+                            else _existing_bbox
+                        )
+                        _distance = self._center_dist(
+                            (float(ucx), float(ucy)), self._bbox_center(_anchor_bbox)
+                        )
+                        _near = self._is_table_birth_near_anchor(bbox, _anchor_bbox)
+                        if (
+                            nearest_confirmed is None
+                            or (_near and not bool(nearest_confirmed["near"]))
+                            or (
+                                _near == bool(nearest_confirmed["near"])
+                                and _distance < nearest_confirmed["center_distance_px"]
+                            )
+                        ):
+                            nearest_confirmed = {
+                                "track_id": _existing_id,
+                                "center_distance_px": _distance,
+                                "near": _near,
+                                "anchor": _anchor if isinstance(_anchor, dict) else None,
+                                "anchor_bbox": _anchor_bbox,
+                            }
+
                     for _existing_id, _existing in table_birth_reference_tracks.items():
                         # Include one freshly-missed confirmed track: this is
                         # the common full-table -> two-fragment occlusion
@@ -3590,8 +3930,23 @@ class VisionPipeline:
                         if len(_existing_bbox) != 4:
                             continue
 
-                        if self._is_table_fragment_of_track(bbox, _existing_bbox):
+                        # Test the unchanged fragment rule against both the
+                        # live pre-update bbox and the non-ratcheting full
+                        # anchor footprint.
+                        _reference_bboxes = [_existing_bbox]
+                        _anchor = _existing.get("table_full_anchor")
+                        _anchor_bbox = (
+                            [int(v) for v in _anchor.get("bbox", [])]
+                            if isinstance(_anchor, dict) and isinstance(_anchor.get("bbox"), list)
+                            and len(_anchor["bbox"]) == 4
+                            else None
+                        )
+                        if _anchor_bbox is not None and _anchor_bbox != _existing_bbox:
+                            _reference_bboxes.append(_anchor_bbox)
+                        if any(self._is_table_fragment_of_track(bbox, _reference_bbox)
+                               for _reference_bbox in _reference_bboxes):
                             suppress_new_table = True
+                            suppression_reasons.append("containment_fragment")
                             dbg_suppressed_table_fragment_births += 1
                             break
 
@@ -3599,6 +3954,7 @@ class VisionPipeline:
                             _iou = self._bbox_iou(bbox, _existing_bbox)
                             if _iou >= float(self.table_new_suppress_iou):
                                 suppress_new_table = True
+                                suppression_reasons.append("containment_fragment")
                                 break
 
                         if self.table_new_suppress_center_dist_px > 0.0:
@@ -3606,9 +3962,53 @@ class VisionPipeline:
                             _dist = self._center_dist((float(ucx), float(ucy)), _existing_center)
                             if _dist <= float(self.table_new_suppress_center_dist_px):
                                 suppress_new_table = True
+                                suppression_reasons.append("containment_fragment")
                                 break
 
+                    # Shape/size rejection is intentionally local: a
+                    # candidate is compared only to the nearest confirmed
+                    # track when it is within the existing table association
+                    # distance or overlaps that track's anchor bbox.
+                    local_plausibility_reasons: tuple[str, ...] = ()
+                    if (
+                        nearest_confirmed is not None
+                        and bool(nearest_confirmed["near"])
+                    ):
+                        local_plausibility_reasons = self._table_obb_plausibility_reasons(
+                            candidate_obb_metrics, nearest_confirmed["anchor"]
+                        )
+                        if local_plausibility_reasons:
+                            suppress_new_table = True
+                            suppression_reasons.extend(local_plausibility_reasons)
+
+                    candidate_debug = {
+                        "tracking_detection_index": int(det_idx),
+                        "bbox_px": bbox,
+                        "obb": candidate_obb_metrics,
+                        "nearest_confirmed_track_id": (
+                            None if nearest_confirmed is None else nearest_confirmed["track_id"]
+                        ),
+                        "nearest_center_distance_px": (
+                            None if nearest_confirmed is None
+                            else float(nearest_confirmed["center_distance_px"])
+                        ),
+                        "near_confirmed_track": (
+                            False if nearest_confirmed is None else bool(nearest_confirmed["near"])
+                        ),
+                        "anchor_bbox": (
+                            None if nearest_confirmed is None else nearest_confirmed["anchor_bbox"]
+                        ),
+                        "anchor_obb": (
+                            None if nearest_confirmed is None else nearest_confirmed["anchor"]
+                        ),
+                        "local_plausibility_reasons": list(local_plausibility_reasons),
+                        "suppression_reasons": suppression_reasons,
+                        "final_action": None,
+                    }
+
                     if suppress_new_table:
+                        candidate_debug["final_action"] = "suppressed_fragment"
+                        dbg_table_birth_candidates.append(candidate_debug)
                         continue
 
                     # Do not allocate an ID for the first unmatched full-size
@@ -3616,7 +4016,11 @@ class VisionPipeline:
                     # association, so fragments cannot compete with a stable
                     # table while they wait for confirmation.
                     if not self._advance_pending_table_birth(bbox, frame_id):
+                        candidate_debug["final_action"] = "pending_birth"
+                        dbg_table_birth_candidates.append(candidate_debug)
                         continue
+                    candidate_debug["final_action"] = "new_birth"
+                    dbg_table_birth_candidates.append(candidate_debug)
                 else:
                     if score < float(self.conf_create):
                         continue
@@ -3648,6 +4052,11 @@ class VisionPipeline:
                     class_tracks[track_id]["obb_yaw_rad"] = det.get("obb_yaw_rad")
                     class_tracks[track_id]["table_confirm_count"] = self.table_new_confirm_frames
                     class_tracks[track_id]["table_confirmed"] = True
+                    _initial_anchor_metrics = self._table_obb_metrics(det)
+                    if _initial_anchor_metrics is not None:
+                        self._set_table_full_anchor(
+                            class_tracks[track_id], bbox, _initial_anchor_metrics
+                        )
                     if self.adaptive_table_smoothing:
                         raw_center = det.get("obb_center_px")
                         class_tracks[track_id]["adaptive_raw_center_px"] = (
@@ -4193,6 +4602,7 @@ class VisionPipeline:
                     "miss_count": int(_track.get("miss_count", 0)),
                     "raw_obb_center_px": _track.get("obb_center_px"),
                     "raw_obb_yaw_rad": _track.get("obb_yaw_rad"),
+                    "full_table_anchor": _track.get("table_full_anchor"),
                     "emitted_world": _emitted_table_poses.get(_track_id),
                 })
             _raw_tables = []
@@ -4212,6 +4622,7 @@ class VisionPipeline:
                     "yaw_rad": _det.get("obb_yaw_rad"),
                     "width_px": _raw_width,
                     "height_px": _raw_height,
+                    "obb": self._table_obb_metrics(_det),
                 })
             _dbg_payload = {
                 "frame_id": int(frame_id),
@@ -4226,6 +4637,8 @@ class VisionPipeline:
                 "suppressed_table_fragment_births": int(dbg_suppressed_table_fragment_births),
                 "recoverable_lost_table_track_count": int(dbg_recoverable_lost_table_track_count),
                 "table_associations": dbg_table_associations,
+                "table_anchor_reacquisition_candidates": dbg_table_anchor_reacquisition_candidates,
+                "table_birth_candidates": dbg_table_birth_candidates,
                 "new_table_track_ids": dbg_table_new_track_ids,
                 "deleted_table_track_ids": dbg_table_deleted_track_ids,
             }
