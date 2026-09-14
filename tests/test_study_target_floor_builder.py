@@ -17,6 +17,7 @@ from td_builders.study_target_floor import (
     _overlap_visibility_expression,
     _target_transform_expressions,
     study_tabletop_target_visible,
+    target_world_rotation_to_td,
     target_world_to_td,
     rect_target_floor_dash_segments,
     rect_target_tabletop_dash_segments,
@@ -88,6 +89,15 @@ class StudyTargetFloorBuilderTests(unittest.TestCase):
         self.assertIn("study/target_y", expressions)
         self.assertIn("study/target_rot", expressions)
         self.assertNotIn("table/0/target_", expressions)
+
+    def test_target_rotation_is_inverted_for_the_mirrored_td_x_axis(self) -> None:
+        self.assertEqual(target_world_rotation_to_td(65.0), -65.0)
+        self.assertEqual(target_world_rotation_to_td(75.0), -75.0)
+        self.assertEqual(target_world_rotation_to_td(-65.0), 65.0)
+        rotation_expression = _target_transform_expressions(
+            "/project1/comp_io/null_osc_raw"
+        )[2]
+        self.assertIn("-(raw['study/target_rot'].eval())", rotation_expression)
 
     def test_pose_object_chop_has_native_geo_transform_dependencies(self) -> None:
         class Parameters:

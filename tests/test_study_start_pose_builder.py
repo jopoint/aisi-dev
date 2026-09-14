@@ -12,6 +12,7 @@ from td_builders.study_start_pose import (
     _home_ready_visibility_expression,
     _setup_table_transform_expressions,
     rect_start_floor_solid_segments,
+    setup_table_world_rotation_to_td,
 )
 
 
@@ -29,13 +30,34 @@ class StudyStartPoseBuilderTests(unittest.TestCase):
         self.assertIn("study/setup_table/0/rot", expressions)
         self.assertNotIn("study/source", expressions)
         self.assertNotIn("table/0/source", expressions)
-        self.assertIn("250.0 - raw", expressions)
+        self.assertIn("250.0 - channel", expressions)
 
     def test_index_three_reads_its_own_slash_named_setup_table_channels(self) -> None:
         expressions = _setup_table_transform_expressions("/project1/comp_io/null_osc_raw", 3)
         self.assertIn("study/setup_table/3/x", expressions[0])
         self.assertIn("study/setup_table/3/y", expressions[1])
         self.assertIn("study/setup_table/3/rot", expressions[2])
+
+    def test_setup_table_rotation_is_inverted_for_the_mirrored_td_x_axis(self) -> None:
+        self.assertEqual(setup_table_world_rotation_to_td(-5.0), 5.0)
+        self.assertEqual(setup_table_world_rotation_to_td(80.0), -80.0)
+        self.assertEqual(setup_table_world_rotation_to_td(-25.0), 25.0)
+        rotation_expression = _setup_table_transform_expressions(
+            "/project1/comp_io/null_osc_raw", 2
+        )[2]
+        self.assertIn("-(channel.eval())", rotation_expression)
+
+    def test_unused_setup_slot_has_safe_default_transforms_when_channels_are_absent(self) -> None:
+        class MissingChannels:
+            def __getitem__(self, _channel_name):
+                return None
+
+        expressions = _setup_table_transform_expressions(
+            "/project1/comp_io/null_osc_raw", 5
+        )
+        for expression in expressions:
+            self.assertEqual(eval(expression, {"op": lambda _path: MissingChannels()}), 0.0)
+            self.assertIn("channel is not None else 0.0", expression)
 
     def test_additional_setup_table_poses_never_reference_index_zero_or_fallback_channels(self) -> None:
         for index in (1, 2):

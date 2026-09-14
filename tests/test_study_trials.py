@@ -53,27 +53,92 @@ class StudyTrialTests(unittest.TestCase):
             (StudyTask.T3, StudyVariant.A), (StudyTask.T3, StudyVariant.B),
             (StudyTask.T4, StudyVariant.A), (StudyTask.T4, StudyVariant.B),
         })
-        self.assertEqual((trials[(StudyTask.T3, StudyVariant.B)].target_x_cm, trials[(StudyTask.T3, StudyVariant.B)].target_rotation_deg), (384.0, 130.0))
-        t4a = trials[(StudyTask.T4, StudyVariant.A)]
-        t4b = trials[(StudyTask.T4, StudyVariant.B)]
-        self.assertEqual((t4a.target_x_cm, t4a.target_y_cm, t4a.target_rotation_deg), (380.0, 375.0, 65.0))
-        self.assertEqual((t4b.source_pose.x_cm, t4b.source_pose.rotation_deg), (380.0, 65.0))
-        self.assertEqual((len(t4a.distractor_tables), len(t4b.distractor_tables)), (3, 3))
+        self.assertEqual(
+            (trials[(StudyTask.T4, StudyVariant.A)].target_x_cm,
+             trials[(StudyTask.T4, StudyVariant.A)].target_y_cm,
+             trials[(StudyTask.T4, StudyVariant.A)].target_rotation_deg),
+            (207.5, 264.5, 75.0),
+        )
 
-    def test_every_finalized_trial_has_the_same_neutral_participant_markers(self) -> None:
+    def test_finalized_trials_have_required_setup_table_counts_and_one_active_source(self) -> None:
         path = Path(__file__).resolve().parents[1] / "data" / "aisi" / "study" / "trials.json"
         trials = load_trial_definitions(path)
-        expected = (("P1", 200.0, 440.0, 40.0), ("P2", 300.0, 440.0, 40.0))
-        for trial in trials.values():
+        for task in (StudyTask.T1, StudyTask.T2):
+            for variant in StudyVariant:
+                trial = trials[(task, variant)]
+                self.assertIsNotNone(trial.source_pose)
+                self.assertEqual(len(trial.distractor_tables), 0)
+        for task in (StudyTask.T3, StudyTask.T4):
+            for variant in StudyVariant:
+                trial = trials[(task, variant)]
+                self.assertIsNotNone(trial.source_pose)
+                self.assertEqual(len(trial.distractor_tables), 3)
+
+    def test_t1_targets_are_t2_sources(self) -> None:
+        path = Path(__file__).resolve().parents[1] / "data" / "aisi" / "study" / "trials.json"
+        trials = load_trial_definitions(path)
+        for variant in StudyVariant:
+            t1 = trials[(StudyTask.T1, variant)]
+            t2 = trials[(StudyTask.T2, variant)]
             self.assertEqual(
-                tuple(
-                    (marker.participant_id, marker.x_cm, marker.y_cm, marker.radius_cm)
-                    for marker in trial.participant_start_positions
-                ),
-                expected,
+                (t1.target_x_cm, t1.target_y_cm, t1.target_rotation_deg),
+                (t2.source_pose.x_cm, t2.source_pose.y_cm, t2.source_pose.rotation_deg),
             )
 
-    def test_participant_markers_are_roi_safe_and_record_the_known_t4_conflicts(self) -> None:
+    def test_t3_target_state_equals_t4_start_state_and_preserves_table_identity_order(self) -> None:
+        path = Path(__file__).resolve().parents[1] / "data" / "aisi" / "study" / "trials.json"
+        trials = load_trial_definitions(path)
+        for variant in StudyVariant:
+            t3 = trials[(StudyTask.T3, variant)]
+            t4 = trials[(StudyTask.T4, variant)]
+            pose = lambda item: (item.x_cm, item.y_cm, item.rotation_deg)
+            target_pose = lambda trial: (
+                trial.target_x_cm, trial.target_y_cm, trial.target_rotation_deg
+            )
+            self.assertEqual(
+                {target_pose(t3), *(pose(item) for item in t3.distractor_tables)},
+                {pose(item) for item in (t4.source_pose, *t4.distractor_tables)},
+            )
+            # M0 -> M1 -> M2 physical-table mapping in the fixed positional
+            # schema: T3 active becomes T4 distractor 3; T3 distractor 2
+            # becomes T4 active; the remaining static tables keep order.
+            self.assertEqual(target_pose(t3), pose(t4.distractor_tables[2]))
+            self.assertEqual(pose(t3.distractor_tables[0]), pose(t4.distractor_tables[0]))
+            self.assertEqual(pose(t3.distractor_tables[1]), pose(t4.source_pose))
+            self.assertEqual(pose(t3.distractor_tables[2]), pose(t4.distractor_tables[1]))
+
+    def test_participant_starts_and_variant_coordinates_are_mirrored(self) -> None:
+        path = Path(__file__).resolve().parents[1] / "data" / "aisi" / "study" / "trials.json"
+        trials = load_trial_definitions(path)
+        def mirrored_rotation(a: float, b: float) -> bool:
+            return abs(((a + b + 90.0) % 180.0) - 90.0) < 1e-6
+
+        for task in StudyTask:
+            a = trials[(task, StudyVariant.A)]
+            b = trials[(task, StudyVariant.B)]
+            self.assertEqual(
+                tuple((marker.participant_id, marker.x_cm, marker.y_cm, marker.radius_cm)
+                      for marker in a.participant_start_positions),
+                (("P1", 234.5, 53.5, 40.0),),
+            )
+            self.assertEqual(
+                tuple((marker.participant_id, marker.x_cm, marker.y_cm, marker.radius_cm)
+                      for marker in b.participant_start_positions),
+                (("P1", 265.5, 53.5, 40.0),),
+            )
+            pose = lambda item: (item.x_cm, item.y_cm, item.rotation_deg)
+            target_pose = lambda trial: (
+                trial.target_x_cm, trial.target_y_cm, trial.target_rotation_deg
+            )
+            a_poses = (pose(a.source_pose), target_pose(a), *(pose(item) for item in a.distractor_tables))
+            b_poses = (pose(b.source_pose), target_pose(b), *(pose(item) for item in b.distractor_tables))
+            self.assertEqual(len(a_poses), len(b_poses))
+            for a_pose, b_pose in zip(a_poses, b_poses):
+                self.assertAlmostEqual(b_pose[0], 500.0 - a_pose[0])
+                self.assertEqual(b_pose[1], a_pose[1])
+                self.assertTrue(mirrored_rotation(a_pose[2], b_pose[2]))
+
+    def test_participant_markers_are_roi_safe_and_do_not_overlap_home_tables(self) -> None:
         """Validate marker disks with the canonical polygon/SAT geometry helpers."""
 
         path = Path(__file__).resolve().parents[1] / "data" / "aisi" / "study" / "trials.json"
@@ -99,7 +164,4 @@ class StudyTrialTests(unittest.TestCase):
                         world_footprint("rect", pose.x_cm, pose.y_cm, pose.rotation_deg),
                     ):
                         collisions.add((task.name + variant.name, marker.participant_id, table_name))
-        self.assertEqual(
-            collisions,
-            {("T4A", "P1", "distractor_2"), ("T4B", "P2", "distractor_2")},
-        )
+        self.assertEqual(collisions, set())

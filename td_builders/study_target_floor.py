@@ -79,7 +79,11 @@ def rect_target_dash_segments(width_cm: float, depth_cm: float) -> tuple[DashSeg
 
 
 def _target_transform_expressions(osc_path: str) -> tuple[str, str, str]:
-    """Return target expressions in the established Source world-to-TD axes."""
+    """Return target expressions in the established Source world-to-TD axes.
+
+    The mirrored world-to-TD X axis also reverses target yaw, matching the
+    corrected HOME setup-table convention.
+    """
 
     raw = repr(osc_path)
     x_channel = repr("study/target_x")
@@ -94,7 +98,7 @@ def _target_transform_expressions(osc_path: str) -> tuple[str, str, str]:
         f"if raw is not None and raw[{y_channel}] is not None else 0.0)(op({raw}))"
     )
     rot_expr = (
-        f"(lambda raw: raw[{rot_channel}].eval() if raw is not None and "
+        f"(lambda raw: -(raw[{rot_channel}].eval()) if raw is not None and "
         f"raw[{rot_channel}] is not None else 0.0)(op({raw}))"
     )
     return x_expr, y_expr, rot_expr
@@ -107,6 +111,12 @@ def target_world_to_td(target_x_cm: float, target_y_cm: float) -> tuple[float, f
         (250.0 - target_x_cm) * TD_UNITS_PER_CM,
         (target_y_cm - 250.0) * TD_UNITS_PER_CM,
     )
+
+
+def target_world_rotation_to_td(rotation_deg: float) -> float:
+    """Map Study target yaw into TouchDesigner's mirrored world axes."""
+
+    return -rotation_deg
 
 
 def create_study_target_floor_geo(

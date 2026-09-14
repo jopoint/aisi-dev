@@ -4,6 +4,9 @@ from aisi.app.sim_room_editor import (
     CHAIR_RADIUS_CM,
     PERSON_RADIUS_CM,
     SimRoomEditor,
+    coordinate_export_data,
+    format_scene_coordinates,
+    format_scene_coordinates_json,
     make_added_circle_item,
     make_added_table,
     make_default_chairs,
@@ -15,6 +18,38 @@ from aisi.core.table_geometry import get_table_geometry, polygon_inside_roi, wor
 
 
 class SimRoomEditorAuthoringTests(unittest.TestCase):
+    def test_coordinate_export_uses_editor_world_state_and_preserves_order(self):
+        tables = [
+            {"id": "table_00", "x_cm": 120.0, "y_cm": 450.0, "rotation_deg": 0.0},
+            {"id": "table_01", "x_cm": 115.25, "y_cm": 150.5, "rotation_deg": 150.0},
+        ]
+        persons = [{"id": "person_00", "x_cm": 240.0, "y_cm": 55.0, "radius_cm": 40.0}]
+        chairs = [
+            {"id": "chair_00", "x_cm": 300.0, "y_cm": 200.0},
+            {"id": "chair_01", "x_cm": 350.0, "y_cm": 200.0, "rotation_deg": 45.0},
+        ]
+
+        exported = coordinate_export_data(tables, chairs, persons)
+
+        self.assertEqual([item["id"] for item in exported["tables"]], ["table_00", "table_01"])
+        self.assertEqual(exported["tables"][1], {"id": "table_01", "x": 115.25, "y": 150.5, "rot": 150.0})
+        self.assertEqual(exported["persons"][0], {"id": "person_00", "x": 240.0, "y": 55.0, "radius": 40.0})
+        self.assertNotIn("rot", exported["chairs"][0])
+        self.assertEqual(exported["chairs"][1]["rot"], 45.0)
+
+    def test_coordinate_formats_are_human_readable_and_json(self):
+        tables = [{"id": "table_00", "x_cm": 120, "y_cm": 450, "rotation_deg": 0}]
+        persons = [{"id": "person_00", "x_cm": 240, "y_cm": 55, "radius_cm": 40}]
+        chairs = [{"id": "chair_00", "x_cm": 300, "y_cm": 200}]
+
+        text = format_scene_coordinates(tables, chairs, persons)
+        json_text = format_scene_coordinates_json(tables, chairs, persons)
+
+        self.assertIn("table_00: (120.0, 450.0, 0.0)", text)
+        self.assertIn("person_00: (240.0, 55.0; radius=40.0)", text)
+        self.assertIn('"id": "chair_00"', json_text)
+        self.assertIn('"rot": 0.0', json_text)
+
     def test_added_table_is_rect_with_canonical_geometry_and_valid_footprint(self):
         tables = make_default_tables()
 

@@ -150,6 +150,42 @@ class TrackingOnlyOscTests(unittest.TestCase):
         self.assertEqual(targets, [])
         self.assertEqual(reason, "requested tracking table 'table_00' not found")
 
+    def test_study_binding_routes_only_the_latched_track_to_table_zero(self) -> None:
+        desired = {**_rect_table(0.0), "id": "table_03"}
+        ignored = _rect_table(45.0)
+        selected, _persons, _chairs, _targets, reason = prepare_scene_output(
+            {"tables": [ignored, desired]}, "input", transformation_strength=0.5,
+            tracking_only=True, tracking_table_id="table_00",
+            study_active_binding_present=True, study_active_track_id="table_03",
+        )
+        self.assertIsNone(reason)
+        self.assertEqual(selected, [desired])
+
+    def test_study_binding_selects_the_current_scene_pose_on_every_call(self) -> None:
+        first = {**_rect_table(10.0), "id": "table_02", "x_cm": 100.0}
+        second = {**_rect_table(55.0), "id": "table_02", "x_cm": 300.0, "y_cm": 400.0}
+        first_selected, *_ = prepare_scene_output(
+            {"tables": [first]}, "input", transformation_strength=0.5,
+            tracking_only=True, study_active_binding_present=True,
+            study_active_track_id="table_02",
+        )
+        second_selected, *_ = prepare_scene_output(
+            {"tables": [second]}, "input", transformation_strength=0.5,
+            tracking_only=True, study_active_binding_present=True,
+            study_active_track_id="table_02",
+        )
+        self.assertEqual((first_selected[0]["x_cm"], first_selected[0]["rotation_deg"]), (100.0, 10.0))
+        self.assertEqual((second_selected[0]["x_cm"], second_selected[0]["y_cm"], second_selected[0]["rotation_deg"]), (300.0, 400.0, 55.0))
+
+    def test_unresolved_study_binding_emits_no_table_instead_of_falling_back(self) -> None:
+        selected, _persons, _chairs, targets, reason = prepare_scene_output(
+            {"tables": [_rect_table(0.0)]}, "input", transformation_strength=0.5,
+            tracking_only=True, study_active_binding_present=True,
+        )
+        self.assertEqual(selected, [])
+        self.assertEqual(targets, [])
+        self.assertEqual(reason, "Study active table is unresolved")
+
     def test_tracking_only_rejects_missing_or_non_rect_requested_table(self) -> None:
         for tables in ([], [{**_rect_table(0.0), "type": "summit"}]):
             selected, _persons, _chairs, targets, reason = prepare_scene_output(

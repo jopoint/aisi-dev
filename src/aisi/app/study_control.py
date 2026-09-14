@@ -9,6 +9,10 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from aisi.app.study_logging import JsonlEventLogger, LiveSceneSourcePoseProvider, SourcePoseProvider
+from aisi.app.study_tracking import (
+    StudyActiveTrackBindingStore,
+    StudyActiveTrackSelector,
+)
 from aisi.app.study_trials import (
     ParticipantStartSpec,
     PoseSpec,
@@ -37,6 +41,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_TRIALS_PATH = PROJECT_ROOT / "data" / "aisi" / "study" / "trials.json"
 DEFAULT_LOG_DIRECTORY = PROJECT_ROOT / "data" / "aisi" / "study" / "logs"
 DEFAULT_SOURCE_SCENE_PATH = PROJECT_ROOT / "data" / "aisi" / "scenes" / "live" / "vision_live_scene.json"
+DEFAULT_ACTIVE_TRACK_BINDING_PATH = PROJECT_ROOT / "data" / "aisi" / "state" / "study_active_track.json"
 ACTIVE_POSE_LOG_INTERVAL_MS = 100
 
 
@@ -76,6 +81,7 @@ class StudyState:
     target_rot: float = DEFAULT_TARGET_ROT_DEG
     setup_table_poses: tuple[PoseSpec, ...] = ()
     participant_start_positions: tuple[ParticipantStartSpec, ...] = ()
+    active_track_id: str | None = None
 
     def osc_messages(self) -> tuple[tuple[str, int | float], ...]:
         messages: list[tuple[str, int | float]] = [
@@ -143,10 +149,11 @@ def apply_selected_trial(
 class StudyStateController:
     """Own Study state, trial transitions, and non-blocking event logging."""
 
-    def __init__(self, publisher: StudyStatePublisher, state: StudyState | None = None, *, event_logger: EventLogger | None = None, source_pose_provider: SourcePoseProvider | None = None) -> None:
+    def __init__(self, publisher: StudyStatePublisher, state: StudyState | None = None, *, event_logger: EventLogger | None = None, source_pose_provider: SourcePoseProvider | None = None, active_track_selector: StudyActiveTrackSelector | None = None) -> None:
         self._publisher = publisher
         self._event_logger = event_logger
-        self._source_pose_provider = source_pose_provider
+        self._active_track_selector = active_track_selector
+        self._source_pose_provider = active_track_selector or source_pose_provider
         self.state = state or StudyState()
         self.trial_started_at_iso: str | None = None
         self.trial_completed_at_iso: str | None = None
@@ -158,7 +165,16 @@ class StudyStateController:
         self._log_event("session_started")
 
     def set_mode(self, mode: StudyMode) -> bool:
-        return self._update(replace(self.state, mode=StudyMode(mode)), "mode_changed")
+        mode = StudyMode(mode)
+        changed = self._update(replace(self.state, mode=mode), "mode_changed")
+        if not changed or self._active_track_selector is None:
+            return changed
+        if mode == StudyMode.STUDY:
+            self.resolve_active_track()
+        else:
+            self._active_track_selector.disable()
+            self._update(replace(self.state, active_track_id=None))
+        return changed
 
     def set_condition(self, condition: StudyCondition) -> bool:
         return self._update(replace(self.state, condition=StudyCondition(condition)), "condition_changed")
@@ -168,7 +184,16 @@ class StudyStateController:
         return self._update(replace(self.state, phase=phase), {StudyPhase.HOME: "phase_home", StudyPhase.READY: "phase_ready", StudyPhase.ACTIVE: "trial_started", StudyPhase.COMPLETE: "trial_completed"}[phase])
 
     def home(self) -> bool:
-        return self.set_phase(StudyPhase.HOME)
+        phase_changed = self.set_phase(StudyPhase.HOME)
+        # HOME is the physical setup phase. A trial may have been loaded
+        # before the tables reached their nominal start poses, so retry only
+        # an unresolved binding here; never replace an already latched ID.
+        resolved = False
+        if self._active_track_selector is not None and self.state.mode == StudyMode.STUDY:
+            self._clear_unavailable_home_track()
+            if self.state.active_track_id is None:
+                resolved = self.resolve_active_track()
+        return phase_changed or resolved
 
     def ready(self) -> bool:
         return self.set_phase(StudyPhase.READY)
@@ -176,6 +201,14 @@ class StudyStateController:
     def start_trial(self) -> bool:
         if self.state.phase == StudyPhase.ACTIVE:
             return False
+        if self._active_track_selector is not None:
+            self._clear_unavailable_home_track()
+            if self.state.active_track_id is None:
+                # The final HOME-position match avoids requiring the operator to
+                # click HOME again after moving the physical source table.
+                self.resolve_active_track()
+            if self.state.active_track_id is None:
+                return False
         self.trial_started_at_iso, self.trial_completed_at_iso = _utc_iso_now(), None
         return self._update(replace(self.state, phase=StudyPhase.ACTIVE), "trial_started", {"trial_started_at_iso": self.trial_started_at_iso})
 
@@ -218,7 +251,57 @@ class StudyStateController:
             setup_table_poses=setup_tables,
             participant_start_positions=trial.participant_start_positions,
         )
-        return self._update(replace(self.state, **updates), "trial_loaded", {"trial_notes": trial.notes})
+        active_track_match = None
+        if self._active_track_selector is not None:
+            if self.state.mode == StudyMode.STUDY and trial.source_pose is not None:
+                active_track_match = self._active_track_selector.resolve(trial.source_pose)
+            else:
+                self._active_track_selector.disable()
+            updates["active_track_id"] = (
+                active_track_match.track.track_id if active_track_match is not None else None
+            )
+        extra: dict[str, Any] = {"trial_notes": trial.notes}
+        if self._active_track_selector is not None:
+            extra.update(_active_track_match_event_fields(active_track_match))
+        return self._update(replace(self.state, **updates), "trial_loaded", extra)
+
+    def resolve_active_track(self) -> bool:
+        """Resolve an unresolved HOME binding; never reselect during ACTIVE."""
+
+        if self._active_track_selector is None:
+            return False
+        if self.state.mode != StudyMode.STUDY:
+            self._active_track_selector.disable()
+            return self._update(replace(self.state, active_track_id=None))
+        if self.state.phase == StudyPhase.ACTIVE or self.state.active_track_id is not None:
+            return False
+        source_pose = PoseSpec(self.state.source_x, self.state.source_y, self.state.source_rot)
+        match = self._active_track_selector.resolve(source_pose)
+        updated = replace(self.state, active_track_id=match.track.track_id if match else None)
+        event_type = "active_track_bound" if match else "active_track_unresolved"
+        extra = _active_track_match_event_fields(match)
+        if updated == self.state:
+            self._log_event(event_type, extra)
+            return False
+        return self._update(updated, event_type, extra)
+
+    def _clear_unavailable_home_track(self) -> bool:
+        """Release a pre-ACTIVE binding only after its live ID has vanished."""
+
+        if (
+            self._active_track_selector is None
+            or self.state.phase == StudyPhase.ACTIVE
+            or self.state.active_track_id is None
+            or self._active_track_selector() is not None
+        ):
+            return False
+        missing_track_id = self.state.active_track_id
+        self._active_track_selector.clear()
+        return self._update(
+            replace(self.state, active_track_id=None),
+            "active_track_lost",
+            {"active_track_id": missing_track_id},
+        )
 
     def record_active_pose(self) -> bool:
         if self.state.phase != StudyPhase.ACTIVE:
@@ -243,10 +326,24 @@ class StudyStateController:
         except Exception:
             source_pose = None
         state = self.state
-        event: dict[str, Any] = {"event_type": event_type, "mode": int(state.mode), "condition": int(state.condition), "phase": int(state.phase), "task_id": state.task.name, "task": int(state.task), "variant": state.variant.name, "variant_id": int(state.variant), "target_x_cm": state.target_x, "target_y_cm": state.target_y, "target_rotation_deg": state.target_rot, "source_pose": source_pose}
+        event: dict[str, Any] = {"event_type": event_type, "mode": int(state.mode), "condition": int(state.condition), "phase": int(state.phase), "task_id": state.task.name, "task": int(state.task), "variant": state.variant.name, "variant_id": int(state.variant), "active_track_id": state.active_track_id, "target_x_cm": state.target_x, "target_y_cm": state.target_y, "target_rotation_deg": state.target_rot, "source_pose": source_pose}
         if extra:
             event.update(extra)
         self._event_logger.log(event)
+
+
+def _active_track_match_event_fields(match: Any) -> dict[str, Any]:
+    """Serialize the selection provenance without adding a new OSC contract."""
+
+    if match is None:
+        return {"active_track_status": "unresolved", "active_track_id": None}
+    return {
+        "active_track_status": "bound",
+        "active_track_id": match.track.track_id,
+        "active_track_xy_distance_cm": match.xy_distance_cm,
+        "active_track_rotation_difference_deg": match.rotation_difference_deg,
+        "active_track_score": match.score,
+    }
 
 
 def _utc_iso_now() -> str:
@@ -324,7 +421,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--task", type=int, choices=[1, 2, 3, 4], default=1); parser.add_argument("--variant", type=int, choices=[0, 1], default=0); parser.add_argument("--target-overlap", type=int, choices=[0, 1], default=0)
     parser.add_argument("--target-x", type=float, default=DEFAULT_TARGET_X_CM); parser.add_argument("--target-y", type=float, default=DEFAULT_TARGET_Y_CM); parser.add_argument("--target-rot", type=float, default=DEFAULT_TARGET_ROT_DEG)
     parser.add_argument("--trials", type=Path, default=DEFAULT_TRIALS_PATH); parser.add_argument("--log-dir", type=Path, default=DEFAULT_LOG_DIRECTORY); parser.add_argument("--session-name")
-    parser.add_argument("--source-scene", type=Path, default=DEFAULT_SOURCE_SCENE_PATH); parser.add_argument("--source-table-id", default="table_00"); parser.add_argument("--no-ui", action="store_true")
+    parser.add_argument("--source-scene", type=Path, default=DEFAULT_SOURCE_SCENE_PATH); parser.add_argument("--source-table-id", default="table_00"); parser.add_argument("--active-track-binding", type=Path, default=DEFAULT_ACTIVE_TRACK_BINDING_PATH); parser.add_argument("--no-ui", action="store_true")
     return parser.parse_args()
 
 
@@ -332,13 +429,17 @@ def main() -> None:
     args = parse_args()
     state = StudyState(mode=StudyMode(args.mode), condition=StudyCondition(args.condition), phase=StudyPhase(args.phase), task=StudyTask(args.task), variant=StudyVariant(args.variant), target_overlap=bool(args.target_overlap), target_x=args.target_x, target_y=args.target_y, target_rot=args.target_rot)
     logger = JsonlEventLogger(args.log_dir, session_name=args.session_name)
-    controller = StudyStateController(StudyStatePublisher(SimpleUDPClient(args.host, args.port)), state, event_logger=logger, source_pose_provider=LiveSceneSourcePoseProvider(args.source_scene, args.source_table_id))
+    active_track_selector = StudyActiveTrackSelector(
+        args.source_scene, StudyActiveTrackBindingStore(args.active_track_binding)
+    )
+    controller = StudyStateController(StudyStatePublisher(SimpleUDPClient(args.host, args.port)), state, event_logger=logger, source_pose_provider=LiveSceneSourcePoseProvider(args.source_scene, args.source_table_id), active_track_selector=active_track_selector)
     try:
         controller.start_session(); controller.publish_current(); print(f"Study Control OSC target: {args.host}:{args.port}; task={state.task.name}/{state.variant.name}; log={logger.path}")
         if not args.no_ui: StudyControlUi(controller, load_trial_definitions(args.trials)).run()
     except ImportError as error:
         raise SystemExit("Tkinter is required for the Study Control UI.") from error
     finally:
+        active_track_selector.disable()
         logger.close()
 
 

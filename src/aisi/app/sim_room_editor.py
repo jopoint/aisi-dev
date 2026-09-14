@@ -298,6 +298,75 @@ def scene_payload(tables: list[dict], chairs: list[dict], persons: list[dict]) -
     }
 
 
+def coordinate_export_data(tables: list[dict], chairs: list[dict], persons: list[dict]) -> dict:
+    """Return the editable world poses in a small clipboard-friendly schema.
+
+    This intentionally reads the editor objects, rather than canvas geometry
+    or the live-scene export, so it is unaffected by display scale, jitter,
+    and simulated occlusion.
+    """
+    def value(item: dict, key: str) -> float:
+        return round(float(item[key]), 3)
+
+    exported_chairs = []
+    for chair in chairs:
+        exported = {"id": chair["id"], "x": value(chair, "x_cm"), "y": value(chair, "y_cm")}
+        if "rotation_deg" in chair:
+            exported["rot"] = value(chair, "rotation_deg")
+        exported_chairs.append(exported)
+
+    exported_persons = []
+    for person in persons:
+        exported = {"id": person["id"], "x": value(person, "x_cm"), "y": value(person, "y_cm")}
+        if "radius_cm" in person:
+            exported["radius"] = value(person, "radius_cm")
+        exported_persons.append(exported)
+
+    return {
+        "tables": [
+            {
+                "id": table["id"],
+                "x": value(table, "x_cm"),
+                "y": value(table, "y_cm"),
+                "rot": value(table, "rotation_deg"),
+            }
+            for table in tables
+        ],
+        "persons": exported_persons,
+        "chairs": exported_chairs,
+    }
+
+
+def format_scene_coordinates(tables: list[dict], chairs: list[dict], persons: list[dict]) -> str:
+    """Format the current editor world state for direct use in trial notes."""
+    data = coordinate_export_data(tables, chairs, persons)
+    lines = ["tables:"]
+    lines.extend(
+        f"{item['id']}: ({item['x']:.1f}, {item['y']:.1f}, {item['rot']:.1f})"
+        for item in data["tables"]
+    )
+    lines.append("")
+    lines.append("persons:")
+    for item in data["persons"]:
+        pose = f"{item['id']}: ({item['x']:.1f}, {item['y']:.1f}"
+        if "radius" in item:
+            pose += f"; radius={item['radius']:.1f}"
+        lines.append(pose + ")")
+    lines.append("")
+    lines.append("chairs:")
+    for item in data["chairs"]:
+        pose = f"{item['id']}: ({item['x']:.1f}, {item['y']:.1f}"
+        if "rot" in item:
+            pose += f", {item['rot']:.1f}"
+        lines.append(pose + ")")
+    return "\n".join(lines)
+
+
+def format_scene_coordinates_json(tables: list[dict], chairs: list[dict], persons: list[dict]) -> str:
+    """Return the same editor state as concise, stable-order JSON."""
+    return json.dumps(coordinate_export_data(tables, chairs, persons), indent=2)
+
+
 def export_circle_items(items: list[dict], jitter_enabled: bool, occlusion_enabled: bool) -> list[dict]:
     """Build exported circle items with optional CV-like instability.
 
@@ -438,6 +507,10 @@ class SimRoomEditor:
         tk.Button(self.controls, text="+ Chair", command=self.add_chair).pack(side="left", padx=4)
         tk.Button(self.controls, text="+ Person", command=self.add_person).pack(side="left", padx=4)
         tk.Button(self.controls, text="Remove selected", command=self.remove_selected).pack(side="left", padx=4)
+        tk.Button(self.controls, text="Copy Coordinates", command=self.copy_coordinates).pack(side="left", padx=(12, 4))
+        tk.Button(self.controls, text="Copy JSON", command=self.copy_json).pack(side="left", padx=4)
+        self.clipboard_status = tk.StringVar(value="")
+        tk.Label(self.controls, textvariable=self.clipboard_status, bg=BG_COLOR, fg=TEXT_COLOR).pack(side="left", padx=(8, 0))
 
         self.tables = make_default_tables()
         self.chairs = make_default_chairs()
@@ -505,6 +578,27 @@ class SimRoomEditor:
             occlusion_enabled=self.occlusion_enabled,
         )
         self.last_save_time = time.monotonic()
+
+    def _copy_to_clipboard(self, text: str, status: str) -> None:
+        """Copy text through Tk so Windows and macOS use their native clipboard."""
+        self.root.clipboard_clear()
+        self.root.clipboard_append(text)
+        self.root.update_idletasks()
+        self.clipboard_status.set(status)
+
+    def copy_coordinates(self) -> None:
+        """Copy the editable scene's world-coordinate summary."""
+        self._copy_to_clipboard(
+            format_scene_coordinates(self.tables, self.chairs, self.persons),
+            "Coordinates copied",
+        )
+
+    def copy_json(self) -> None:
+        """Copy the editable scene's small JSON coordinate export."""
+        self._copy_to_clipboard(
+            format_scene_coordinates_json(self.tables, self.chairs, self.persons),
+            "JSON copied",
+        )
 
     def toggle_jitter(self) -> None:
         """Toggle export-only jitter for persons and chairs."""

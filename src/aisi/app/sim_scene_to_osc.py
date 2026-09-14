@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from aisi.app.sim_layout_rules import compute_target_layout
+from aisi.app.study_tracking import StudyActiveTrackBindingStore
 from aisi.core.table_geometry import TABLE_TYPE_IDS, TABLE_TYPE_NAMES
 
 try:
@@ -102,6 +103,14 @@ def parse_args() -> argparse.Namespace:
         "--tracking-table-id",
         default=DEFAULT_TRACKING_TABLE_ID,
         help="Table ID selected in tracking-only mode (default: table_00).",
+    )
+    parser.add_argument(
+        "--study-active-binding",
+        type=Path,
+        help=(
+            "Optional Study-Control active-track binding JSON. While it is present, "
+            "tracking-only output routes its latched ID to /table/0."
+        ),
     )
     return parser.parse_args()
 
@@ -323,6 +332,8 @@ def prepare_scene_output(
     transformation_strength: float,
     tracking_only: bool,
     tracking_table_id: str = DEFAULT_TRACKING_TABLE_ID,
+    study_active_binding_present: bool = False,
+    study_active_track_id: str | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, float]], str | None]:
     """Choose regular layout output or isolated source-only tracking output."""
     tables = scene.get("tables", [])
@@ -336,6 +347,10 @@ def prepare_scene_output(
         chairs = []
 
     if tracking_only:
+        if study_active_binding_present and study_active_track_id is None:
+            return [], [], [], [], "Study active table is unresolved"
+        if study_active_track_id is not None:
+            tracking_table_id = study_active_track_id
         selected_tables, reason = tracking_only_tables(tables, tracking_table_id)
         # This mode deliberately neither reads people/chairs nor calls layout synthesis.
         return selected_tables, [], [], source_pose_targets(selected_tables), reason
@@ -500,6 +515,10 @@ def main() -> None:
     last_tracking_rejection: str | None = None
     scene_reader = RetainingSceneReader()
     tracking_rotation_unwrapper = TrackingOnlyRotationUnwrapper() if args.tracking_only else None
+    study_active_binding = (
+        StudyActiveTrackBindingStore(args.study_active_binding)
+        if args.study_active_binding is not None else None
+    )
 
     try:
         while not stop_event.is_set():
@@ -550,12 +569,17 @@ def main() -> None:
             with state_lock:
                 layout_mode = current_layout_mode
 
+            binding_present, active_track_id = (
+                study_active_binding.read() if study_active_binding is not None else (False, None)
+            )
             tables, persons, chairs, targets, tracking_rejection = prepare_scene_output(
                 scene,
                 layout_mode,
                 transformation_strength,
                 tracking_only=args.tracking_only,
                 tracking_table_id=args.tracking_table_id,
+                study_active_binding_present=binding_present,
+                study_active_track_id=active_track_id,
             )
             if tracking_rotation_unwrapper is not None:
                 tables = tracking_rotation_unwrapper.unwrap_tables(tables)

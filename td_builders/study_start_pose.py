@@ -42,14 +42,24 @@ def rect_start_floor_solid_segments() -> tuple[OutlineSegment, ...]:
 
 
 def _setup_table_transform_expressions(osc_path: str, index: int) -> tuple[str, str, str]:
-    """Return a neutral setup-table pose from the variable Study-owned list."""
+    """Return a neutral setup-table pose from the variable Study-owned list.
+
+    The world-to-TD X-axis mapping mirrors the table footprint, so the
+    corresponding HOME setup rotation must use the opposite sign as well.
+    """
 
     raw, prefix = repr(osc_path), f"study/setup_table/{index}"
     return (
-        f"(lambda raw: ((250.0 - raw[{prefix + '/x'!r}].eval()) * {TD_UNITS_PER_CM}) if raw is not None and raw[{prefix + '/x'!r}] is not None else 0.0)(op({raw}))",
-        f"(lambda raw: ((raw[{prefix + '/y'!r}].eval() - 250.0) * {TD_UNITS_PER_CM}) if raw is not None and raw[{prefix + '/y'!r}] is not None else 0.0)(op({raw}))",
-        f"(lambda raw: raw[{prefix + '/rot'!r}].eval() if raw is not None and raw[{prefix + '/rot'!r}] is not None else 0.0)(op({raw}))",
+        f"(lambda raw: (lambda channel: ((250.0 - channel.eval()) * {TD_UNITS_PER_CM}) if channel is not None else 0.0)(raw[{prefix + '/x'!r}] if raw is not None else None))(op({raw}))",
+        f"(lambda raw: (lambda channel: ((channel.eval() - 250.0) * {TD_UNITS_PER_CM}) if channel is not None else 0.0)(raw[{prefix + '/y'!r}] if raw is not None else None))(op({raw}))",
+        f"(lambda raw: (lambda channel: -(channel.eval()) if channel is not None else 0.0)(raw[{prefix + '/rot'!r}] if raw is not None else None))(op({raw}))",
     )
+
+
+def setup_table_world_rotation_to_td(rotation_deg: float) -> float:
+    """Map a HOME setup-table world yaw into TouchDesigner's mirrored axes."""
+
+    return -rotation_deg
 
 
 def _home_ready_visibility_expression(osc_path: str, count_channel: str, index: int) -> str:
