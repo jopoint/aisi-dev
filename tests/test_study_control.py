@@ -60,7 +60,6 @@ class StudyControlTests(unittest.TestCase):
             ("/study/target_rot", 0.0),
             ("/study/setup_table_count", 0),
             ("/study/participant_start_count", 0),
-            ("/study/tracked_table/count", 0),
         ))
 
     def test_each_change_publishes_the_complete_state(self) -> None:
@@ -80,15 +79,14 @@ class StudyControlTests(unittest.TestCase):
             ("/study/target_rot", 0.0),
             ("/study/setup_table_count", 0),
             ("/study/participant_start_count", 0),
-            ("/study/tracked_table/count", 0),
         ])
 
         self.client.messages.clear()
         self.controller.set_condition(StudyCondition.DUAL_SURFACE)
         self.controller.set_phase(StudyPhase.ACTIVE)
         self.controller.set_target_overlap(True)
-        self.assertEqual(len(self.client.messages), 45)
-        self.assertEqual(self.client.messages[-15:], [
+        self.assertEqual(len(self.client.messages), 42)
+        self.assertEqual(self.client.messages[-14:], [
             ("/study/mode", 1),
             ("/study/condition", 1),
             ("/study/phase", 2),
@@ -103,7 +101,6 @@ class StudyControlTests(unittest.TestCase):
             ("/study/target_rot", 0.0),
             ("/study/setup_table_count", 0),
             ("/study/participant_start_count", 0),
-            ("/study/tracked_table/count", 0),
         ])
 
     def test_aisi_mode_publishes_value_two_without_changing_addresses(self) -> None:
@@ -123,7 +120,6 @@ class StudyControlTests(unittest.TestCase):
             ("/study/target_rot", 0.0),
             ("/study/setup_table_count", 0),
             ("/study/participant_start_count", 0),
-            ("/study/tracked_table/count", 0),
         ])
 
     def test_unchanged_value_does_not_republish(self) -> None:
@@ -132,7 +128,7 @@ class StudyControlTests(unittest.TestCase):
 
     def test_explicit_publish_resends_complete_state(self) -> None:
         self.controller.publish_current()
-        self.assertEqual(len(self.client.messages), 15)
+        self.assertEqual(len(self.client.messages), 14)
 
     def test_setting_fixed_target_pose_republishes_target_channels(self) -> None:
         self.assertTrue(self.controller.set_target_pose(310.5, 220.25, 45.0))
@@ -201,7 +197,7 @@ class StudyControlTests(unittest.TestCase):
             trial.source_pose, *trial.distractor_tables,
         ))
         self.assertEqual(self.controller.state.participant_start_positions, trial.participant_start_positions)
-        self.assertEqual(self.client.messages[-16:-8], [
+        self.assertEqual(self.client.messages[-8:], [
             ("/study/setup_table_count", 2),
             ("/study/participant_start_count", 1),
             ("/study/setup_table/0/x", 260.0),
@@ -214,6 +210,7 @@ class StudyControlTests(unittest.TestCase):
             ("/study/participant_start/0/y", 395.0),
             ("/study/participant_start/0/radius", 40.0),
         ][-8:])
+
 
     def test_missing_selected_trial_preserves_the_last_valid_state(self) -> None:
         valid = TrialSpec(StudyTask.T1, StudyVariant.A, 380.0, 150.0, 90.0, source_pose=PoseSpec(120.0, 150.0, 90.0))

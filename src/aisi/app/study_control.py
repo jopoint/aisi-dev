@@ -84,8 +84,6 @@ class StudyState:
     setup_table_poses: tuple[PoseSpec, ...] = ()
     participant_start_positions: tuple[ParticipantStartSpec, ...] = ()
     active_track_id: str | None = None
-    tracked_table_ids: tuple[str | None, ...] = ()
-    tracked_table_poses: tuple[PoseSpec | None, ...] = ()
 
     def osc_messages(self) -> tuple[tuple[str, int | float], ...]:
         messages: list[tuple[str, int | float]] = [
@@ -103,7 +101,6 @@ class StudyState:
             ("/study/target_rot", self.target_rot),
             ("/study/setup_table_count", len(self.setup_table_poses)),
             ("/study/participant_start_count", len(self.participant_start_positions)),
-            ("/study/tracked_table/count", len(self.setup_table_poses)),
         ]
         for index, pose in enumerate(self.setup_table_poses):
             messages.extend((
@@ -117,12 +114,6 @@ class StudyState:
                 (f"/study/participant_start/{index}/y", marker.y_cm),
                 (f"/study/participant_start/{index}/radius", marker.radius_cm),
             ))
-        for index in range(len(self.setup_table_poses)):
-            pose = self.tracked_table_poses[index] if index < len(self.tracked_table_poses) else None
-            messages.extend(((f"/study/tracked_table/{index}/available", int(pose is not None)),
-                             (f"/study/tracked_table/{index}/x", 0.0 if pose is None else pose.x_cm),
-                             (f"/study/tracked_table/{index}/y", 0.0 if pose is None else pose.y_cm),
-                             (f"/study/tracked_table/{index}/rot", 0.0 if pose is None else pose.rotation_deg)))
         return tuple(messages)
 
 
@@ -260,18 +251,18 @@ class StudyStateController:
         )
         active_track_match = None
         if self._active_track_selector is not None:
+            trial_id = f"{trial.task.name}{trial.variant.name}"
             if self.state.mode == StudyMode.STUDY and trial.source_pose is not None:
-                trial_id = f"{trial.task.name}{trial.variant.name}"
                 self._active_track_selector.clear(trial_id)
                 matches = self._active_track_selector.resolve_setup(trial_id, setup_tables)
                 active_track_match = matches.get(0)
-                updates["tracked_table_ids"] = tuple(self._active_track_selector.bindings.get(index) for index in range(len(setup_tables)))
-                live = self._active_track_selector.current_poses()
-                updates["tracked_table_poses"] = tuple(PoseSpec(live[index].x_cm, live[index].y_cm, live[index].rotation_deg) if index in live else None for index in range(len(setup_tables)))
-            else:
+            elif getattr(self._active_track_selector, "trial_id", None) not in (None, trial_id):
+                # A restored hand-off belongs to a different trial. Remove it
+                # before normal TRACKING can accidentally route that stale ID.
                 self._active_track_selector.disable()
             updates["active_track_id"] = (
-                active_track_match.track.track_id if active_track_match is not None else None
+                active_track_match.track.track_id if active_track_match is not None
+                else (self._active_track_selector.bindings.get(0) if self.state.mode != StudyMode.STUDY else None)
             )
         extra: dict[str, Any] = {"trial_notes": trial.notes}
         if self._active_track_selector is not None:
@@ -293,8 +284,7 @@ class StudyStateController:
         live = self._active_track_selector.current_poses()
         updated = replace(self.state,
             active_track_id=self._active_track_selector.bindings.get(0),
-            tracked_table_ids=tuple(self._active_track_selector.bindings.get(index) for index in range(len(self.state.setup_table_poses))),
-            tracked_table_poses=tuple(PoseSpec(live[index].x_cm, live[index].y_cm, live[index].rotation_deg) if index in live else None for index in range(len(self.state.setup_table_poses))))
+        )
         match = matches.get(0)
         event_type = "setup_tracks_bound" if len(self._active_track_selector.bindings) == len(self.state.setup_table_poses) else "setup_tracks_unresolved"
         extra = _active_track_match_event_fields(match) | {"study_table_bindings": dict(self._active_track_selector.bindings)}
@@ -329,12 +319,6 @@ class StudyStateController:
     def record_active_pose(self) -> bool:
         if self.state.phase != StudyPhase.ACTIVE:
             return False
-        if self._active_track_selector is not None:
-            live = self._active_track_selector.current_poses()
-            updated = replace(self.state, tracked_table_poses=tuple(
-                PoseSpec(live[index].x_cm, live[index].y_cm, live[index].rotation_deg) if index in live else None
-                for index in range(len(self.state.setup_table_poses))))
-            self._update(updated)
         self._log_event("active_pose_sample")
         return True
 

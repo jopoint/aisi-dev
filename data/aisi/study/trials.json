@@ -1,80 +1,83 @@
 {
   "schema_version": 1,
+  "version": "pilot_v1",
+  "status": "frozen_for_pilot",
+  "description": "Physically validated pilot geometry for AISI dual-surface study",
   "trials": [
     {
       "task_id": "T1", "variant": "A",
-      "source_pose": {"x_cm": 371.0, "y_cm": 220.0, "rotation_deg": 90.0},
-      "target_pose": {"x_cm": 100.5, "y_cm": 220.0, "rotation_deg": 90.0},
-      "participant_start_positions": [{"id": "P1", "x_cm": 234.5, "y_cm": 53.5, "radius_cm": 40}],
+      "source_pose": {"x_cm": 410.5, "y_cm": 206.5, "rotation_deg": -90.0},
+      "target_pose": {"x_cm": 77.5, "y_cm": 207.0, "rotation_deg": -90.0},
+      "participant_start_positions": [{"id": "P1", "x_cm": 250.0, "y_cm": 52.0, "radius_cm": 40}],
       "notes": "Simple translation baseline with no rotation; single active table."
     },
     {
       "task_id": "T1", "variant": "B",
-      "source_pose": {"x_cm": 129.0, "y_cm": 220.0, "rotation_deg": 90.0},
-      "target_pose": {"x_cm": 399.5, "y_cm": 220.0, "rotation_deg": 90.0},
-      "participant_start_positions": [{"id": "P1", "x_cm": 265.5, "y_cm": 53.5, "radius_cm": 40}],
+      "source_pose": {"x_cm": 220.0, "y_cm": 371.0, "rotation_deg": 0.0},
+      "target_pose": {"x_cm": 220.0, "y_cm": 100.5, "rotation_deg": 0.0},
+      "participant_start_positions": [{"id": "P1", "x_cm": 53.5, "y_cm": 234.5, "radius_cm": 40}],
       "notes": "Mirror of T1A; single active table."
     },
     {
       "task_id": "T2", "variant": "A",
-      "source_pose": {"x_cm": 100.5, "y_cm": 220.0, "rotation_deg": 90.0},
-      "target_pose": {"x_cm": 397.0, "y_cm": 411.0, "rotation_deg": -25.0},
-      "participant_start_positions": [{"id": "P1", "x_cm": 234.5, "y_cm": 53.5, "radius_cm": 40}],
+      "source_pose": {"x_cm": 77.5, "y_cm": 207.0, "rotation_deg": -90.0},
+      "target_pose": {"x_cm": 364.5, "y_cm": 292.5, "rotation_deg": -50.0},
+      "participant_start_positions": [{"id": "P1", "x_cm": 250.0, "y_cm": 52.0, "radius_cm": 40}],
       "notes": "Translation with clear rotation; T1A target is this source pose."
     },
     {
       "task_id": "T2", "variant": "B",
-      "source_pose": {"x_cm": 399.5, "y_cm": 220.0, "rotation_deg": 90.0},
-      "target_pose": {"x_cm": 103.0, "y_cm": 411.0, "rotation_deg": 25.0},
-      "participant_start_positions": [{"id": "P1", "x_cm": 265.5, "y_cm": 53.5, "radius_cm": 40}],
+      "source_pose": {"x_cm": 220.0, "y_cm": 100.5, "rotation_deg": 0.0},
+      "target_pose": {"x_cm": 411.0, "y_cm": 397.0, "rotation_deg": -65.0},
+      "participant_start_positions": [{"id": "P1", "x_cm": 53.5, "y_cm": 234.5, "radius_cm": 40}],
       "notes": "Mirror of T2A; T1B target is this source pose."
     },
     {
       "task_id": "T3", "variant": "A",
-      "source_pose": {"x_cm": 113.0, "y_cm": 432.5, "rotation_deg": -5.0},
-      "target_pose": {"x_cm": 282.5, "y_cm": 181.0, "rotation_deg": 65.0},
+      "source_pose": {"x_cm": 380.0, "y_cm": 105.9, "rotation_deg": 15.0},
+      "target_pose": {"x_cm": 96.0, "y_cm": 383.0, "rotation_deg": -60.0},
       "distractor_tables": [
-        {"x_cm": 92.5, "y_cm": 273.0, "rotation_deg": -95.0},
-        {"x_cm": 386.0, "y_cm": 132.0, "rotation_deg": 80.0},
-        {"x_cm": 397.0, "y_cm": 411.0, "rotation_deg": -25.0}
+        {"x_cm": 364.5, "y_cm": 292.5, "rotation_deg": -50.0},
+        {"x_cm": 99.0, "y_cm": 94.5, "rotation_deg": -40.0},
+        {"x_cm": 120.0, "y_cm": 203.5, "rotation_deg": -30.0}
       ],
-      "participant_start_positions": [{"id": "P1", "x_cm": 234.5, "y_cm": 53.5, "radius_cm": 40}],
+      "participant_start_positions": [{"id": "P1", "x_cm": 250.0, "y_cm": 52.0, "radius_cm": 40}],
       "notes": "Long translation and substantial rotation in a cluttered four-table configuration."
     },
     {
       "task_id": "T3", "variant": "B",
-      "source_pose": {"x_cm": 387.0, "y_cm": 432.5, "rotation_deg": 5.0},
-      "target_pose": {"x_cm": 217.5, "y_cm": 181.0, "rotation_deg": -65.0},
+      "source_pose": {"x_cm": 432.5, "y_cm": 113.0, "rotation_deg": -85.0},
+      "target_pose": {"x_cm": 181.0, "y_cm": 282.5, "rotation_deg": -155.0},
       "distractor_tables": [
-        {"x_cm": 407.5, "y_cm": 273.0, "rotation_deg": -85.0},
-        {"x_cm": 114.0, "y_cm": 132.0, "rotation_deg": -80.0},
-        {"x_cm": 103.0, "y_cm": 411.0, "rotation_deg": 25.0}
+        {"x_cm": 273.0, "y_cm": 92.5, "rotation_deg": -175.0},
+        {"x_cm": 132.0, "y_cm": 386.0, "rotation_deg": -170.0},
+        {"x_cm": 411.0, "y_cm": 397.0, "rotation_deg": -65.0}
       ],
-      "participant_start_positions": [{"id": "P1", "x_cm": 265.5, "y_cm": 53.5, "radius_cm": 40}],
+      "participant_start_positions": [{"id": "P1", "x_cm": 53.5, "y_cm": 234.5, "radius_cm": 40}],
       "notes": "Mirror of T3A; cluttered four-table configuration."
     },
     {
       "task_id": "T4", "variant": "A",
-      "source_pose": {"x_cm": 386.0, "y_cm": 132.0, "rotation_deg": 80.0},
-      "target_pose": {"x_cm": 207.5, "y_cm": 264.5, "rotation_deg": 75.0},
+      "source_pose": {"x_cm": 99.0, "y_cm": 94.5, "rotation_deg": -40.0},
+      "target_pose": {"x_cm": 401.5, "y_cm": 390.9, "rotation_deg": -45.0},
       "distractor_tables": [
-        {"x_cm": 92.5, "y_cm": 273.0, "rotation_deg": -95.0},
-        {"x_cm": 397.0, "y_cm": 411.0, "rotation_deg": -25.0},
-        {"x_cm": 282.5, "y_cm": 181.0, "rotation_deg": 65.0}
+        {"x_cm": 363.5, "y_cm": 288.0, "rotation_deg": -50.0},
+        {"x_cm": 120.0, "y_cm": 203.5, "rotation_deg": -30.0},
+        {"x_cm": 96.0, "y_cm": 383.0, "rotation_deg": -60.0}
       ],
-      "participant_start_positions": [{"id": "P1", "x_cm": 234.5, "y_cm": 53.5, "radius_cm": 40}],
+      "participant_start_positions": [{"id": "P1", "x_cm": 250.0, "y_cm": 52.0, "radius_cm": 40}],
       "notes": "High-complexity clutter task with small active-table rotation; T3A target is static setup table 3."
     },
     {
       "task_id": "T4", "variant": "B",
-      "source_pose": {"x_cm": 114.0, "y_cm": 132.0, "rotation_deg": -80.0},
-      "target_pose": {"x_cm": 292.5, "y_cm": 264.5, "rotation_deg": -75.0},
+      "source_pose": {"x_cm": 132.0, "y_cm": 386.0, "rotation_deg": -170.0},
+      "target_pose": {"x_cm": 264.5, "y_cm": 207.5, "rotation_deg": -165.0},
       "distractor_tables": [
-        {"x_cm": 407.5, "y_cm": 273.0, "rotation_deg": -85.0},
-        {"x_cm": 103.0, "y_cm": 411.0, "rotation_deg": 25.0},
-        {"x_cm": 217.5, "y_cm": 181.0, "rotation_deg": -65.0}
+        {"x_cm": 273.0, "y_cm": 92.5, "rotation_deg": -175.0},
+        {"x_cm": 411.0, "y_cm": 397.0, "rotation_deg": -65.0},
+        {"x_cm": 181.0, "y_cm": 282.5, "rotation_deg": -155.0}
       ],
-      "participant_start_positions": [{"id": "P1", "x_cm": 265.5, "y_cm": 53.5, "radius_cm": 40}],
+      "participant_start_positions": [{"id": "P1", "x_cm": 53.5, "y_cm": 234.5, "radius_cm": 40}],
       "notes": "Mirror of T4A; T3B target is static setup table 3."
     }
   ]

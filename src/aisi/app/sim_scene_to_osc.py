@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from aisi.app.sim_layout_rules import compute_target_layout
-from aisi.app.study_tracking import StudyActiveTrackBindingStore
+from aisi.app.study_tracking import StudyActiveTrackBindingStore, StudyTableTrackBindingStore
 from aisi.core.table_geometry import TABLE_TYPE_IDS, TABLE_TYPE_NAMES
 
 try:
@@ -90,6 +90,11 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=DEFAULT_INTERVAL_SECONDS,
         help="Send interval in seconds (default: 0.05).",
+    )
+    parser.add_argument(
+        "--study-table-tracks-binding",
+        type=Path,
+        help="Optional Study setup-index -> live-track registry published as /study/tracked_table/*.",
     )
     parser.add_argument(
         "--tracking-only",
@@ -398,6 +403,57 @@ def send_tables(client: SimpleUDPClient, tables: list[dict[str, Any]], targets: 
     return summaries
 
 
+def send_study_tracked_tables(
+    client: SimpleUDPClient,
+    scene: dict[str, Any],
+    bindings: dict[int, str],
+) -> None:
+    """Publish current live poses for the latched Study setup-index bindings.
+
+    This deliberately resolves IDs in *this* scene on every sender loop. A
+    vanished ID remains unavailable at its stable setup index; it is never
+    substituted with a different visible table.
+    """
+    tables = scene.get("tables", [])
+    tracks = {
+        str(table.get("id")): table for table in tables
+        if isinstance(table, dict) and str(table.get("id", "")).strip()
+    } if isinstance(tables, list) else {}
+    count = max(bindings, default=-1) + 1
+    client.send_message("/study/tracked_table/count", count)
+    for index in range(count):
+        table = tracks.get(bindings.get(index, ""))
+        available = table is not None
+        client.send_message(f"/study/tracked_table/{index}/available", int(available))
+        client.send_message(f"/study/tracked_table/{index}/x", float(table.get("x_cm", 0.0)) if table else 0.0)
+        client.send_message(f"/study/tracked_table/{index}/y", float(table.get("y_cm", 0.0)) if table else 0.0)
+        client.send_message(f"/study/tracked_table/{index}/rot", float(table.get("rotation_deg", 0.0)) if table else 0.0)
+
+
+def send_live_rect_tables(client: SimpleUDPClient, scene: dict[str, Any]) -> None:
+    """Publish every currently confirmed Rect track for physical-occupancy masks.
+
+    This stream is intentionally independent of Study trial bindings: masks
+    represent only tables physically present in the current vision scene.
+    Track ID sorting makes per-frame slots deterministic without changing the
+    vision tracker or the legacy ``/table/0`` contract.
+    """
+    tables = scene.get("tables", [])
+    rects = sorted(
+        (
+            table for table in tables
+            if isinstance(table, dict) and str(table.get("type", "")).strip().lower() == "rect"
+        ),
+        key=lambda table: str(table.get("id", "")),
+    ) if isinstance(tables, list) else []
+    client.send_message("/vision/table/count", len(rects))
+    for index, table in enumerate(rects):
+        client.send_message(f"/vision/table/{index}/available", 1)
+        client.send_message(f"/vision/table/{index}/x", float(table.get("x_cm", 0.0)))
+        client.send_message(f"/vision/table/{index}/y", float(table.get("y_cm", 0.0)))
+        client.send_message(f"/vision/table/{index}/rot", float(table.get("rotation_deg", 0.0)))
+
+
 def send_persons(client: SimpleUDPClient, persons: list[dict[str, Any]], show_persons: bool) -> None:
     """Send all persons via OSC and hide them by radius when needed."""
     for index, person in enumerate(persons):
@@ -519,6 +575,12 @@ def main() -> None:
         StudyActiveTrackBindingStore(args.study_active_binding)
         if args.study_active_binding is not None else None
     )
+    study_table_tracks_binding = (
+        StudyTableTrackBindingStore(
+            args.study_table_tracks_binding,
+            StudyActiveTrackBindingStore(args.study_active_binding or args.study_table_tracks_binding.parent / "study_active_track.json"),
+        ) if args.study_table_tracks_binding is not None else None
+    )
 
     try:
         while not stop_event.is_set():
@@ -572,6 +634,9 @@ def main() -> None:
             binding_present, active_track_id = (
                 study_active_binding.read() if study_active_binding is not None else (False, None)
             )
+            _, _, study_bindings = (
+                study_table_tracks_binding.read() if study_table_tracks_binding is not None else (False, None, {})
+            )
             tables, persons, chairs, targets, tracking_rejection = prepare_scene_output(
                 scene,
                 layout_mode,
@@ -593,6 +658,8 @@ def main() -> None:
             client.send_message("/person/count", len(persons))
             client.send_message("/chair/count", len(chairs))
             summaries = send_tables(client, tables, targets)
+            send_study_tracked_tables(client, scene, study_bindings)
+            send_live_rect_tables(client, scene)
             send_persons(client, persons, show_persons)
             send_chairs(client, chairs, show_chairs)
             now = time.monotonic()

@@ -1,9 +1,9 @@
-"""Create Study-owned setup-table masks without changing mask routing.
+"""Create live physical-occupancy table masks without changing mask routing.
 
 The active manual project already renders a filled table surface into the
 shared table-mask TOP.  This helper adds only the variable HOME setup-table
-instances to that same Render TOP's Geometry list. Each instance switches
-between its nominal HOME pose and its bound live ACTIVE pose.
+instances to that same Render TOP's Geometry list. Each instance is driven
+only by the live ``/vision/table/*`` occupancy stream.
 """
 
 from __future__ import annotations
@@ -30,35 +30,25 @@ def _td_symbol(name: str):
 
 
 def _setup_mask_transform_expressions(osc_path: str, index: int) -> tuple[str, str, str]:
-    """Return safe nominal-HOME/live-ACTIVE mirrored transform expressions."""
+    """Return safe mirrored transforms for one live occupancy-table slot."""
 
     raw = repr(osc_path)
-    setup = f"study/setup_table/{index}"
-    tracked = f"study/tracked_table/{index}"
-    channel = (
-        f"(raw['{tracked}/%s'] if raw is not None and raw['study/phase'] is not None "
-        f"and raw['study/phase'].eval() == 2 and raw['{tracked}/%s'] is not None "
-        f"else raw['{setup}/%s'] if raw is not None and raw['{setup}/%s'] is not None else None)"
-    )
+    channel = f"raw['vision/table/{index}/%s'] if raw is not None and raw['vision/table/{index}/%s'] is not None else None"
     return (
-        f"(lambda raw: (lambda channel: ((250.0 - channel.eval()) * {TD_UNITS_PER_CM}) if channel is not None else 0.0)({channel % ('x', 'x', 'x', 'x')}))(op({raw}))",
-        f"(lambda raw: (lambda channel: ((channel.eval() - 250.0) * {TD_UNITS_PER_CM}) if channel is not None else 0.0)({channel % ('y', 'y', 'y', 'y')}))(op({raw}))",
-        f"(lambda raw: (lambda channel: (-(channel.eval())) if channel is not None else 0.0)({channel % ('rot', 'rot', 'rot', 'rot')}))(op({raw}))",
+        f"(lambda raw: (lambda channel: ((250.0 - channel.eval()) * {TD_UNITS_PER_CM}) if channel is not None else 0.0)({channel % ('x', 'x')}))(op({raw}))",
+        f"(lambda raw: (lambda channel: ((channel.eval() - 250.0) * {TD_UNITS_PER_CM}) if channel is not None else 0.0)({channel % ('y', 'y')}))(op({raw}))",
+        f"(lambda raw: (lambda channel: (-(channel.eval())) if channel is not None else 0.0)({channel % ('rot', 'rot')}))(op({raw}))",
     )
 
 
 def _setup_mask_visibility_expression(osc_path: str, index: int) -> str:
-    """Return safe HOME/READY nominal and ACTIVE live-count/availability gate."""
+    """Return safe live occupancy count/availability gate."""
 
     raw = repr(osc_path)
     return (
-        "(lambda raw: float(raw is not None and raw['study/mode'] is not None and "
-        "raw['study/mode'].eval() == 1 and raw['study/phase'] is not None and ("
-        "(raw['study/phase'].eval() in (0, 1) and raw['study/setup_table_count'] is not None "
-        f"and raw['study/setup_table_count'].eval() > {index}) or "
-        "(raw['study/phase'].eval() == 2 and raw['study/tracked_table/count'] is not None "
-        f"and raw['study/tracked_table/count'].eval() > {index} and raw['study/tracked_table/{index}/available'] is not None "
-        f"and raw['study/tracked_table/{index}/available'].eval() == 1))))(op({raw}))"
+        "(lambda raw: float(raw is not None and raw['vision/table/count'] is not None "
+        f"and raw['vision/table/count'].eval() > {index} and raw['vision/table/{index}/available'] is not None "
+        f"and raw['vision/table/{index}/available'].eval() == 1))(op({raw}))"
     )
 
 
@@ -144,17 +134,12 @@ def study_setup_mask_render_geometry_expression(
     study_component_path: str = DEFAULT_STUDY_COMPONENT_PATH,
     tracking_mask_geometry_path: str = DEFAULT_TRACKING_MASK_GEOMETRY_PATH,
 ) -> str:
-    """Return the Study/all-mask vs ordinary tracking-mask Geometry expression."""
+    """Return the fixed Geometry list for all six live occupancy masks."""
 
     home_mask_geometries = " ".join(
         f"{study_component_path}/{name}" for name in setup_mask_geometry_names()
     )
-    raw = repr(osc_path)
-    return (
-        "(lambda raw: %r if raw is not None and raw['study/mode'] is not None "
-        "and raw['study/mode'].eval() == 1 else %r)(op(%s))"
-        % (home_mask_geometries, tracking_mask_geometry_path, raw)
-    )
+    return home_mask_geometries
 
 
 def configure_study_setup_mask_render(
@@ -164,14 +149,15 @@ def configure_study_setup_mask_render(
     study_component_path: str = DEFAULT_STUDY_COMPONENT_PATH,
     tracking_mask_geometry_path: str = DEFAULT_TRACKING_MASK_GEOMETRY_PATH,
 ):
-    """Patch only the shared mask Render TOP Geometry expression."""
+    """Patch only the shared mask Render TOP's fixed Geometry list."""
 
     render = _td_symbol("op")(render_path)
     if render is None:
         raise ValueError(f"Mask Render TOP not found: {render_path}")
     if not hasattr(render.par, "geometry"):
         raise ValueError(f"{render.path} is missing Render TOP parameter: geometry")
-    render.par.geometry.expr = study_setup_mask_render_geometry_expression(
+    render.par.geometry.expr = ""
+    render.par.geometry = study_setup_mask_render_geometry_expression(
         osc_path=osc_path,
         study_component_path=study_component_path,
         tracking_mask_geometry_path=tracking_mask_geometry_path,

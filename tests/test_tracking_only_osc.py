@@ -6,6 +6,8 @@ from unittest.mock import patch
 from aisi.app.sim_scene_to_osc import (
     TrackingOnlyRotationUnwrapper,
     prepare_scene_output,
+    send_live_rect_tables,
+    send_study_tracked_tables,
     send_tables,
     source_pose_targets,
 )
@@ -32,6 +34,61 @@ def _rect_table(rotation_deg: float) -> dict:
 
 
 class TrackingOnlyOscTests(unittest.TestCase):
+    def test_live_rect_mask_stream_is_binding_independent_and_sorted_by_track_id(self) -> None:
+        client = _RecordingOscClient()
+        scene = {"tables": [
+            {"id": "table_03", "type": "rect", "x_cm": 30, "y_cm": 31, "rotation_deg": 32},
+            {"id": "ignore", "type": "sprint", "x_cm": 99, "y_cm": 99, "rotation_deg": 99},
+            {"id": "table_01", "type": "rect", "x_cm": 10, "y_cm": 11, "rotation_deg": 12},
+            {"id": "table_02", "type": "rect", "x_cm": 20, "y_cm": 21, "rotation_deg": 22},
+        ]}
+        send_live_rect_tables(client, scene)
+        sent = dict(client.messages)
+        self.assertEqual(sent["/vision/table/count"], 3)
+        self.assertEqual((sent["/vision/table/0/x"], sent["/vision/table/1/x"], sent["/vision/table/2/x"]), (10.0, 20.0, 30.0))
+
+    def test_live_rect_mask_stream_uses_current_scene_and_count_drops_on_disappearance(self) -> None:
+        client = _RecordingOscClient()
+        send_live_rect_tables(client, {"tables": [{"id": "table_00", "type": "rect", "x_cm": 10, "y_cm": 20, "rotation_deg": 30}]})
+        send_live_rect_tables(client, {"tables": [{"id": "table_00", "type": "rect", "x_cm": 110, "y_cm": 120, "rotation_deg": 130}]})
+        latest = dict(client.messages[-5:])
+        self.assertEqual(latest["/vision/table/0/x"], 110.0)
+        send_live_rect_tables(client, {"tables": []})
+        self.assertEqual(client.messages[-1], ("/vision/table/count", 0))
+
+    def test_study_bound_tracks_publish_current_poses_at_stable_setup_indices(self) -> None:
+        client = _RecordingOscClient()
+        scene = {"tables": [
+            {"id": "table_03", "x_cm": 30, "y_cm": 31, "rotation_deg": 32},
+            {"id": "table_01", "x_cm": 10, "y_cm": 11, "rotation_deg": 12},
+            {"id": "table_02", "x_cm": 20, "y_cm": 21, "rotation_deg": 22},
+        ]}
+        send_study_tracked_tables(client, scene, {0: "table_02", 1: "table_01", 2: "table_03", 3: "table_missing"})
+        sent = dict(client.messages)
+        self.assertEqual(sent["/study/tracked_table/count"], 4)
+        self.assertEqual((sent["/study/tracked_table/0/available"], sent["/study/tracked_table/0/x"]), (1, 20.0))
+        self.assertEqual((sent["/study/tracked_table/1/available"], sent["/study/tracked_table/1/x"]), (1, 10.0))
+        self.assertEqual((sent["/study/tracked_table/3/available"], sent["/study/tracked_table/3/x"]), (0, 0.0))
+
+    def test_study_bound_track_uses_newest_scene_pose_without_substitution(self) -> None:
+        client = _RecordingOscClient()
+        bindings = {0: "table_02"}
+        send_study_tracked_tables(client, {"tables": [{"id": "table_02", "x_cm": 100, "y_cm": 200, "rotation_deg": 30}]}, bindings)
+        send_study_tracked_tables(client, {"tables": [{"id": "table_99", "x_cm": 1, "y_cm": 2, "rotation_deg": 3}]}, bindings)
+        latest = dict(client.messages[-5:])
+        self.assertEqual(latest["/study/tracked_table/0/available"], 0)
+        self.assertEqual(latest["/study/tracked_table/0/x"], 0.0)
+
+    def test_bound_index_zero_matches_the_current_tracking_only_table_zero_pose(self) -> None:
+        client = _RecordingOscClient()
+        table = {"id": "table_02", "x_cm": 123, "y_cm": 234, "rotation_deg": 45, "type": "rect"}
+        send_tables(client, [table], source_pose_targets([table]))
+        send_study_tracked_tables(client, {"tables": [table]}, {0: "table_02"})
+        sent = dict(client.messages)
+        self.assertEqual(sent["/table/0/source_x"], sent["/study/tracked_table/0/x"])
+        self.assertEqual(sent["/table/0/source_y"], sent["/study/tracked_table/0/y"])
+        self.assertEqual(-sent["/table/0/source_rot"], sent["/study/tracked_table/0/rot"])
+
     def test_unwraps_positive_to_negative_boundary(self) -> None:
         unwrapper = TrackingOnlyRotationUnwrapper()
         tables = [unwrapper.unwrap_tables([_rect_table(rotation)]) for rotation in (178.0, 179.0, -179.0, -178.0)]

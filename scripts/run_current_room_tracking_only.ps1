@@ -48,7 +48,8 @@ if (-not [string]::IsNullOrWhiteSpace($TablePoseLatencyDebugJsonl)) {
     $VisionCommand += " -TablePoseLatencyDebugJsonl '$TablePoseLatencyDebugJsonl'"
 }
 $AdapterCommand = "& '$AisiPython' -m aisi.app.vision_live_to_aisi_scene --input '$VisionInput' --output '$VisionScene' --poll-seconds 0.01"
-$OscCommand = "& '$AisiPython' -m aisi.app.sim_scene_to_osc --scene '$VisionScene' --tracking-only --tracking-table-id table_00 --study-active-binding '$StudyActiveTrackBinding' --host 127.0.0.1 --port 9000 --interval 0.01"
+$StudyTableTracksBinding = Join-Path $RepositoryRoot 'data\aisi\state\study_table_tracks.json'
+$OscCommand = "& '$AisiPython' -m aisi.app.sim_scene_to_osc --scene '$VisionScene' --tracking-only --tracking-table-id table_00 --study-active-binding '$StudyActiveTrackBinding' --study-table-tracks-binding '$StudyTableTracksBinding' --host 127.0.0.1 --port 9000 --interval 0.01"
 
 Write-Host "Current-room tracking-only mode: Rect table table_00 -> OSC 9000"
 Write-Host "  Vision FrameEvents: $VisionInput"

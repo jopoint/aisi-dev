@@ -62,6 +62,38 @@ class StudyTrackingTests(unittest.TestCase):
             self.assertIsNotNone(match)
             self.assertEqual(match.track.track_id, "table_00")
 
+    def test_single_setup_binds_the_only_visible_rect_outside_xy_and_rotation_gates(self) -> None:
+        setup = (PoseSpec(371.0, 220.0, 90.0),)
+        self._write_scene([_track("table_07", 283.0, 246.0, -147.0)])
+        registry = StudyTableTrackBindingStore(self.scene_path.parent / "study_table_tracks.json", self.binding_store)
+        selector = StudyTableTrackSelector(self.scene_path, registry)
+        selector.resolve_setup("T1A", setup)
+        self.assertEqual(selector.bindings, {0: "table_07"})
+
+    def test_single_setup_with_zero_tracks_is_unresolved_and_multiple_tracks_remain_gated(self) -> None:
+        registry = StudyTableTrackBindingStore(self.scene_path.parent / "study_table_tracks.json", self.binding_store)
+        selector = StudyTableTrackSelector(self.scene_path, registry)
+        setup = (PoseSpec(100.0, 100.0, 0.0),)
+        self._write_scene([])
+        selector.resolve_setup("T1A", setup)
+        self.assertEqual(selector.bindings, {})
+        self._write_scene([_track("far_a", 300.0, 300.0, 90.0), _track("far_b", 350.0, 350.0, 45.0)])
+        selector.resolve_setup("T1A", setup)
+        self.assertEqual(selector.bindings, {})
+
+    def test_home_rebinds_single_table_after_its_tracker_id_is_recreated(self) -> None:
+        setup = PoseSpec(371.0, 220.0, 90.0)
+        registry = StudyTableTrackBindingStore(self.scene_path.parent / "study_table_tracks.json", self.binding_store)
+        selector = StudyTableTrackSelector(self.scene_path, registry)
+        self._write_scene([_track("table_00", 371.0, 220.0, 90.0)])
+        controller = StudyStateController(StudyStatePublisher(_RecordingClient()), StudyState(mode=StudyMode.STUDY), active_track_selector=selector)
+        controller.apply_trial(TrialSpec(StudyTask.T1, StudyVariant.A, 0, 0, 0, source_pose=setup))
+        self.assertEqual(selector.bindings, {0: "table_00"})
+        self._write_scene([_track("table_08", 280.0, 246.0, -147.0)])
+        controller.home()
+        self.assertEqual(selector.bindings, {0: "table_08"})
+        self.assertTrue(controller.start_trial())
+
     def test_t3_and_t4_sources_select_the_correct_track_from_four_tables(self) -> None:
         self._write_scene([
             _track("table_00", 113.0, 432.5, -5.0),
@@ -205,9 +237,7 @@ class StudyTrackingTests(unittest.TestCase):
         self.assertTrue(controller.start_trial())
         self._write_scene([_track("table_02", 120, 430, 175), _track("table_00", 92.5, 273, 85), _track("table_03", 386, 132, -100), _track("table_01", 397, 411, 155)])
         controller.record_active_pose()
-        self.assertEqual(controller.state.tracked_table_poses[0], PoseSpec(120.0, 430.0, 175.0))
-        self.assertIn(("/study/tracked_table/count", 4), controller.state.osc_messages())
-        self.assertIn(("/study/tracked_table/0/x", 120.0), controller.state.osc_messages())
+        self.assertEqual(selector.current_poses()[0].x_cm, 120.0)
 
     def test_start_blocks_until_every_setup_table_is_bound_then_latches_mapping(self) -> None:
         registry = StudyTableTrackBindingStore(self.scene_path.parent / "study_table_tracks.json", self.binding_store)
@@ -260,6 +290,36 @@ class StudyTrackingTests(unittest.TestCase):
         self.assertTrue(denied)
         self.assertEqual(registry.read(), (True, "T3A", {0: "table_02", 1: "table_01"}))
         self.assertEqual(self.binding_store.read(), (True, "table_02"))
+
+    def test_controller_startup_preserves_registry_until_study_lifecycle_owns_it(self) -> None:
+        registry = StudyTableTrackBindingStore(self.scene_path.parent / "study_table_tracks.json", self.binding_store)
+        registry.write("T1A", {0: "table_02", 1: "table_01"})
+        selector = StudyTableTrackSelector(self.scene_path, registry)
+        controller = StudyStateController(StudyStatePublisher(_RecordingClient()), active_track_selector=selector)
+        self.assertEqual(selector.bindings, {0: "table_02", 1: "table_01"})
+        # Applying UI's default selection while still TRACKING must not delete
+        # a valid hand-off merely because the default mode is not STUDY.
+        controller.apply_trial(TrialSpec(StudyTask.T1, StudyVariant.A, 1, 2, 3, source_pose=PoseSpec(4, 5, 6)))
+        self.assertEqual(registry.read(), (True, "T1A", {0: "table_02", 1: "table_01"}))
+
+    def test_enter_study_home_replaces_registry_for_current_trial_and_complete_keeps_it(self) -> None:
+        registry = StudyTableTrackBindingStore(self.scene_path.parent / "study_table_tracks.json", self.binding_store)
+        selector = StudyTableTrackSelector(self.scene_path, registry)
+        setup = (PoseSpec(100, 100, 0), PoseSpec(300, 300, 90))
+        self._write_scene([_track("table_02", 100, 100, 0)])
+        controller = StudyStateController(StudyStatePublisher(_RecordingClient()), StudyState(), active_track_selector=selector)
+        controller.apply_trial(TrialSpec(StudyTask.T4, StudyVariant.A, 0, 0, 0, source_pose=setup[0], distractor_tables=(setup[1],)))
+        self.assertFalse(registry.path.exists())
+        controller.set_mode(StudyMode.STUDY)
+        self.assertEqual(registry.read(), (True, "T4A", {0: "table_02"}))
+        self._write_scene([_track("table_02", 100, 100, 0), _track("table_01", 300, 300, -90)])
+        controller.home()
+        self.assertEqual(registry.read(), (True, "T4A", {0: "table_02", 1: "table_01"}))
+        self.assertTrue(controller.start_trial())
+        controller.complete_trial()
+        self.assertTrue(registry.path.exists())
+        controller.set_mode(StudyMode.TRACKING)
+        self.assertFalse(registry.path.exists())
 
 
 if __name__ == "__main__":

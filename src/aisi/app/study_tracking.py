@@ -239,6 +239,18 @@ def select_study_setup_tracks(
     and safer than independent greedy matching: it maximizes bindings first,
     then minimizes the existing deterministic score, and never reuses an ID.
     """
+    # A single physical Rect has no identity ambiguity. During T1/T2 HOME it
+    # may begin anywhere in the ROI, so bind it without making the global
+    # proximity/yaw gates weaker for every other situation.
+    if len(setup_poses) == 1 and len(tracks) == 1:
+        track, pose = tracks[0], setup_poses[0]
+        xy_distance = math.hypot(track.x_cm - pose.x_cm, track.y_cm - pose.y_cm)
+        rotation_difference = rect_rotation_difference_deg(track.rotation_deg, pose.rotation_deg)
+        return {0: ActiveTrackMatch(
+            track, xy_distance, rotation_difference,
+            xy_distance + SOURCE_MATCH_ROTATION_WEIGHT_CM_PER_DEG * rotation_difference,
+        )}
+
     candidates = {
         index: [
             match for track in tracks
@@ -308,7 +320,7 @@ class StudyTableTrackSelector:
 
     def __init__(self, scene_path: str | Path, binding_store: StudyTableTrackBindingStore) -> None:
         self.scene_path = Path(scene_path); self.binding_store = binding_store
-        self.trial_id: str | None = None; self.bindings: dict[int, str] = {}
+        _present, self.trial_id, self.bindings = binding_store.read()
 
     def clear(self, trial_id: str | None = None) -> None:
         self.trial_id = trial_id; self.bindings = {}; self.binding_store.clear(trial_id)

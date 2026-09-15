@@ -83,15 +83,13 @@ class StudySetupMasksBuilderTests(unittest.TestCase):
         x_expr, y_expr, rz_expr = _setup_mask_transform_expressions(
             "/project1/comp_io/null_osc_raw", 4
         )
-        self.assertIn("study/setup_table/4/x", x_expr)
+        self.assertIn("vision/table/4/x", x_expr)
         self.assertIn("250.0 - channel.eval()", x_expr)
-        self.assertIn("study/setup_table/4/y", y_expr)
+        self.assertIn("vision/table/4/y", y_expr)
         self.assertIn("channel.eval() - 250.0", y_expr)
-        self.assertIn("study/setup_table/4/rot", rz_expr)
+        self.assertIn("vision/table/4/rot", rz_expr)
         self.assertIn("-(channel.eval())", rz_expr)
-        self.assertIn("study/tracked_table/4/x", x_expr)
-        self.assertIn("study/tracked_table/4/y", y_expr)
-        self.assertIn("study/tracked_table/4/rot", rz_expr)
+        self.assertNotIn("study/", x_expr + y_expr + rz_expr)
 
     def test_unused_setup_mask_channels_default_to_safe_zero_transforms(self) -> None:
         class MissingChannels:
@@ -103,26 +101,33 @@ class StudySetupMasksBuilderTests(unittest.TestCase):
         ):
             self.assertEqual(eval(expression, {"op": lambda _path: MissingChannels()}), 0.0)
 
-    def test_setup_mask_visibility_is_study_home_ready_and_count_gated(self) -> None:
-        expression = _setup_mask_visibility_expression("/project1/comp_io/null_osc_raw", 5)
-        self.assertIn("study/mode", expression)
-        self.assertIn("study/phase", expression)
-        self.assertIn("in (0, 1)", expression)
-        self.assertIn("study/setup_table_count", expression)
-        self.assertIn("> 5", expression)
-        self.assertIn("study/tracked_table/count", expression)
-        self.assertIn("study/tracked_table/5/available", expression)
+    def test_live_occupancy_pose_is_used_directly(self) -> None:
+        class Channel:
+            def __init__(self, value): self.value = value
+            def eval(self): return self.value
 
-    def test_mask_render_uses_all_study_setup_masks_for_all_study_phases(self) -> None:
+        class Raw:
+            def __init__(self, values): self.values = values
+            def __getitem__(self, name):
+                return Channel(self.values[name]) if name in self.values else None
+
+        expressions = _setup_mask_transform_expressions("/raw", 1)
+        live = {"vision/table/1/x": 300, "vision/table/1/y": 400, "vision/table/1/rot": -45}
+        self.assertEqual(tuple(round(eval(expr, {"op": lambda _path: Raw(live)}), 6) for expr in expressions), (-0.26, 0.78, 45))
+
+    def test_setup_mask_visibility_is_live_count_and_availability_gated(self) -> None:
+        expression = _setup_mask_visibility_expression("/project1/comp_io/null_osc_raw", 5)
+        self.assertIn("vision/table/count", expression)
+        self.assertIn("> 5", expression)
+        self.assertIn("vision/table/5/available", expression)
+        self.assertNotIn("study/", expression)
+
+    def test_mask_render_always_uses_all_live_setup_masks(self) -> None:
         expression = study_setup_mask_render_geometry_expression()
         for name in setup_mask_geometry_names():
             self.assertIn(f"/project1/comp_study_visualization/{name}", expression)
-        self.assertIn("study/mode", expression)
-        self.assertNotIn("study/phase", expression)
-
-    def test_mask_render_keeps_tracking_mask_for_active_and_non_study(self) -> None:
-        expression = study_setup_mask_render_geometry_expression()
-        self.assertIn("/project1/comp_tracking_only/rect_table_mask_geo", expression)
+        self.assertNotIn("study/mode", expression)
+        self.assertNotIn("rect_table_mask_geo", expression)
 
 
 if __name__ == "__main__":
