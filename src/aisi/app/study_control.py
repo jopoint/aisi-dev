@@ -11,7 +11,8 @@ from typing import Any, Protocol
 from aisi.app.study_logging import JsonlEventLogger, LiveSceneSourcePoseProvider, SourcePoseProvider
 from aisi.app.study_tracking import (
     StudyActiveTrackBindingStore,
-    StudyActiveTrackSelector,
+    StudyTableTrackBindingStore,
+    StudyTableTrackSelector,
 )
 from aisi.app.study_trials import (
     ParticipantStartSpec,
@@ -42,6 +43,7 @@ DEFAULT_TRIALS_PATH = PROJECT_ROOT / "data" / "aisi" / "study" / "trials.json"
 DEFAULT_LOG_DIRECTORY = PROJECT_ROOT / "data" / "aisi" / "study" / "logs"
 DEFAULT_SOURCE_SCENE_PATH = PROJECT_ROOT / "data" / "aisi" / "scenes" / "live" / "vision_live_scene.json"
 DEFAULT_ACTIVE_TRACK_BINDING_PATH = PROJECT_ROOT / "data" / "aisi" / "state" / "study_active_track.json"
+DEFAULT_TABLE_TRACKS_BINDING_PATH = PROJECT_ROOT / "data" / "aisi" / "state" / "study_table_tracks.json"
 ACTIVE_POSE_LOG_INTERVAL_MS = 100
 
 
@@ -82,6 +84,8 @@ class StudyState:
     setup_table_poses: tuple[PoseSpec, ...] = ()
     participant_start_positions: tuple[ParticipantStartSpec, ...] = ()
     active_track_id: str | None = None
+    tracked_table_ids: tuple[str | None, ...] = ()
+    tracked_table_poses: tuple[PoseSpec | None, ...] = ()
 
     def osc_messages(self) -> tuple[tuple[str, int | float], ...]:
         messages: list[tuple[str, int | float]] = [
@@ -99,6 +103,7 @@ class StudyState:
             ("/study/target_rot", self.target_rot),
             ("/study/setup_table_count", len(self.setup_table_poses)),
             ("/study/participant_start_count", len(self.participant_start_positions)),
+            ("/study/tracked_table/count", len(self.setup_table_poses)),
         ]
         for index, pose in enumerate(self.setup_table_poses):
             messages.extend((
@@ -112,6 +117,12 @@ class StudyState:
                 (f"/study/participant_start/{index}/y", marker.y_cm),
                 (f"/study/participant_start/{index}/radius", marker.radius_cm),
             ))
+        for index in range(len(self.setup_table_poses)):
+            pose = self.tracked_table_poses[index] if index < len(self.tracked_table_poses) else None
+            messages.extend(((f"/study/tracked_table/{index}/available", int(pose is not None)),
+                             (f"/study/tracked_table/{index}/x", 0.0 if pose is None else pose.x_cm),
+                             (f"/study/tracked_table/{index}/y", 0.0 if pose is None else pose.y_cm),
+                             (f"/study/tracked_table/{index}/rot", 0.0 if pose is None else pose.rotation_deg)))
         return tuple(messages)
 
 
@@ -149,7 +160,7 @@ def apply_selected_trial(
 class StudyStateController:
     """Own Study state, trial transitions, and non-blocking event logging."""
 
-    def __init__(self, publisher: StudyStatePublisher, state: StudyState | None = None, *, event_logger: EventLogger | None = None, source_pose_provider: SourcePoseProvider | None = None, active_track_selector: StudyActiveTrackSelector | None = None) -> None:
+    def __init__(self, publisher: StudyStatePublisher, state: StudyState | None = None, *, event_logger: EventLogger | None = None, source_pose_provider: SourcePoseProvider | None = None, active_track_selector: StudyTableTrackSelector | None = None) -> None:
         self._publisher = publisher
         self._event_logger = event_logger
         self._active_track_selector = active_track_selector
@@ -170,7 +181,7 @@ class StudyStateController:
         if not changed or self._active_track_selector is None:
             return changed
         if mode == StudyMode.STUDY:
-            self.resolve_active_track()
+            self.resolve_setup_tracks()
         else:
             self._active_track_selector.disable()
             self._update(replace(self.state, active_track_id=None))
@@ -190,9 +201,7 @@ class StudyStateController:
         # an unresolved binding here; never replace an already latched ID.
         resolved = False
         if self._active_track_selector is not None and self.state.mode == StudyMode.STUDY:
-            self._clear_unavailable_home_track()
-            if self.state.active_track_id is None:
-                resolved = self.resolve_active_track()
+            resolved = self.resolve_setup_tracks()
         return phase_changed or resolved
 
     def ready(self) -> bool:
@@ -202,12 +211,10 @@ class StudyStateController:
         if self.state.phase == StudyPhase.ACTIVE:
             return False
         if self._active_track_selector is not None:
-            self._clear_unavailable_home_track()
-            if self.state.active_track_id is None:
+            self.resolve_setup_tracks()
+            if len(self._active_track_selector.bindings) != len(self.state.setup_table_poses):
                 # The final HOME-position match avoids requiring the operator to
                 # click HOME again after moving the physical source table.
-                self.resolve_active_track()
-            if self.state.active_track_id is None:
                 return False
         self.trial_started_at_iso, self.trial_completed_at_iso = _utc_iso_now(), None
         return self._update(replace(self.state, phase=StudyPhase.ACTIVE), "trial_started", {"trial_started_at_iso": self.trial_started_at_iso})
@@ -254,7 +261,13 @@ class StudyStateController:
         active_track_match = None
         if self._active_track_selector is not None:
             if self.state.mode == StudyMode.STUDY and trial.source_pose is not None:
-                active_track_match = self._active_track_selector.resolve(trial.source_pose)
+                trial_id = f"{trial.task.name}{trial.variant.name}"
+                self._active_track_selector.clear(trial_id)
+                matches = self._active_track_selector.resolve_setup(trial_id, setup_tables)
+                active_track_match = matches.get(0)
+                updates["tracked_table_ids"] = tuple(self._active_track_selector.bindings.get(index) for index in range(len(setup_tables)))
+                live = self._active_track_selector.current_poses()
+                updates["tracked_table_poses"] = tuple(PoseSpec(live[index].x_cm, live[index].y_cm, live[index].rotation_deg) if index in live else None for index in range(len(setup_tables)))
             else:
                 self._active_track_selector.disable()
             updates["active_track_id"] = (
@@ -265,7 +278,7 @@ class StudyStateController:
             extra.update(_active_track_match_event_fields(active_track_match))
         return self._update(replace(self.state, **updates), "trial_loaded", extra)
 
-    def resolve_active_track(self) -> bool:
+    def resolve_setup_tracks(self) -> bool:
         """Resolve an unresolved HOME binding; never reselect during ACTIVE."""
 
         if self._active_track_selector is None:
@@ -273,17 +286,27 @@ class StudyStateController:
         if self.state.mode != StudyMode.STUDY:
             self._active_track_selector.disable()
             return self._update(replace(self.state, active_track_id=None))
-        if self.state.phase == StudyPhase.ACTIVE or self.state.active_track_id is not None:
+        if self.state.phase == StudyPhase.ACTIVE:
             return False
-        source_pose = PoseSpec(self.state.source_x, self.state.source_y, self.state.source_rot)
-        match = self._active_track_selector.resolve(source_pose)
-        updated = replace(self.state, active_track_id=match.track.track_id if match else None)
-        event_type = "active_track_bound" if match else "active_track_unresolved"
-        extra = _active_track_match_event_fields(match)
+        trial_id = f"{self.state.task.name}{self.state.variant.name}"
+        matches = self._active_track_selector.resolve_setup(trial_id, self.state.setup_table_poses)
+        live = self._active_track_selector.current_poses()
+        updated = replace(self.state,
+            active_track_id=self._active_track_selector.bindings.get(0),
+            tracked_table_ids=tuple(self._active_track_selector.bindings.get(index) for index in range(len(self.state.setup_table_poses))),
+            tracked_table_poses=tuple(PoseSpec(live[index].x_cm, live[index].y_cm, live[index].rotation_deg) if index in live else None for index in range(len(self.state.setup_table_poses))))
+        match = matches.get(0)
+        event_type = "setup_tracks_bound" if len(self._active_track_selector.bindings) == len(self.state.setup_table_poses) else "setup_tracks_unresolved"
+        extra = _active_track_match_event_fields(match) | {"study_table_bindings": dict(self._active_track_selector.bindings)}
         if updated == self.state:
             self._log_event(event_type, extra)
             return False
         return self._update(updated, event_type, extra)
+
+    # Compatibility name used by older integrations/tests; it now resolves the
+    # complete HOME setup atomically.
+    def resolve_active_track(self) -> bool:
+        return self.resolve_setup_tracks()
 
     def _clear_unavailable_home_track(self) -> bool:
         """Release a pre-ACTIVE binding only after its live ID has vanished."""
@@ -306,6 +329,12 @@ class StudyStateController:
     def record_active_pose(self) -> bool:
         if self.state.phase != StudyPhase.ACTIVE:
             return False
+        if self._active_track_selector is not None:
+            live = self._active_track_selector.current_poses()
+            updated = replace(self.state, tracked_table_poses=tuple(
+                PoseSpec(live[index].x_cm, live[index].y_cm, live[index].rotation_deg) if index in live else None
+                for index in range(len(self.state.setup_table_poses))))
+            self._update(updated)
         self._log_event("active_pose_sample")
         return True
 
@@ -421,7 +450,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--task", type=int, choices=[1, 2, 3, 4], default=1); parser.add_argument("--variant", type=int, choices=[0, 1], default=0); parser.add_argument("--target-overlap", type=int, choices=[0, 1], default=0)
     parser.add_argument("--target-x", type=float, default=DEFAULT_TARGET_X_CM); parser.add_argument("--target-y", type=float, default=DEFAULT_TARGET_Y_CM); parser.add_argument("--target-rot", type=float, default=DEFAULT_TARGET_ROT_DEG)
     parser.add_argument("--trials", type=Path, default=DEFAULT_TRIALS_PATH); parser.add_argument("--log-dir", type=Path, default=DEFAULT_LOG_DIRECTORY); parser.add_argument("--session-name")
-    parser.add_argument("--source-scene", type=Path, default=DEFAULT_SOURCE_SCENE_PATH); parser.add_argument("--source-table-id", default="table_00"); parser.add_argument("--active-track-binding", type=Path, default=DEFAULT_ACTIVE_TRACK_BINDING_PATH); parser.add_argument("--no-ui", action="store_true")
+    parser.add_argument("--source-scene", type=Path, default=DEFAULT_SOURCE_SCENE_PATH); parser.add_argument("--source-table-id", default="table_00"); parser.add_argument("--active-track-binding", type=Path, default=DEFAULT_ACTIVE_TRACK_BINDING_PATH); parser.add_argument("--table-tracks-binding", type=Path, default=DEFAULT_TABLE_TRACKS_BINDING_PATH); parser.add_argument("--no-ui", action="store_true")
     return parser.parse_args()
 
 
@@ -429,8 +458,9 @@ def main() -> None:
     args = parse_args()
     state = StudyState(mode=StudyMode(args.mode), condition=StudyCondition(args.condition), phase=StudyPhase(args.phase), task=StudyTask(args.task), variant=StudyVariant(args.variant), target_overlap=bool(args.target_overlap), target_x=args.target_x, target_y=args.target_y, target_rot=args.target_rot)
     logger = JsonlEventLogger(args.log_dir, session_name=args.session_name)
-    active_track_selector = StudyActiveTrackSelector(
-        args.source_scene, StudyActiveTrackBindingStore(args.active_track_binding)
+    active_track_selector = StudyTableTrackSelector(
+        args.source_scene,
+        StudyTableTrackBindingStore(args.table_tracks_binding, StudyActiveTrackBindingStore(args.active_track_binding)),
     )
     controller = StudyStateController(StudyStatePublisher(SimpleUDPClient(args.host, args.port)), state, event_logger=logger, source_pose_provider=LiveSceneSourcePoseProvider(args.source_scene, args.source_table_id), active_track_selector=active_track_selector)
     try:

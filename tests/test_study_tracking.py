@@ -4,11 +4,14 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from aisi.app.study_control import StudyMode, StudyState, StudyStateController, StudyStatePublisher
 from aisi.app.study_tracking import (
     StudyActiveTrackBindingStore,
     StudyActiveTrackSelector,
+    StudyTableTrackBindingStore,
+    StudyTableTrackSelector,
     TrackedTablePose,
     select_active_study_track,
 )
@@ -187,6 +190,76 @@ class StudyTrackingTests(unittest.TestCase):
         self.assertIsNone(controller.state.active_track_id)
         self.assertEqual(logger.events[-1]["active_track_status"], "unresolved")
         self.assertFalse(controller.start_trial())
+
+    def test_setup_registry_uses_global_one_to_one_bindings_and_fresh_live_poses(self) -> None:
+        registry = StudyTableTrackBindingStore(self.scene_path.parent / "study_table_tracks.json", self.binding_store)
+        selector = StudyTableTrackSelector(self.scene_path, registry)
+        setup = (PoseSpec(113.0, 432.5, -5.0), PoseSpec(92.5, 273.0, -95.0), PoseSpec(386.0, 132.0, 80.0), PoseSpec(397.0, 411.0, -25.0))
+        self._write_scene([_track("table_02", 113.0, 432.5, 175.0), _track("table_00", 92.5, 273.0, 85.0), _track("table_03", 386.0, 132.0, -100.0), _track("table_01", 397.0, 411.0, 155.0)])
+        controller = StudyStateController(StudyStatePublisher(_RecordingClient()), StudyState(mode=StudyMode.STUDY), active_track_selector=selector)
+        trial = TrialSpec(StudyTask.T3, StudyVariant.A, 0, 0, 0, source_pose=setup[0], distractor_tables=setup[1:])
+        controller.apply_trial(trial)
+        self.assertEqual(selector.bindings, {0: "table_02", 1: "table_00", 2: "table_03", 3: "table_01"})
+        self.assertEqual(registry.read(), (True, "T3A", selector.bindings))
+        self.assertEqual(self.binding_store.read(), (True, "table_02"))
+        self.assertTrue(controller.start_trial())
+        self._write_scene([_track("table_02", 120, 430, 175), _track("table_00", 92.5, 273, 85), _track("table_03", 386, 132, -100), _track("table_01", 397, 411, 155)])
+        controller.record_active_pose()
+        self.assertEqual(controller.state.tracked_table_poses[0], PoseSpec(120.0, 430.0, 175.0))
+        self.assertIn(("/study/tracked_table/count", 4), controller.state.osc_messages())
+        self.assertIn(("/study/tracked_table/0/x", 120.0), controller.state.osc_messages())
+
+    def test_start_blocks_until_every_setup_table_is_bound_then_latches_mapping(self) -> None:
+        registry = StudyTableTrackBindingStore(self.scene_path.parent / "study_table_tracks.json", self.binding_store)
+        selector = StudyTableTrackSelector(self.scene_path, registry)
+        setup = (PoseSpec(100, 100, 0), PoseSpec(300, 300, 90))
+        self._write_scene([_track("table_00", 100, 100, 0)])
+        controller = StudyStateController(StudyStatePublisher(_RecordingClient()), StudyState(mode=StudyMode.STUDY), active_track_selector=selector)
+        controller.apply_trial(TrialSpec(StudyTask.T3, StudyVariant.A, 0, 0, 0, source_pose=setup[0], distractor_tables=(setup[1],)))
+        self.assertFalse(controller.start_trial())
+        self._write_scene([_track("table_00", 100, 100, 0), _track("table_01", 300, 300, -90)])
+        self.assertTrue(controller.start_trial())
+        self.assertEqual(selector.bindings, {0: "table_00", 1: "table_01"})
+        self._write_scene([_track("table_00", 300, 300, 90), _track("table_01", 100, 100, 0)])
+        self.assertEqual(selector.bindings, {0: "table_00", 1: "table_01"})
+
+    def test_active_binding_write_retries_a_transient_windows_replace_lock(self) -> None:
+        real_replace = __import__("os").replace
+        calls = 0
+
+        def replace_once_locked(source, destination):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise PermissionError("temporarily locked")
+            real_replace(source, destination)
+
+        with patch("aisi.app.study_tracking.os.replace", side_effect=replace_once_locked), patch(
+            "aisi.app.study_tracking.time.sleep"
+        ) as sleep:
+            self.binding_store.write("table_02")
+        self.assertEqual(calls, 2)
+        sleep.assert_called_once_with(0.005)
+        self.assertEqual(self.binding_store.read(), (True, "table_02"))
+
+    def test_table_registry_completes_when_legacy_active_binding_retries(self) -> None:
+        registry = StudyTableTrackBindingStore(self.scene_path.parent / "study_table_tracks.json", self.binding_store)
+        real_replace = __import__("os").replace
+        active_path = self.binding_store.path
+        denied = False
+
+        def deny_active_once(source, destination):
+            nonlocal denied
+            if Path(destination) == active_path and not denied:
+                denied = True
+                raise PermissionError("temporarily locked")
+            real_replace(source, destination)
+
+        with patch("aisi.app.study_tracking.os.replace", side_effect=deny_active_once), patch("aisi.app.study_tracking.time.sleep"):
+            registry.write("T3A", {0: "table_02", 1: "table_01"})
+        self.assertTrue(denied)
+        self.assertEqual(registry.read(), (True, "T3A", {0: "table_02", 1: "table_01"}))
+        self.assertEqual(self.binding_store.read(), (True, "table_02"))
 
 
 if __name__ == "__main__":

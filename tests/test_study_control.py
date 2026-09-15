@@ -60,6 +60,7 @@ class StudyControlTests(unittest.TestCase):
             ("/study/target_rot", 0.0),
             ("/study/setup_table_count", 0),
             ("/study/participant_start_count", 0),
+            ("/study/tracked_table/count", 0),
         ))
 
     def test_each_change_publishes_the_complete_state(self) -> None:
@@ -79,14 +80,15 @@ class StudyControlTests(unittest.TestCase):
             ("/study/target_rot", 0.0),
             ("/study/setup_table_count", 0),
             ("/study/participant_start_count", 0),
+            ("/study/tracked_table/count", 0),
         ])
 
         self.client.messages.clear()
         self.controller.set_condition(StudyCondition.DUAL_SURFACE)
         self.controller.set_phase(StudyPhase.ACTIVE)
         self.controller.set_target_overlap(True)
-        self.assertEqual(len(self.client.messages), 42)
-        self.assertEqual(self.client.messages[-14:], [
+        self.assertEqual(len(self.client.messages), 45)
+        self.assertEqual(self.client.messages[-15:], [
             ("/study/mode", 1),
             ("/study/condition", 1),
             ("/study/phase", 2),
@@ -101,6 +103,7 @@ class StudyControlTests(unittest.TestCase):
             ("/study/target_rot", 0.0),
             ("/study/setup_table_count", 0),
             ("/study/participant_start_count", 0),
+            ("/study/tracked_table/count", 0),
         ])
 
     def test_aisi_mode_publishes_value_two_without_changing_addresses(self) -> None:
@@ -120,6 +123,7 @@ class StudyControlTests(unittest.TestCase):
             ("/study/target_rot", 0.0),
             ("/study/setup_table_count", 0),
             ("/study/participant_start_count", 0),
+            ("/study/tracked_table/count", 0),
         ])
 
     def test_unchanged_value_does_not_republish(self) -> None:
@@ -128,14 +132,14 @@ class StudyControlTests(unittest.TestCase):
 
     def test_explicit_publish_resends_complete_state(self) -> None:
         self.controller.publish_current()
-        self.assertEqual(len(self.client.messages), 14)
+        self.assertEqual(len(self.client.messages), 15)
 
     def test_setting_fixed_target_pose_republishes_target_channels(self) -> None:
         self.assertTrue(self.controller.set_target_pose(310.5, 220.25, 45.0))
         self.assertEqual(self.controller.state.target_x, 310.5)
         self.assertEqual(self.controller.state.target_y, 220.25)
         self.assertEqual(self.controller.state.target_rot, 45.0)
-        self.assertEqual(self.client.messages[-5:-2], [
+        self.assertEqual([message for message in self.client.messages if message[0] in {"/study/target_x", "/study/target_y", "/study/target_rot"}], [
             ("/study/target_x", 310.5),
             ("/study/target_y", 220.25),
             ("/study/target_rot", 45.0),
@@ -172,7 +176,7 @@ class StudyControlTests(unittest.TestCase):
         )
         self.controller.apply_trial(trial)
         self.assertEqual((self.controller.state.source_x, self.controller.state.source_y, self.controller.state.source_rot), (120.0, 150.0, 90.0))
-        self.assertEqual(self.client.messages[-11:-8], [("/study/source_x", 120.0), ("/study/source_y", 150.0), ("/study/source_rot", 90.0)])
+        self.assertEqual([message for message in self.client.messages if message[0] in {"/study/source_x", "/study/source_y", "/study/source_rot"}], [("/study/source_x", 120.0), ("/study/source_y", 150.0), ("/study/source_rot", 90.0)])
 
     def test_task_and_variant_selection_automatically_apply_the_selected_trial(self) -> None:
         first = TrialSpec(StudyTask.T1, StudyVariant.A, 380.0, 150.0, 90.0, source_pose=PoseSpec(120.0, 150.0, 90.0))
@@ -183,7 +187,7 @@ class StudyControlTests(unittest.TestCase):
         self.assertEqual((self.controller.state.task, self.controller.state.variant), (StudyTask.T2, StudyVariant.B))
         self.assertEqual((self.controller.state.source_x, self.controller.state.source_y, self.controller.state.source_rot), (130.0, 145.0, 90.0))
         self.assertEqual((self.controller.state.target_x, self.controller.state.target_y, self.controller.state.target_rot), (350.0, 285.0, 0.0))
-        self.assertEqual(self.client.messages[-11:-5], [("/study/source_x", 130.0), ("/study/source_y", 145.0), ("/study/source_rot", 90.0), ("/study/target_x", 350.0), ("/study/target_y", 285.0), ("/study/target_rot", 0.0)])
+        self.assertEqual([message for message in self.client.messages[-20:] if message[0] in {"/study/source_x", "/study/source_y", "/study/source_rot", "/study/target_x", "/study/target_y", "/study/target_rot"}], [("/study/source_x", 130.0), ("/study/source_y", 145.0), ("/study/source_rot", 90.0), ("/study/target_x", 350.0), ("/study/target_y", 285.0), ("/study/target_rot", 0.0)])
 
     def test_trial_publishes_a_neutral_setup_list_and_optional_markers(self) -> None:
         trial = TrialSpec(
@@ -197,7 +201,7 @@ class StudyControlTests(unittest.TestCase):
             trial.source_pose, *trial.distractor_tables,
         ))
         self.assertEqual(self.controller.state.participant_start_positions, trial.participant_start_positions)
-        self.assertEqual(self.client.messages[-8:], [
+        self.assertEqual(self.client.messages[-16:-8], [
             ("/study/setup_table_count", 2),
             ("/study/participant_start_count", 1),
             ("/study/setup_table/0/x", 260.0),
