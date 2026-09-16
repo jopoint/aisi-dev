@@ -1,8 +1,13 @@
 [CmdletBinding()]
 param(
     [switch]$NoDisplay,
+    [ValidateSet("none", "gaussian5")]
+    [string]$TableObbPreprocess = "none",
     [string]$TableObbDebugJsonl,
     [string]$TablePoseLatencyDebugJsonl,
+    [string]$HardExampleCaptureDir = "data/vision/debug/hard_examples",
+    [ValidateRange(1, 1000)]
+    [int]$HardExampleBurstFrames = 1,
     [switch]$DryRun
 )
 
@@ -38,6 +43,12 @@ $Command
 }
 
 $VisionCommand = "& '$VisionLauncher'"
+if ($TableObbPreprocess -ne "none") {
+    $VisionCommand += " -TableObbPreprocess $TableObbPreprocess"
+}
+if (-not [string]::IsNullOrWhiteSpace($HardExampleCaptureDir)) {
+    $VisionCommand += " -HardExampleCaptureDir '$HardExampleCaptureDir' -HardExampleBurstFrames $HardExampleBurstFrames"
+}
 if ($NoDisplay) {
     $VisionCommand += " -NoDisplay"
 }
@@ -57,6 +68,8 @@ Write-Host "  Dedicated scene:    $VisionScene"
 Write-Host "  Study binding:      $StudyActiveTrackBinding (falls back to table_00 when absent)"
 Write-Host "  No layout synthesis, people, chairs, or generated target pose."
 Write-Host "  Target OSC compatibility values equal source, so motion vectors are zero."
+Write-Host "  Table OBB preprocessing: $TableObbPreprocess"
+Write-Host "  Hard-example capture: press c -> $HardExampleCaptureDir (burst=$HardExampleBurstFrames)"
 if (-not [string]::IsNullOrWhiteSpace($TableObbDebugJsonl)) {
     Write-Host "  Table association debug: $TableObbDebugJsonl"
 }

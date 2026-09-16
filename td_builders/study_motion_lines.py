@@ -11,6 +11,8 @@ from __future__ import annotations
 import math
 from typing import Final
 
+from td_builders.study_tabletop_brackets import remove_default_primitives
+
 
 TD_UNITS_PER_CM: Final = 0.0052
 RECT_WIDTH_TD: Final = 160.0 * TD_UNITS_PER_CM
@@ -409,6 +411,7 @@ def _create_motion_line_geo(
     """Create one dynamic line Geometry COMP; TouchDesigner-only."""
 
     geo = parent.create(geometryCOMP, name)
+    remove_default_primitives(geo)
     line = geo.create(rectangleSOP, "line_bar")
     line_xform = geo.create(transformSOP, "line_center")
     line_xform.inputConnectors[0].connect(line)

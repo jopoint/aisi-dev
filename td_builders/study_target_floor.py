@@ -14,6 +14,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from td_builders.study_tabletop_brackets import remove_default_primitives
+
+
 
 TD_UNITS_PER_CM = 0.0052
 RECT_WIDTH_CM = 160.0
@@ -40,7 +43,7 @@ def rect_target_floor_dash_segments() -> tuple[DashSegment, ...]:
 
 
 def rect_target_tabletop_dash_segments() -> tuple[DashSegment, ...]:
-    """Return local dashed bars for the established 150 x 70 cm inner contour."""
+    """Return the established full dashed 150 x 70 cm inner target contour."""
 
     return rect_target_dash_segments(TABLETOP_INNER_WIDTH_CM, TABLETOP_INNER_DEPTH_CM)
 
@@ -141,6 +144,7 @@ def create_study_target_floor_geo(
         raise ValueError(f"Refusing to replace existing operator: {parent.path}/{geometry_name}")
 
     geo = parent.create(geometryCOMP, geometry_name)
+    remove_default_primitives(geo)
     merge = geo.create(mergeSOP, "merge_dashes")
     for index, segment in enumerate(rect_target_floor_dash_segments()):
         dash = geo.create(rectangleSOP, f"dash_{index:02d}")
@@ -495,19 +499,8 @@ def create_study_target_tabletop_geo(
     )
 
     geo = parent.create(geometryCOMP, geometry_name)
-    merge = geo.create(mergeSOP, "merge_dashes")
-    for index, segment in enumerate(rect_target_tabletop_dash_segments()):
-        dash = geo.create(rectangleSOP, f"dash_{index:02d}")
-        dash.par.sizex = segment.width_td
-        dash.par.sizey = segment.depth_td
-        dash.par.tx = segment.x_td
-        dash.par.ty = segment.y_td
-        dash.display = False
-        dash.render = False
-        merge.inputConnectors[index].connect(dash)
+    _build_target_tabletop_dashes(geo)
 
-    merge.display = True
-    merge.render = True
     geo.display = True
     geo.render = True
     x_expr, y_expr, rot_expr = _target_transform_expressions("/project1/comp_io/null_osc_raw")
@@ -524,3 +517,57 @@ def create_study_target_tabletop_geo(
         geometry_name=geometry_name,
     )
     return geo
+
+
+def _build_target_tabletop_dashes(geo) -> None:
+    """Populate a target Geo with its established full dashed contour."""
+
+    remove_default_primitives(geo)
+    merge = geo.create(mergeSOP, "merge_dashes")
+    for index, segment in enumerate(rect_target_tabletop_dash_segments()):
+        dash = geo.create(rectangleSOP, f"dash_{index:02d}")
+        dash.par.sizex = segment.width_td
+        dash.par.sizey = segment.depth_td
+        dash.par.tx = segment.x_td
+        dash.par.ty = segment.y_td
+        dash.display = False
+        dash.render = False
+        merge.inputConnectors[index].connect(dash)
+
+    merge.display = True
+    merge.render = True
+
+
+def restore_study_target_tabletop_dashes(
+    study_component_path: str = "/project1/comp_study_visualization",
+    *,
+    geometry_name: str = "rect_target_tabletop_geo",
+):
+    """Restore an existing target tabletop Geo's local dashed contour.
+
+    The target Geo's transforms, visibility CHOP export, material, and all
+    other Study operators remain in place. This is the restart-safe update
+    path for an already built ``.toe``.
+    """
+
+    parent = op(study_component_path)
+    if parent is None:
+        raise ValueError(f"Study component not found: {study_component_path}")
+    geo = parent.op(geometry_name)
+    if geo is None:
+        raise ValueError(f"Target tabletop geometry not found: {parent.path}/{geometry_name}")
+    legacy_nodes = list(geo.ops("bracket_*"))
+    legacy_merge = geo.op("merge_corner_brackets")
+    if legacy_merge is not None:
+        legacy_nodes.append(legacy_merge)
+    for node in legacy_nodes:
+        node.destroy()
+    if geo.op("merge_dashes") is not None:
+        raise ValueError(f"Dashed target contour already installed: {geo.path}/merge_dashes")
+    _build_target_tabletop_dashes(geo)
+    return geo
+
+
+# Compatibility for the immediately preceding pilot experiment. New callers
+# should use ``restore_study_target_tabletop_dashes``.
+replace_study_target_tabletop_contour_with_brackets = restore_study_target_tabletop_dashes

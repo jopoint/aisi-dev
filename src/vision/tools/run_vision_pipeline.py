@@ -352,9 +352,20 @@ def main():
     parser.add_argument("--save-live-frame", default=None, help="Optional output PNG path: save first live frame after rotation, before crop/detection.")
     parser.add_argument("--save-live-frame-processed", default=None, help="Optional output PNG path: save first live frame after rotation and crop, matching calibration/detection pixels.")
     parser.add_argument("--exit-after-saving-live-frame", action="store_true", help="Exit camera loop immediately after saving --save-live-frame.")
+    parser.add_argument(
+        "--hard-example-capture-dir",
+        default=None,
+        help="Optional directory enabled by live 'c' hard-example capture hotkey.",
+    )
+    parser.add_argument(
+        "--hard-example-burst-frames",
+        type=int,
+        default=1,
+        help="Processed frames saved per live hard-example trigger (default: 1).",
+    )
     
     # Output
-    parser.add_argument("--out", required=True, help="Output JSONL file path.")
+    parser.add_argument("--out", help="Output JSONL file path (required for normal pipeline processing).")
     
     # SAM2.1 configuration (loaded from configs/vision.yaml, CLI overrides)
     parser.add_argument("--sam-config", default=sam_config.get("config_path"), help="SAM2.1 model config path.")
@@ -402,8 +413,24 @@ def main():
     parser.add_argument("--table-obb-iou", type=float, default=None, help="IoU threshold for --table-obb-model (default: --yolo-iou).")
     parser.add_argument("--table-obb-max-det", type=int, default=0, help="Optional cap for raw table OBB detections before merge/tracking (0 = disabled).")
     parser.add_argument("--table-obb-raw-min-conf", type=float, default=None, help="Optional minimum confidence applied only to raw table OBB detections before merge/tracking.")
+    parser.add_argument(
+        "--table-obb-preprocess",
+        choices=["none", "gaussian5"],
+        default="none",
+        help="Optional preprocessing for table-only OBB inference (default: none).",
+    )
     parser.add_argument("--table-obb-debug-raw-overlay", action="store_true", help="Show raw table OBB detections as debug overlay items.")
     parser.add_argument("--table-obb-debug-jsonl", default=None, help="Optional JSONL path to write per-frame raw table OBB detections vs final table tracks.")
+    parser.add_argument(
+        "--table-obb-preprocess-compare",
+        metavar="IMAGE_OR_DIR",
+        help="Offline-only: compare raw table OBB detections across fixed preprocessing variants; does not start VisionPipeline.",
+    )
+    parser.add_argument(
+        "--table-obb-preprocess-out-dir",
+        default="data/vision/debug/table_obb_preprocess",
+        help="Output directory for --table-obb-preprocess-compare PNGs and JSONL.",
+    )
     parser.add_argument("--table-pose-latency-debug-jsonl", default=None, help="Optional JSONL path for compact per-frame table_00 raw-to-emitted pose diagnostics.")
     parser.add_argument("--yolo-max-det", type=int, default=80, help="Max YOLO detections kept per frame (default: 80).")
     parser.add_argument("--track-ttl-frames", type=int, default=15, help="Keep unmatched tracks alive for this many frames (default: 15).")
@@ -505,12 +532,21 @@ def main():
     
     args = parser.parse_args()
     
-    # Validate input source
+    # Validate input source. The preprocessing comparison is deliberately an
+    # independent, detector-only mode and needs neither a camera/video source
+    # nor the normal scene JSONL output.
     input_count = sum([args.video is not None, args.camera is not None, args.image_dir is not None])
-    if input_count == 0:
+    if args.table_obb_preprocess_compare:
+        if input_count:
+            parser.error("--table-obb-preprocess-compare cannot be combined with --video, --camera, or --image-dir.")
+        if not args.table_obb_model:
+            parser.error("--table-obb-preprocess-compare requires --table-obb-model.")
+    elif input_count == 0:
         parser.error("One of --video, --camera, or --image-dir must be specified.")
-    if input_count > 1:
+    elif input_count > 1:
         parser.error("Only one of --video, --camera, or --image-dir can be specified.")
+    if not args.table_obb_preprocess_compare and not args.out:
+        parser.error("--out is required for normal pipeline processing.")
     
     # Validate box options
     if args.boxes_init and args.init_boxes:
@@ -523,7 +559,7 @@ def main():
         # Allow live camera for YOLO-only proposal mode.
         if not (args.camera is not None and args.auto_proposals == "yolo"):
             parser.error("--auto-proposals is only supported with --image-dir (or --camera when mode is yolo).")
-    if args.table_obb_model and args.auto_proposals != "yolo":
+    if args.table_obb_model and args.auto_proposals != "yolo" and not args.table_obb_preprocess_compare:
         parser.error("--table-obb-model is only supported with --auto-proposals yolo.")
     if args.auto_proposals and (args.boxes_init or args.init_boxes or args.auto_init_boxes):
         parser.error("--auto-proposals cannot be used with manual box initialization (--boxes-init, --init-boxes, --auto-init-boxes).")
@@ -583,6 +619,10 @@ def main():
         parser.error("--save-live-frame and --save-live-frame-processed are only supported with --camera.")
     if args.exit_after_saving_live_frame and not (args.save_live_frame or args.save_live_frame_processed):
         parser.error("--exit-after-saving-live-frame requires a live-frame save option.")
+    if int(args.hard_example_burst_frames) < 1:
+        parser.error("--hard-example-burst-frames must be >= 1.")
+    if args.hard_example_capture_dir and args.camera is None:
+        parser.error("--hard-example-capture-dir is only supported with --camera.")
     
     # Load homography if provided
     H = None
@@ -600,7 +640,32 @@ def main():
     if device == "cuda" and not torch.cuda.is_available():
         print("WARNING: CUDA requested but not available. Falling back to CPU.")
         device = "cpu"
-    
+
+    if args.table_obb_preprocess_compare:
+        # Keep this before VisionPipeline construction: it is intentionally a
+        # raw-detector diagnostic and must not acquire tracker state or alter
+        # production frame processing.
+        from src.vision.detection.yolo_detector import YOLOTableOBBDetector
+        from src.vision.tools.table_obb_preprocess_debug import run_table_obb_preprocess_comparison
+
+        detector = YOLOTableOBBDetector(
+            model=args.table_obb_model,
+            device=device,
+            conf=args.table_obb_conf if args.table_obb_conf is not None else args.yolo_conf,
+            iou=args.table_obb_iou if args.table_obb_iou is not None else args.yolo_iou,
+            max_det=args.yolo_max_det,
+            raw_max_det=args.table_obb_max_det,
+            raw_min_conf=args.table_obb_raw_min_conf,
+        )
+        jsonl_path = run_table_obb_preprocess_comparison(
+            args.table_obb_preprocess_compare,
+            args.table_obb_preprocess_out_dir,
+            detector,
+            max_frames=args.max_frames,
+        )
+        print(f"Wrote offline table-OBB preprocessing comparison to {jsonl_path}")
+        return
+
     if args.conf_create is None:
         args.conf_create = float(args.yolo_conf)
     if args.reacquire_max_age is None:
@@ -618,7 +683,8 @@ def main():
             table_obb_iou = args.table_obb_iou if args.table_obb_iou is not None else args.yolo_iou
             print(
                 f"Table OBB hybrid: model={args.table_obb_model} "
-                f"conf={table_obb_conf} iou={table_obb_iou}"
+                f"conf={table_obb_conf} iou={table_obb_iou} "
+                f"preprocess={args.table_obb_preprocess}"
             )
             if args.table_obb_max_det and int(args.table_obb_max_det) > 0:
                 print(f"Table OBB raw filter: top_k={int(args.table_obb_max_det)}")
@@ -748,6 +814,7 @@ def main():
         table_obb_iou=args.table_obb_iou,
         table_obb_max_det=args.table_obb_max_det,
         table_obb_raw_min_conf=args.table_obb_raw_min_conf,
+        table_obb_preprocess=args.table_obb_preprocess,
         table_obb_debug_raw_overlay=args.table_obb_debug_raw_overlay,
         table_obb_debug_jsonl=args.table_obb_debug_jsonl,
         table_pose_latency_debug_jsonl=args.table_pose_latency_debug_jsonl,
@@ -829,6 +896,8 @@ def main():
         save_live_frame_path=args.save_live_frame,
         save_live_frame_processed_path=args.save_live_frame_processed,
         exit_after_saving_live_frame=args.exit_after_saving_live_frame,
+        hard_example_capture_dir=args.hard_example_capture_dir,
+        hard_example_burst_frames=args.hard_example_burst_frames,
         show_table_ids=args.show_table_ids,
     )
     

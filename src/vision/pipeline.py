@@ -12,6 +12,7 @@ from typing import Optional, Dict, List, Tuple
 import json
 import os
 import time
+from datetime import datetime
 
 from src.vision.detection.sam3_segmenter import SAM3Segmenter
 from src.vision.detection.furniture_postprocess import postprocess_furniture_masks
@@ -81,6 +82,49 @@ def validate_table_yaw_smoothing_alpha(value: float) -> float:
     if not (0.0 < alpha <= 1.0):
         raise ValueError("table_yaw_smoothing_alpha must be > 0 and <= 1")
     return alpha
+
+
+def table_obb_detector_input(
+    frame_bgr: np.ndarray,
+    preprocess: str = "none",
+) -> np.ndarray:
+    """Return the table-OBB-only inference frame for the selected safe mode.
+
+    ``none`` returns the original object unchanged.  ``gaussian5`` returns a
+    blurred copy exclusively for :class:`YOLOTableOBBDetector`; callers must
+    keep generic YOLO inference on ``frame_bgr``.
+    """
+
+    mode = str(preprocess).strip().lower()
+    if mode == "none":
+        return frame_bgr
+    if mode == "gaussian5":
+        return cv2.GaussianBlur(frame_bgr, (5, 5), 0)
+    raise ValueError("table_obb_preprocess must be 'none' or 'gaussian5'")
+
+
+def yolo_detector_inputs(
+    frame_bgr: np.ndarray,
+    table_obb_preprocess: str = "none",
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Return isolated generic-YOLO and table-OBB inference inputs.
+
+    The first item is always the original frame. The second item may be a
+    preprocessed copy and must be passed only to the table OBB detector.
+    """
+
+    return frame_bgr, table_obb_detector_input(frame_bgr, table_obb_preprocess)
+
+
+def hard_example_filename(frame_id: int, sequence: int, now: datetime | None = None) -> str:
+    """Return a collision-resistant, human-sortable hard-example filename."""
+
+    timestamp = now or datetime.now()
+    milliseconds = timestamp.microsecond // 1000
+    return (
+        f"hard_example_{timestamp:%Y%m%d_%H%M%S}_{milliseconds:03d}"
+        f"_f{int(frame_id):06d}_{int(sequence):03d}.png"
+    )
 
 
 def update_adaptive_table_smoothing_state(
@@ -225,6 +269,7 @@ class VisionPipeline:
         table_obb_iou: Optional[float] = None,
         table_obb_max_det: int = 0,
         table_obb_raw_min_conf: Optional[float] = None,
+        table_obb_preprocess: str = "none",
         yolo_max_det: int = 80,
         track_ttl_frames: int = 15,
         conf_create: Optional[float] = None,
@@ -308,6 +353,8 @@ class VisionPipeline:
         save_live_frame_path: Optional[str] = None,
         save_live_frame_processed_path: Optional[str] = None,
         exit_after_saving_live_frame: bool = False,
+        hard_example_capture_dir: Optional[str] = None,
+        hard_example_burst_frames: int = 1,
         show_table_ids: bool = False,
     ):
         """
@@ -333,6 +380,9 @@ class VisionPipeline:
             table_obb_iou: IoU threshold for table OBB model (defaults to yolo_iou).
             table_obb_max_det: Optional cap for raw table OBB detections before merge/tracking (0=off).
             table_obb_raw_min_conf: Optional min confidence for raw table OBB detections before merge/tracking.
+            table_obb_preprocess: Optional detector-only table OBB input preprocessing (none or gaussian5).
+            hard_example_capture_dir: Optional output directory enabled by the live ``c`` hotkey.
+            hard_example_burst_frames: Frames saved per ``c`` trigger (default: 1).
             yolo_max_det: Max detections kept per class per frame (top-k by confidence).
             track_ttl_frames: Keep unmatched tracks alive for this many frames.
             conf_create: Minimum confidence to create NEW tracks (defaults to yolo_conf).
@@ -426,6 +476,9 @@ class VisionPipeline:
         self.table_obb_iou = float(yolo_iou if table_obb_iou is None else table_obb_iou)
         self.table_obb_max_det = int(table_obb_max_det)
         self.table_obb_raw_min_conf = None if table_obb_raw_min_conf is None else float(table_obb_raw_min_conf)
+        self.table_obb_preprocess = str(table_obb_preprocess).strip().lower()
+        if self.table_obb_preprocess not in {"none", "gaussian5"}:
+            raise ValueError("table_obb_preprocess must be 'none' or 'gaussian5'")
         self._yolo_max_det = yolo_max_det
         self.track_ttl_frames = int(track_ttl_frames)
         self.conf_create = float(yolo_conf if conf_create is None else conf_create)
@@ -535,6 +588,14 @@ class VisionPipeline:
         self.save_live_frame_path = str(save_live_frame_path).strip() if save_live_frame_path else None
         self.save_live_frame_processed_path = str(save_live_frame_processed_path).strip() if save_live_frame_processed_path else None
         self.exit_after_saving_live_frame = bool(exit_after_saving_live_frame)
+        self.hard_example_capture_dir = (
+            str(hard_example_capture_dir).strip() if hard_example_capture_dir else None
+        )
+        self.hard_example_burst_frames = int(hard_example_burst_frames)
+        if self.hard_example_burst_frames < 1:
+            raise ValueError("hard_example_burst_frames must be >= 1")
+        self._hard_example_burst_remaining = 0
+        self._hard_example_capture_sequence = 0
         self.show_table_ids = bool(show_table_ids)
         if self.calibration_profile is not None:
             if self.calibration_profile.camera_rotate != self.camera_rotate:
@@ -695,7 +756,8 @@ class VisionPipeline:
             if self.table_obb_model:
                 print(
                     f"Table OBB model: {self.table_obb_model} "
-                    f"(conf={self.table_obb_conf}, iou={self.table_obb_iou})"
+                    f"(conf={self.table_obb_conf}, iou={self.table_obb_iou}, "
+                    f"preprocess={self.table_obb_preprocess})"
                 )
                 if self.table_obb_max_det > 0 or self.table_obb_raw_min_conf is not None:
                     print(
@@ -846,6 +908,28 @@ class VisionPipeline:
         if self.camera_rotate == 270:
             return cv2.rotate(frame_bgr, cv2.ROTATE_90_COUNTERCLOCKWISE)
         return frame_bgr
+
+    def _save_hard_example_frame(self, frame_bgr: np.ndarray, frame_id: int) -> Optional[Path]:
+        """Write exactly the already processed detector-input frame, if enabled."""
+
+        if not self.hard_example_capture_dir:
+            return None
+        output_dir = Path(self.hard_example_capture_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        path = output_dir / hard_example_filename(frame_id, self._hard_example_capture_sequence)
+        self._hard_example_capture_sequence += 1
+        if not cv2.imwrite(str(path), frame_bgr):
+            raise IOError(f"Could not write hard example frame: {path}")
+        print(f"Saved hard example: {path}")
+        return path
+
+    def _trigger_hard_example_capture(self, frame_bgr: np.ndarray, frame_id: int) -> Optional[Path]:
+        """Save the current frame and arm the remaining optional burst frames."""
+
+        path = self._save_hard_example_frame(frame_bgr, frame_id)
+        if path is not None:
+            self._hard_example_burst_remaining = self.hard_example_burst_frames - 1
+        return path
 
     def _apply_display_rotation(self, frame_bgr: np.ndarray) -> np.ndarray:
         """Apply optional display rotation for live output windows only."""
@@ -1563,6 +1647,12 @@ class VisionPipeline:
             f"actual={actual_width}x{actual_height} rotate={self.camera_rotate} "
             f"display_rotate={self.display_rotate} crop={'on' if self._input_crop is not None else 'off'}"
         )
+        if self.hard_example_capture_dir:
+            hotkey_state = "enabled: press c" if (display or projector_display) else "configured but unavailable with no display"
+            print(
+                f"Hard-example capture: {hotkey_state}; dir={self.hard_example_capture_dir} "
+                f"burst_frames={self.hard_example_burst_frames}"
+            )
         
         jsonl_file = None
         if output_jsonl is not None:
@@ -1613,6 +1703,12 @@ class VisionPipeline:
                         break
 
                 frame = self._apply_input_crop(frame)
+
+                # A previous hotkey trigger saves follow-up frames here, after
+                # the exact rotation/crop path used by table detection.
+                if self._hard_example_burst_remaining > 0:
+                    self._save_hard_example_frame(frame, live_frame_id)
+                    self._hard_example_burst_remaining -= 1
 
                 if self.save_live_frame_processed_path and not _saved_processed_live_frame:
                     _processed_path = Path(self.save_live_frame_processed_path)
@@ -1673,6 +1769,8 @@ class VisionPipeline:
                     if key == ord('r'):
                         self.reset_tracks()
                         print("tracks reset")
+                    if key == ord('c') and self.hard_example_capture_dir:
+                        self._trigger_hard_example_capture(frame, frame_event.frame_id)
                     if key == ord('q') or key == 27:  # q or ESC
                         break
         
@@ -3437,10 +3535,14 @@ class VisionPipeline:
         self._validate_calibration_frame(frame_bgr)
         from collections import Counter, defaultdict, deque
 
-        raw_detections = self._yolo_detector.detect(frame_bgr)
+        # Generic YOLO always sees the original calibrated frame.  Only the
+        # table-only OBB model can opt into the local A/B preprocessing mode.
+        generic_yolo_frame = frame_bgr
+        raw_detections = self._yolo_detector.detect(generic_yolo_frame)
         raw_table_obb_detections: List[Dict] = []
         if self._table_obb_detector is not None:
-            table_obb_detections = self._table_obb_detector.detect_tables(frame_bgr)
+            _, table_obb_frame = yolo_detector_inputs(frame_bgr, self.table_obb_preprocess)
+            table_obb_detections = self._table_obb_detector.detect_tables(table_obb_frame)
             raw_table_obb_detections = list(table_obb_detections)
             raw_detections = [det for det in raw_detections if det.get("label") != "table"]
             raw_detections.extend(table_obb_detections)

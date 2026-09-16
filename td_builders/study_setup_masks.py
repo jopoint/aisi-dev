@@ -9,6 +9,8 @@ only by the live ``/vision/table/*`` occupancy stream.
 from __future__ import annotations
 
 import builtins
+
+from td_builders.study_tabletop_brackets import remove_default_primitives
 import sys
 
 from td_builders.study_start_pose import TD_UNITS_PER_CM
@@ -79,6 +81,7 @@ def _create_setup_mask_geo(
     """Create one filled setup-table mask using the shared Study surface."""
 
     geo = parent.create(_td_symbol("geometryCOMP"), name)
+    remove_default_primitives(geo)
     table_surface = geo.create(_td_symbol("selectSOP"), "select_table_surface")
     _configure_table_surface_select(table_surface, table_surface_path)
     table_surface.display = True

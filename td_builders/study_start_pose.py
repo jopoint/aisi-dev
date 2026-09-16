@@ -11,6 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 
+from td_builders.study_tabletop_brackets import remove_default_primitives
+
 
 TD_UNITS_PER_CM = 0.0052
 RECT_WIDTH_CM = 160.0
@@ -101,6 +103,7 @@ def _marker_value_expression(
 
 def _create_setup_table_geo(parent, name: str, *, osc_path: str, index: int, material_path: str | None):
     geo = parent.create(geometryCOMP, name)
+    remove_default_primitives(geo)
     merge = geo.create(mergeSOP, "merge_solid_outline")
     for segment_index, segment in enumerate(rect_start_floor_solid_segments()):
         bar = geo.create(rectangleSOP, f"outline_{segment_index:02d}")
@@ -121,6 +124,7 @@ def _create_participant_marker_geo(parent, name: str, *, osc_path: str, index: i
     """Create a neutral dashed floor ring without a participant/table label."""
 
     geo = parent.create(geometryCOMP, name)
+    remove_default_primitives(geo)
     merge = geo.create(mergeSOP, "merge_dashed_marker")
     dash_count = 12
     radius_expr = _marker_value_expression(

@@ -82,14 +82,14 @@ is introduced.
    Geometry list:
 
    ```python
-   '/project1/comp_study_visualization/rect_floor_outer_geo /project1/comp_study_visualization/rect_target_floor_geo /project1/comp_study_visualization/rect_motion_line_floor_geo'
+   '/project1/comp_study_visualization/rect_floor_outer_outline_geo /project1/comp_study_visualization/rect_target_floor_geo /project1/comp_study_visualization/rect_motion_line_floor_geo'
    ```
 
 4. In `render_tabletop` (Render TOP), retain the complete existing TRACKING
    and AISI branches. Its `study_mode == 1` result must be condition-dependent:
 
    ```python
-   '/project1/comp_study_visualization/rect_tabletop_inner_geo /project1/comp_study_visualization/rect_motion_line_tabletop_geo' if op('/project1/comp_io/null_osc_raw')['study_condition'].eval() == 1 else ''
+   '/project1/comp_study_visualization/rect_tabletop_inner_outline_geo /project1/comp_study_visualization/rect_motion_line_tabletop_geo' if op('/project1/comp_io/null_osc_raw')['study_condition'].eval() == 1 else ''
    ```
 
    This returns no Study tabletop geometry for FLOOR_ONLY and both source plus
@@ -104,7 +104,7 @@ the manual AISI geometry lists remain verbatim.
 ## Physical verification
 
 1. TRACKING: all previous source contours remain unchanged.
-2. STUDY + FLOOR_ONLY: floor has source outer contour, dashed target, and an
+2. STUDY + FLOOR_ONLY: floor has padded source corner brackets, dashed target, and an
    edge-to-edge motion segment with its floor arrow; tabletop is blank.
 3. STUDY + DUAL_SURFACE: same floor output; tabletop has source inner contour,
    a centre-to-target-or-inner-contour motion segment, and its own forward

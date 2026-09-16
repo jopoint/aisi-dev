@@ -129,7 +129,7 @@ source and verify both `study_overlap_state['overlap']` and
    TRACKING and AISI branches and replace only the STUDY result with:
 
    ```python
-   '/project1/comp_study_visualization/rect_tabletop_inner_geo /project1/comp_study_visualization/rect_motion_line_tabletop_geo /project1/comp_study_visualization/rect_target_tabletop_geo' if op('/project1/comp_io/null_osc_raw')['study_condition'].eval() == 1 else ''
+   '/project1/comp_study_visualization/rect_tabletop_inner_outline_geo /project1/comp_study_visualization/rect_motion_line_tabletop_geo /project1/comp_study_visualization/rect_target_tabletop_geo' if op('/project1/comp_io/null_osc_raw')['study_condition'].eval() == 1 else ''
    ```
 
 The expression means `FLOOR_ONLY` selects no Study tabletop geometry, while
