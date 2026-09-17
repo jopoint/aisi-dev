@@ -415,9 +415,16 @@ def main():
     parser.add_argument("--table-obb-raw-min-conf", type=float, default=None, help="Optional minimum confidence applied only to raw table OBB detections before merge/tracking.")
     parser.add_argument(
         "--table-obb-preprocess",
-        choices=["none", "gaussian5"],
+        choices=["none", "gaussian5", "levels"],
         default="none",
         help="Optional preprocessing for table-only OBB inference (default: none).",
+    )
+    parser.add_argument(
+        "--table-obb-levels-white-point",
+        type=int,
+        default=235,
+        metavar="WHITE_POINT",
+        help="White point for --table-obb-preprocess levels (default: 235).",
     )
     parser.add_argument("--table-obb-debug-raw-overlay", action="store_true", help="Show raw table OBB detections as debug overlay items.")
     parser.add_argument("--table-obb-debug-jsonl", default=None, help="Optional JSONL path to write per-frame raw table OBB detections vs final table tracks.")
@@ -430,6 +437,17 @@ def main():
         "--table-obb-preprocess-out-dir",
         default="data/vision/debug/table_obb_preprocess",
         help="Output directory for --table-obb-preprocess-compare PNGs and JSONL.",
+    )
+    parser.add_argument(
+        "--table-obb-levels-white-points",
+        type=int,
+        nargs="+",
+        default=[235, 225, 215],
+        metavar="WHITE_POINT",
+        help=(
+            "Offline-only Levels white points for --table-obb-preprocess-compare "
+            "(default: 235 225 215)."
+        ),
     )
     parser.add_argument("--table-pose-latency-debug-jsonl", default=None, help="Optional JSONL path for compact per-frame table_00 raw-to-emitted pose diagnostics.")
     parser.add_argument("--yolo-max-det", type=int, default=80, help="Max YOLO detections kept per frame (default: 80).")
@@ -485,6 +503,10 @@ def main():
     parser.add_argument("--table-lost-track-ttl", type=int, default=15, help="Recoverable miss-count TTL for lost table tracks when recovery mode is enabled (default: 15).")
     parser.add_argument("--table-birth-block-near-lost-dist", type=float, default=0.0, help="Suppress NEW table birth when detection center is within this px distance to a recoverable lost table track (0 = disabled).")
     parser.add_argument("--table-birth-block-near-lost-frames", type=int, default=0, help="Optional max miss_count age for near-lost birth suppression (0 = use all recoverable lost tracks).")
+    parser.add_argument("--table-tombstone-reactivation", action="store_true", help="Retain expired confirmed calibrated table IDs briefly for conservative post-TTL birth reactivation.")
+    parser.add_argument("--table-tombstone-max-age-seconds", type=float, default=10.0, help="Seconds a deleted confirmed table tombstone remains eligible (default: 10).")
+    parser.add_argument("--table-tombstone-max-distance-cm", type=float, default=35.0, help="Max calibrated world-center distance for tombstone reactivation (default: 35).")
+    parser.add_argument("--table-tombstone-max-rotation-deg", type=float, default=15.0, help="Max modulo-180 world rotation delta for tombstone reactivation (default: 15).")
     parser.add_argument("--table-angle-deadband-deg", type=float, default=0.0, help="Table-only angle hysteresis deadband in degrees for final render angle (0 = disabled).")
     parser.add_argument("--table-bbox-smoothing-alpha", type=float, default=0.20, help="EMA alpha for table bounding boxes (>0 and <=1; default: 0.20).")
     parser.add_argument("--table-center-smoothing-alpha", type=float, default=0.20, help="EMA alpha for table center output (>0 and <=1; default: 0.20).")
@@ -520,7 +542,12 @@ def main():
     parser.add_argument("--debug-dir", help="Optional directory for debug overlays.")
     parser.add_argument("--max-frames", type=int, help="Maximum frames to process.")
     parser.add_argument("--flush-every", type=int, default=10, help="Flush and fsync JSONL output every N frames (default 10).")
+    parser.add_argument("--perf-log", action="store_true", help="Emit aggregate live performance diagnostics every ~2 seconds.")
     parser.add_argument("--no-display", action="store_true", help="Disable live display (camera only).")
+    parser.add_argument(
+        "--camera-capture-mode", choices=["direct", "latest"], default="direct",
+        help="Camera read mode: direct (default) or latest-frame background drain.",
+    )
     parser.add_argument("--projector-display", action="store_true", help="Show fullscreen projector overlay window (camera mode).")
     parser.add_argument("--projector-monitor", type=int, default=1, help="Monitor index for projector window (0=primary, 1=second).")
     parser.add_argument("--show-table-ids", action="store_true", help="Show table track IDs near final table overlays.")
@@ -585,8 +612,18 @@ def main():
         parser.error("--table-obb-max-det must be >= 0.")
     if args.table_obb_raw_min_conf is not None and not (0.0 <= float(args.table_obb_raw_min_conf) <= 1.0):
         parser.error("--table-obb-raw-min-conf must be in [0, 1].")
+    if not 1 <= int(args.table_obb_levels_white_point) <= 255:
+        parser.error("--table-obb-levels-white-point must be in [1, 255].")
+    if any(not 1 <= int(value) <= 255 for value in args.table_obb_levels_white_points):
+        parser.error("--table-obb-levels-white-points values must be in [1, 255].")
     if int(args.table_lost_track_ttl) < 1:
         parser.error("--table-lost-track-ttl must be >= 1.")
+    if (
+        args.table_tombstone_max_age_seconds <= 0
+        or args.table_tombstone_max_distance_cm <= 0
+        or args.table_tombstone_max_rotation_deg <= 0
+    ):
+        parser.error("table tombstone reactivation thresholds must be > 0.")
     if float(args.table_birth_block_near_lost_dist) < 0.0:
         parser.error("--table-birth-block-near-lost-dist must be >= 0.")
     if int(args.table_birth_block_near_lost_frames) < 0:
@@ -662,6 +699,8 @@ def main():
             args.table_obb_preprocess_out_dir,
             detector,
             max_frames=args.max_frames,
+            calibration_profile=calibration_profile,
+            levels_white_points=args.table_obb_levels_white_points,
         )
         print(f"Wrote offline table-OBB preprocessing comparison to {jsonl_path}")
         return
@@ -681,10 +720,13 @@ def main():
         if args.table_obb_model:
             table_obb_conf = args.table_obb_conf if args.table_obb_conf is not None else args.yolo_conf
             table_obb_iou = args.table_obb_iou if args.table_obb_iou is not None else args.yolo_iou
+            table_preprocess = args.table_obb_preprocess
+            if table_preprocess == "levels":
+                table_preprocess = f"levels (white_point={args.table_obb_levels_white_point})"
             print(
                 f"Table OBB hybrid: model={args.table_obb_model} "
                 f"conf={table_obb_conf} iou={table_obb_iou} "
-                f"preprocess={args.table_obb_preprocess}"
+                f"preprocess={table_preprocess}"
             )
             if args.table_obb_max_det and int(args.table_obb_max_det) > 0:
                 print(f"Table OBB raw filter: top_k={int(args.table_obb_max_det)}")
@@ -777,7 +819,7 @@ def main():
         print(
             f"Camera input: index={args.camera} req_width={args.camera_width} "
             f"req_height={args.camera_height} camera_rotate={args.camera_rotate} "
-            f"display_rotate={args.display_rotate}"
+            f"display_rotate={args.display_rotate} capture_mode={args.camera_capture_mode}"
         )
     if args.show_table_ids:
         print("Overlay debug: show_table_ids=True")
@@ -793,6 +835,8 @@ def main():
     print(f"Table area filter: [{args.table_min_area}, {args.table_max_area}] px")
     print(f"Chair area filter: [{args.chair_min_area}, {args.chair_max_area}] px")
     print(f"Output: {args.out}")
+    if args.perf_log:
+        print("Performance logging: enabled (aggregate timing every ~2 seconds)")
     print(f"=====================================")
     pipeline = VisionPipeline(
         sam3_config_path=args.sam_config,
@@ -815,6 +859,7 @@ def main():
         table_obb_max_det=args.table_obb_max_det,
         table_obb_raw_min_conf=args.table_obb_raw_min_conf,
         table_obb_preprocess=args.table_obb_preprocess,
+        table_obb_levels_white_point=args.table_obb_levels_white_point,
         table_obb_debug_raw_overlay=args.table_obb_debug_raw_overlay,
         table_obb_debug_jsonl=args.table_obb_debug_jsonl,
         table_pose_latency_debug_jsonl=args.table_pose_latency_debug_jsonl,
@@ -870,6 +915,10 @@ def main():
         table_lost_track_ttl=args.table_lost_track_ttl,
         table_birth_block_near_lost_dist=args.table_birth_block_near_lost_dist,
         table_birth_block_near_lost_frames=args.table_birth_block_near_lost_frames,
+        table_tombstone_reactivation=args.table_tombstone_reactivation,
+        table_tombstone_max_age_seconds=args.table_tombstone_max_age_seconds,
+        table_tombstone_max_distance_cm=args.table_tombstone_max_distance_cm,
+        table_tombstone_max_rotation_deg=args.table_tombstone_max_rotation_deg,
         table_angle_deadband_deg=args.table_angle_deadband_deg,
         table_bbox_smoothing_alpha=args.table_bbox_smoothing_alpha,
         table_center_smoothing_alpha=args.table_center_smoothing_alpha,
@@ -899,6 +948,7 @@ def main():
         hard_example_capture_dir=args.hard_example_capture_dir,
         hard_example_burst_frames=args.hard_example_burst_frames,
         show_table_ids=args.show_table_ids,
+        perf_log=args.perf_log,
     )
     
     # Process input
@@ -909,6 +959,7 @@ def main():
             output_jsonl=args.out,
             max_frames=args.max_frames,
             flush_every=args.flush_every,
+            camera_capture_mode=args.camera_capture_mode,
         )
     elif args.camera is not None:
         print(f"Processing camera stream: {args.camera}")
@@ -919,6 +970,7 @@ def main():
             projector_display=args.projector_display,
             projector_monitor=args.projector_monitor,
             flush_every=args.flush_every,
+            camera_capture_mode=args.camera_capture_mode,
         )
     else:  # image-dir
         print(f"Processing image directory: {args.image_dir}")

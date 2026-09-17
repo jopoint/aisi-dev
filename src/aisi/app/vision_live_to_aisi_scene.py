@@ -51,6 +51,8 @@ def parse_args() -> argparse.Namespace:
                         help="JSONL polling interval in seconds (default: 0.05).")
     parser.add_argument("--once", action="store_true",
                         help="Convert the last complete input FrameEvent once, then exit (offline use).")
+    parser.add_argument("--perf-log", action="store_true",
+                        help="Emit aggregate live adapter latency diagnostics every ~2 seconds.")
     return parser.parse_args()
 
 
@@ -117,6 +119,10 @@ def build_scene(tables: list[dict[str, Any]], frame: FrameEvent | None) -> dict[
             "calibration_plane": frame.world.get("calibration_plane"),
             "plane_height_cm": frame.world.get("plane_height_cm"),
         })
+        perf = frame.world.get("perf")
+        if isinstance(perf, dict):
+            # Debug-only metadata; existing scene/table contracts are unchanged.
+            vision_metadata["perf"] = dict(perf)
     return {
         "scene_id": "vision_live_scene",
         "source": "vision_live_to_aisi_scene",
@@ -241,33 +247,82 @@ def load_last_frame(path: str | Path) -> FrameEvent:
     return _frame_from_json_line(last_line)
 
 
+def initial_live_offset(source: Path) -> int:
+    """Start live tailing at EOF so a previous Vision session is not replayed."""
+
+    try:
+        return source.stat().st_size
+    except FileNotFoundError:
+        return 0
+
+
+def read_new_jsonl_lines(source: Path, offset: int, pending: bytes) -> tuple[int, bytes, list[bytes]]:
+    """Read complete records appended after ``offset``; recover after truncate."""
+
+    size = source.stat().st_size
+    if size < offset:
+        offset, pending = 0, b""
+    if size <= offset:
+        return offset, pending, []
+    with source.open("rb") as handle:
+        handle.seek(offset)
+        data = handle.read()
+    offset += len(data)
+    chunks = (pending + data).split(b"\n")
+    return offset, chunks.pop(), [line for line in chunks if line.strip()]
+
+
+def _scene_perf(scene: dict[str, Any]) -> dict[str, Any] | None:
+    """Return writable debug performance metadata for a current vision scene."""
+
+    vision_live = scene.get("vision_live")
+    if not isinstance(vision_live, dict):
+        return None
+    perf = vision_live.get("perf")
+    return perf if isinstance(perf, dict) else None
+
+
+def _capture_latency_ms(perf: dict[str, Any], now_wall_ns: int) -> float | None:
+    """Return local wall-clock latency when Vision supplied a valid capture stamp."""
+
+    capture_wall_ns = perf.get("capture_wall_ns")
+    if isinstance(capture_wall_ns, bool):
+        return None
+    try:
+        capture_wall_ns = int(capture_wall_ns)
+    except (TypeError, ValueError):
+        return None
+    return max(0.0, (now_wall_ns - capture_wall_ns) / 1_000_000.0)
+
+
+def publish_fresh_live_scene(output_path: str | Path) -> None:
+    """Atomically clear an old live scene before tailing a new Vision session."""
+
+    atomic_write_scene(output_path, build_scene([], None))
+
+
 def run_live(input_path: str | Path, output_path: str | Path, adapter: VisionSceneAdapter,
-             poll_seconds: float, stream_stale_seconds: float) -> None:
+             poll_seconds: float, stream_stale_seconds: float, perf_log: bool = False) -> None:
     """Tail appended JSONL records; reset safely when the vision writer truncates it."""
     source = Path(input_path)
-    offset = 0
+    offset = initial_live_offset(source)
     pending = b""
     accepted_any_frame = False
     last_accepted_at = 0.0
     stale_published = False
+    perf_window_started = time.perf_counter()
+    perf_samples: list[tuple[float, float]] = []
     print(f"Vision input: {source}")
     print(f"AISI scene output: {output_path}")
     print("Vision adapter owns this output. Do not run the Room Editor against it.")
+    print("Vision adapter: tailing new frames only (existing JSONL history skipped).")
+    publish_fresh_live_scene(output_path)
+    print("Vision adapter: published fresh empty live scene.")
 
     while True:
         try:
-            size = source.stat().st_size
-            if size < offset:
-                offset = 0
-                pending = b""
-            if size > offset:
-                with source.open("rb") as handle:
-                    handle.seek(offset)
-                    data = handle.read()
-                offset += len(data)
-                pending += data
-                complete_lines = pending.split(b"\n")
-                pending = complete_lines.pop()
+            offset, pending, complete_lines = read_new_jsonl_lines(source, offset, pending)
+            if complete_lines:
                 for raw_line in complete_lines:
                     if not raw_line.strip():
                         continue
@@ -277,7 +332,32 @@ def run_live(input_path: str | Path, output_path: str | Path, adapter: VisionSce
                     except ValueError as exc:
                         print(f"Skipping invalid FrameEvent: {exc}")
                         continue
-                    atomic_write_scene(output_path, adapter.scene())
+                    scene = adapter.scene()
+                    perf = _scene_perf(scene) if perf_log else None
+                    capture_to_scene_ms = None
+                    if perf is not None:
+                        capture_to_scene_ms = _capture_latency_ms(perf, time.time_ns())
+                        if capture_to_scene_ms is not None:
+                            perf["capture_to_scene_ms"] = capture_to_scene_ms
+                        # This is intentionally stamped before the atomic write;
+                        # OSC can then isolate scene-file downstream latency.
+                        perf["scene_ready_wall_ns"] = time.time_ns()
+                    scene_write_started = time.perf_counter() if perf_log else 0.0
+                    atomic_write_scene(output_path, scene)
+                    if perf_log and capture_to_scene_ms is not None:
+                        scene_write_ms = (time.perf_counter() - scene_write_started) * 1000.0
+                        perf_samples.append((capture_to_scene_ms, scene_write_ms))
+                        now_perf = time.perf_counter()
+                        elapsed = now_perf - perf_window_started
+                        if elapsed >= 2.0:
+                            capture_mean = sum(sample[0] for sample in perf_samples) / len(perf_samples)
+                            write_mean = sum(sample[1] for sample in perf_samples) / len(perf_samples)
+                            print(
+                                f"[PERF scene] fps_new={len(perf_samples) / elapsed:.1f} "
+                                f"capture_to_scene={capture_mean:.1f}ms scene_write={write_mean:.1f}ms"
+                            )
+                            perf_samples.clear()
+                            perf_window_started = now_perf
                     accepted_any_frame = True
                     last_accepted_at = time.monotonic()
                     stale_published = False
@@ -312,7 +392,7 @@ def main() -> None:
         print(f"Wrote {len(adapter.scene()['tables'])} Rect table(s) to {Path(args.output).resolve()}")
         return
     try:
-        run_live(args.input, args.output, adapter, args.poll_seconds, args.stream_stale_seconds)
+        run_live(args.input, args.output, adapter, args.poll_seconds, args.stream_stale_seconds, args.perf_log)
     except KeyboardInterrupt:
         print("Vision adapter stopped.")
 

@@ -6,7 +6,14 @@ import math
 import unittest
 from unittest.mock import patch
 
-from src.vision.pipeline import VisionPipeline, update_table_obb_yaw
+import numpy as np
+
+from src.vision.calibration.tabletop import TabletopCalibration
+from src.vision.pipeline import (
+    RECT_TABLE_OBVIOUSLY_OVERSIZED_AREA_CM2,
+    VisionPipeline,
+    update_table_obb_yaw,
+)
 
 
 def _det(x1: int, y1: int, x2: int, y2: int) -> dict:
@@ -45,10 +52,92 @@ def _pipeline() -> VisionPipeline:
     pipeline.table_full_anchor_follow_center_alpha = 0.20
     pipeline.table_lost_anchor_reacquire_coverage_ratio = 0.60
     pipeline._pending_table_births = []
+    pipeline._table_tombstones = {}
+    pipeline.table_tombstone_reactivation = True
+    pipeline.table_tombstone_max_age_seconds = 10.0
+    pipeline.table_tombstone_max_distance_cm = 35.0
+    pipeline.table_tombstone_max_rotation_deg = 15.0
+    pipeline.calibration_profile = TabletopCalibration(np.eye(3, dtype=np.float64))
+    pipeline.H = pipeline.calibration_profile.homography
     return pipeline
 
 
 class VisionTableAssociationTests(unittest.TestCase):
+    @staticmethod
+    def _tombstone_track(center: tuple[float, float], rotation_deg: float) -> dict:
+        return {
+            "id": "table_02",
+            "bbox": [300, 300, 500, 420],
+            "center": center,
+            "center_smoothed": center,
+            "prev_theta": math.radians(rotation_deg),
+            "obb_yaw_rad": math.radians(rotation_deg),
+            "obb_poly_px": None,
+            "miss_count": 16,
+            "table_confirmed": True,
+            "table_full_anchor": {"bbox": [300, 300, 500, 420], "obb_long_side": 200.0, "obb_short_side": 100.0, "obb_area": 20000.0, "obb_aspect_ratio": 2.0},
+        }
+
+    @staticmethod
+    def _tombstone_candidate(center: tuple[float, float], rotation_deg: float) -> dict:
+        return {
+            "bbox_px": [300, 300, 500, 420],
+            "obb_center_px": center,
+            "obb_yaw_rad": math.radians(rotation_deg),
+            "obb_poly_px": [[300, 300], [500, 300], [500, 420], [300, 420]],
+            "score": 0.9,
+        }
+
+    def test_documented_post_ttl_rebirth_matches_table_02_tombstone(self) -> None:
+        pipeline = _pipeline()
+        event = pipeline._create_table_tombstone(
+            "table_02", self._tombstone_track((414.80, 358.67), -97.58), 72570, 100.0
+        )
+        self.assertEqual(event["event"], "tombstone_created")
+        match, evaluations = pipeline._evaluate_table_tombstone_reactivation(
+            self._tombstone_candidate((407.18, 352.13), -100.20), 106.54
+        )
+        self.assertEqual(match["tombstone"]["id"], "table_02")
+        self.assertAlmostEqual(evaluations[0]["world_distance_cm"], 10.05, places=1)
+        self.assertAlmostEqual(evaluations[0]["rotation_delta_deg_mod180"], 2.62, places=1)
+
+    def test_tombstone_rejects_expired_distance_and_rotation_candidates(self) -> None:
+        pipeline = _pipeline()
+        pipeline._create_table_tombstone("table_02", self._tombstone_track((100, 100), 5), 10, 10.0)
+        match, evaluations = pipeline._evaluate_table_tombstone_reactivation(
+            self._tombstone_candidate((150, 100), 30), 20.1
+        )
+        self.assertIsNone(match)
+        self.assertIn("expired", evaluations[0]["rejection_reasons"])
+        self.assertIn("distance", evaluations[0]["rejection_reasons"])
+        self.assertIn("rotation", evaluations[0]["rejection_reasons"])
+
+    def test_tombstone_treats_180_degree_rect_rotations_as_equivalent(self) -> None:
+        pipeline = _pipeline()
+        pipeline._create_table_tombstone("table_02", self._tombstone_track((100, 100), 5), 10, 10.0)
+        match, evaluations = pipeline._evaluate_table_tombstone_reactivation(
+            self._tombstone_candidate((100, 100), 184), 11.0
+        )
+        self.assertEqual(match["tombstone"]["id"], "table_02")
+        self.assertAlmostEqual(evaluations[0]["rotation_delta_deg_mod180"], 1.0)
+
+    def test_ambiguous_tombstones_do_not_guess_an_identity(self) -> None:
+        pipeline = _pipeline()
+        pipeline._create_table_tombstone("table_02", self._tombstone_track((100, 100), 5), 10, 10.0)
+        pipeline._create_table_tombstone("table_03", {**self._tombstone_track((101, 100), 5), "id": "table_03"}, 10, 10.0)
+        match, evaluations = pipeline._evaluate_table_tombstone_reactivation(
+            self._tombstone_candidate((100, 100), 5), 11.0
+        )
+        self.assertIsNone(match)
+        self.assertTrue(all("ambiguous" in item["rejection_reasons"] for item in evaluations))
+
+    def test_unconfirmed_track_never_creates_a_tombstone(self) -> None:
+        pipeline = _pipeline()
+        track = self._tombstone_track((100, 100), 5)
+        track["table_confirmed"] = False
+        self.assertIsNone(pipeline._create_table_tombstone("table_02", track, 10, 10.0))
+        self.assertEqual(pipeline._table_tombstones, {})
+
     @staticmethod
     def _lost_anchor_track(
         bbox: list[int],
@@ -319,6 +408,50 @@ class VisionTableAssociationTests(unittest.TestCase):
             "area": 20000.0,
             "aspect_ratio": 2.0,
         })
+
+    def test_calibrated_160_by_80_rect_candidate_is_allowed_for_creation(self) -> None:
+        pipeline = _pipeline()
+        pipeline.calibration_profile = TabletopCalibration(np.eye(3, dtype=np.float64))
+        candidate = _obb_det([0, 0, 160, 80], 160.0, 80.0)
+
+        metrics = pipeline._table_obb_world_metrics(candidate)
+
+        self.assertEqual(metrics, {
+            "width_cm": 160.0,
+            "height_cm": 80.0,
+            "long_side_cm": 160.0,
+            "short_side_cm": 80.0,
+            "area_cm2": 12800.0,
+            "aspect_ratio": 2.0,
+        })
+        self.assertEqual(pipeline._new_table_world_size_rejection_reasons(metrics), ())
+
+    def test_calibrated_oversized_phantom_candidate_is_rejected_for_creation(self) -> None:
+        pipeline = _pipeline()
+        pipeline.calibration_profile = TabletopCalibration(np.eye(3, dtype=np.float64))
+        phantom = _obb_det([0, 0, 320, 160], 320.0, 160.0)
+
+        metrics = pipeline._table_obb_world_metrics(phantom)
+
+        self.assertGreater(metrics["area_cm2"], RECT_TABLE_OBVIOUSLY_OVERSIZED_AREA_CM2)
+        self.assertEqual(
+            pipeline._new_table_world_size_rejection_reasons(metrics),
+            ("world_area_too_large",),
+        )
+
+    def test_confirmed_track_association_does_not_use_new_birth_size_gate(self) -> None:
+        pipeline = _pipeline()
+        pipeline.calibration_profile = TabletopCalibration(np.eye(3, dtype=np.float64))
+        confirmed = _track([100, 100, 420, 260])
+        confirmed["table_confirmed"] = True
+        oversized = _obb_det([100, 100, 420, 260], 320.0, 160.0)
+
+        self.assertEqual(
+            pipeline._greedy_track_match(
+                [oversized], {"table_00": confirmed}, ["table_00"], {0}, "table"
+            ),
+            {"table_00": 0},
+        )
 
     def test_full_size_candidate_near_or_far_remains_plausible(self) -> None:
         pipeline = _pipeline()

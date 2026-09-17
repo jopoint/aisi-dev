@@ -16,12 +16,29 @@ import cv2
 import numpy as np
 
 from src.vision.detection.yolo_detector import YOLOTableOBBDetector
+from src.vision.calibration.tabletop import TabletopCalibration, project_point
 
 
 Variant = Tuple[str, Callable[[np.ndarray], np.ndarray]]
 
 
-def table_obb_preprocess_variants() -> Tuple[Variant, ...]:
+def levels_white_point(frame: np.ndarray, white_point: int) -> np.ndarray:
+    """Apply the requested linear Levels white-point expansion.
+
+    This is deliberately neither a gamma adjustment nor a local contrast
+    operation: values are multiplied by ``255 / white_point`` and clipped.
+    It is used only by the offline detector comparison in this module.
+    """
+
+    if not 1 <= int(white_point) <= 255:
+        raise ValueError("white_point must be in [1, 255]")
+    scale = 255.0 / float(white_point)
+    return np.clip(frame.astype(np.float32) * scale, 0.0, 255.0).astype(np.uint8)
+
+
+def table_obb_preprocess_variants(
+    *, levels_white_points: Sequence[int] = (235, 225, 215)
+) -> Tuple[Variant, ...]:
     """Return deterministic, deliberately conservative debug variants.
 
     None of these are applied in production.  The gamma/exposure variants
@@ -58,6 +75,14 @@ def table_obb_preprocess_variants() -> Tuple[Variant, ...]:
     def exposure_down_gaussian_5(frame: np.ndarray) -> np.ndarray:
         return gaussian_blur_5(exposure_down(frame))
 
+    level_variants = tuple(
+        (
+            f"levels_white_point_{int(white_point)}",
+            lambda frame, white_point=int(white_point): levels_white_point(frame, white_point),
+        )
+        for white_point in levels_white_points
+    )
+
     return (
         ("original", lambda frame: frame.copy()),
         ("grayscale", grayscale),
@@ -68,7 +93,7 @@ def table_obb_preprocess_variants() -> Tuple[Variant, ...]:
         ("gaussian_blur_5", gaussian_blur_5),
         ("gaussian_blur_7", gaussian_blur_7),
         ("exposure_down_gaussian_5", exposure_down_gaussian_5),
-    )
+    ) + level_variants
 
 
 def _obb_metrics(detection: Dict) -> Dict[str, float | None]:
@@ -89,7 +114,52 @@ def _obb_metrics(detection: Dict) -> Dict[str, float | None]:
     }
 
 
-def _json_detection(index: int, detection: Dict) -> Dict:
+def _world_obb_metrics(
+    detection: Dict,
+    calibration_profile: TabletopCalibration | None,
+) -> Dict[str, float | None] | None:
+    """Measure a raw OBB in calibrated centimetres when supplied by the CLI."""
+
+    if calibration_profile is None:
+        return None
+    poly = detection.get("obb_poly_px") or []
+    if not isinstance(poly, list) or len(poly) != 4:
+        return None
+    try:
+        points_cm = [project_point((float(point[0]), float(point[1])), calibration_profile) for point in poly]
+    except (IndexError, TypeError, ValueError, np.linalg.LinAlgError):
+        return None
+    edges = [
+        float(np.hypot(
+            points_cm[(index + 1) % 4][0] - points_cm[index][0],
+            points_cm[(index + 1) % 4][1] - points_cm[index][1],
+        ))
+        for index in range(4)
+    ]
+    width = 0.5 * (edges[0] + edges[2])
+    height = 0.5 * (edges[1] + edges[3])
+    long_side, short_side = max(width, height), min(width, height)
+    signed_area = sum(
+        points_cm[index][0] * points_cm[(index + 1) % 4][1]
+        - points_cm[(index + 1) % 4][0] * points_cm[index][1]
+        for index in range(4)
+    )
+    area = abs(0.5 * signed_area)
+    if short_side <= 1e-6 or area <= 0.0:
+        return None
+    return {
+        "long_side_cm": long_side,
+        "short_side_cm": short_side,
+        "area_cm2": area,
+        "aspect_ratio": long_side / short_side,
+    }
+
+
+def _json_detection(
+    index: int,
+    detection: Dict,
+    calibration_profile: TabletopCalibration | None,
+) -> Dict:
     return {
         "raw_detection_index": index,
         "score": float(detection.get("score", 0.0)),
@@ -98,6 +168,7 @@ def _json_detection(index: int, detection: Dict) -> Dict:
         "poly_px": detection.get("obb_poly_px"),
         "yaw_rad": detection.get("obb_yaw_rad"),
         "obb": _obb_metrics(detection),
+        "world_obb": _world_obb_metrics(detection, calibration_profile),
     }
 
 
@@ -106,6 +177,7 @@ def _summary_row(record: Dict) -> Dict:
 
     selected = record["selected_raw_obb"]
     obb = selected["obb"] if selected is not None else {}
+    world_obb = (selected.get("world_obb") or {}) if selected is not None else {}
     center = selected["center_px"] if selected is not None else None
     return {
         "frame_id": record["frame_id"],
@@ -120,6 +192,9 @@ def _summary_row(record: Dict) -> Dict:
         "short_side_px": obb.get("short_side_px"),
         "obb_area_px": obb.get("area_px"),
         "aspect_ratio": obb.get("aspect_ratio"),
+        "world_long_side_cm": world_obb.get("long_side_cm"),
+        "world_short_side_cm": world_obb.get("short_side_cm"),
+        "world_area_cm2": world_obb.get("area_cm2"),
     }
 
 
@@ -167,6 +242,8 @@ def run_table_obb_preprocess_comparison(
     detector: YOLOTableOBBDetector,
     *,
     max_frames: int | None = None,
+    calibration_profile: TabletopCalibration | None = None,
+    levels_white_points: Sequence[int] = (235, 225, 215),
 ) -> Path:
     """Run raw table-OBB inference on each debug variant and save artifacts.
 
@@ -185,6 +262,7 @@ def run_table_obb_preprocess_comparison(
         "frame_id", "source_frame", "preprocessing_variant", "detected_table_count",
         "highest_confidence", "center_x_px", "center_y_px", "yaw_rad",
         "long_side_px", "short_side_px", "obb_area_px", "aspect_ratio",
+        "world_long_side_cm", "world_short_side_cm", "world_area_cm2",
     )
 
     with (
@@ -197,7 +275,9 @@ def run_table_obb_preprocess_comparison(
             frame = cv2.imread(str(image_path), cv2.IMREAD_COLOR)
             if frame is None:
                 raise ValueError(f"Could not read image frame: {image_path}")
-            for variant_name, transform in table_obb_preprocess_variants():
+            for variant_name, transform in table_obb_preprocess_variants(
+                levels_white_points=levels_white_points
+            ):
                 processed = transform(frame)
                 detections = detector.detect_tables(processed)
                 prefix = f"frame_{frame_id:05d}_{variant_name}"
@@ -207,7 +287,10 @@ def run_table_obb_preprocess_comparison(
                     raise IOError(f"Could not write debug image: {processed_path}")
                 if not cv2.imwrite(str(overlay_path), draw_table_obb_overlay(processed, detections)):
                     raise IOError(f"Could not write debug image: {overlay_path}")
-                raw = [_json_detection(index, detection) for index, detection in enumerate(detections)]
+                raw = [
+                    _json_detection(index, detection, calibration_profile)
+                    for index, detection in enumerate(detections)
+                ]
                 record = {
                     "frame_id": frame_id,
                     "source_frame": str(image_path),

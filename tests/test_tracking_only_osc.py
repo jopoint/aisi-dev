@@ -10,6 +10,9 @@ from aisi.app.sim_scene_to_osc import (
     send_study_tracked_tables,
     send_tables,
     source_pose_targets,
+    vision_frame_perf,
+    is_fresh_empty_live_scene,
+    is_current_live_scene,
 )
 
 
@@ -34,6 +37,23 @@ def _rect_table(rotation_deg: float) -> dict:
 
 
 class TrackingOnlyOscTests(unittest.TestCase):
+    def test_new_vision_frame_perf_uses_capture_and_scene_ready_timestamps(self) -> None:
+        scene = {"vision_live": {"frame_id": 12, "perf": {
+            "capture_wall_ns": 1_000_000_000,
+            "scene_ready_wall_ns": 1_020_000_000,
+        }}}
+        self.assertEqual(vision_frame_perf(scene, 1_075_000_000), (12, 75.0, 55.0))
+        self.assertIsNone(vision_frame_perf({"vision_live": {"frame_id": 12}}, 1_075_000_000))
+
+    def test_fresh_live_scene_gate_rejects_old_frame_and_perf_metadata(self) -> None:
+        self.assertTrue(is_fresh_empty_live_scene({"tables": [], "vision_live": {"mode": "tables_only"}}))
+        self.assertFalse(is_fresh_empty_live_scene({"tables": [], "vision_live": {
+            "mode": "tables_only", "frame_id": 99, "perf": {"capture_wall_ns": 1},
+        }}))
+        old = {"tables": [{"id": "stale"}], "vision_live": {"mode": "tables_only", "frame_id": 99}}
+        self.assertFalse(is_current_live_scene(old, 1_000, 2_000))
+        self.assertTrue(is_current_live_scene(old, 3_000, 2_000))
+
     def test_live_rect_mask_stream_is_binding_independent_and_sorted_by_track_id(self) -> None:
         client = _RecordingOscClient()
         scene = {"tables": [

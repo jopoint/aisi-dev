@@ -4,7 +4,7 @@ This module is intentionally a small manual-project helper, not a builder for
 the protected ``AISI_v2.toe``.  Run it from a Text DAT or the TouchDesigner
 Python console after importing/pasting it into the active project.
 
-It can create a 160 x 80 cm dashed floor target and an overlap-gated 150 x
+It can create a 170 x 90 cm dashed floor target and an overlap-gated 150 x
 70 cm dashed tabletop target below ``comp_study_visualization``. Their
 transforms read the existing target OSC channels from
 ``/project1/comp_io/null_osc_raw``.
@@ -14,16 +14,25 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from td_builders.study_tabletop_brackets import remove_default_primitives
+from td_builders.study_tabletop_brackets import (
+    FLOOR_BRACKET_DEPTH_CM,
+    FLOOR_BRACKET_WIDTH_CM,
+    remove_default_primitives,
+)
 
 
 
 TD_UNITS_PER_CM = 0.0052
 RECT_WIDTH_CM = 160.0
 RECT_DEPTH_CM = 80.0
+FLOOR_TARGET_WIDTH_CM = FLOOR_BRACKET_WIDTH_CM
+FLOOR_TARGET_DEPTH_CM = FLOOR_BRACKET_DEPTH_CM
 TABLETOP_INNER_WIDTH_CM = 150.0
 TABLETOP_INNER_DEPTH_CM = 70.0
 OUTLINE_THICKNESS_CM = 2.5
+# A small positive offset eliminates z-fighting and makes target contours win
+# depth testing over their coplanar source outlines without visible movement.
+TARGET_DEPTH_OFFSET_TD = 0.001
 
 
 @dataclass(frozen=True)
@@ -37,9 +46,9 @@ class DashSegment:
 
 
 def rect_target_floor_dash_segments() -> tuple[DashSegment, ...]:
-    """Return local dashed-outline bars for the established 160 x 80 cm Rect."""
+    """Return dashed bars matching the padded 170 x 90 cm floor source outline."""
 
-    return rect_target_dash_segments(RECT_WIDTH_CM, RECT_DEPTH_CM)
+    return rect_target_dash_segments(FLOOR_TARGET_WIDTH_CM, FLOOR_TARGET_DEPTH_CM)
 
 
 def rect_target_tabletop_dash_segments() -> tuple[DashSegment, ...]:
@@ -162,6 +171,7 @@ def create_study_target_floor_geo(
     geo.par.tx.expr = x_expr
     geo.par.ty.expr = y_expr
     geo.par.rz.expr = rot_expr
+    geo.par.tz = TARGET_DEPTH_OFFSET_TD
     geo.par.sx.expr = _active_study_visibility_expression(osc_path)
     if material_path is not None and hasattr(geo.par, "material"):
         geo.par.material = material_path
@@ -507,6 +517,7 @@ def create_study_target_tabletop_geo(
     geo.par.tx.expr = x_expr
     geo.par.ty.expr = y_expr
     geo.par.rz.expr = rot_expr
+    geo.par.tz = TARGET_DEPTH_OFFSET_TD
     if material_path is not None and hasattr(geo.par, "material"):
         geo.par.material = material_path
     geo.nodeX = parent.nodeX + 250

@@ -3,10 +3,11 @@
 import unittest
 
 from td_builders.study_target_floor import (
-    RECT_DEPTH_CM,
-    RECT_WIDTH_CM,
+    FLOOR_TARGET_DEPTH_CM,
+    FLOOR_TARGET_WIDTH_CM,
     TABLETOP_INNER_DEPTH_CM,
     TABLETOP_INNER_WIDTH_CM,
+    TARGET_DEPTH_OFFSET_TD,
     TD_UNITS_PER_CM,
     STUDY_OVERLAP_CALLBACKS_DAT_SOURCE,
     STUDY_TABLETOP_VISIBILITY_CALLBACKS_DAT_SOURCE,
@@ -22,6 +23,7 @@ from td_builders.study_target_floor import (
     rect_target_floor_dash_segments,
     rect_target_tabletop_dash_segments,
 )
+from td_builders.study_tabletop_brackets import FLOOR_BRACKET_DEPTH_CM, FLOOR_BRACKET_WIDTH_CM
 
 
 class StudyTargetFloorBuilderTests(unittest.TestCase):
@@ -263,20 +265,34 @@ class StudyTargetFloorBuilderTests(unittest.TestCase):
         namespace["onCook"](script_op)
         self.assertEqual(script_op.output.value, 0.0)
 
-    def test_dashes_form_the_established_rect_footprint(self) -> None:
+    def test_floor_target_dashes_match_the_padded_source_outline_dimensions(self) -> None:
         segments = rect_target_floor_dash_segments()
 
+        self.assertEqual(FLOOR_TARGET_WIDTH_CM, FLOOR_BRACKET_WIDTH_CM)
+        self.assertEqual(FLOOR_TARGET_DEPTH_CM, FLOOR_BRACKET_DEPTH_CM)
         self.assertEqual(len(segments), 12)
-        half_width = RECT_WIDTH_CM * TD_UNITS_PER_CM / 2.0
-        half_depth = RECT_DEPTH_CM * TD_UNITS_PER_CM / 2.0
+        half_width = FLOOR_TARGET_WIDTH_CM * TD_UNITS_PER_CM / 2.0
+        half_depth = FLOOR_TARGET_DEPTH_CM * TD_UNITS_PER_CM / 2.0
         for segment in segments:
-            self.assertLessEqual(abs(segment.x_td) + segment.width_td / 2.0, half_width)
-            self.assertLessEqual(abs(segment.y_td) + segment.depth_td / 2.0, half_depth)
+            self.assertLessEqual(abs(segment.x_td) + segment.width_td / 2.0, half_width + 1e-12)
+            self.assertLessEqual(abs(segment.y_td) + segment.depth_td / 2.0, half_depth + 1e-12)
+        self.assertAlmostEqual(
+            max(segment.x_td + segment.width_td / 2.0 for segment in segments), half_width
+        )
+        self.assertAlmostEqual(
+            min(segment.x_td - segment.width_td / 2.0 for segment in segments), -half_width
+        )
+        self.assertAlmostEqual(
+            max(segment.y_td + segment.depth_td / 2.0 for segment in segments), half_depth
+        )
+        self.assertAlmostEqual(
+            min(segment.y_td - segment.depth_td / 2.0 for segment in segments), -half_depth
+        )
 
     def test_dashes_cover_all_four_rect_sides(self) -> None:
         segments = rect_target_floor_dash_segments()
-        half_width = RECT_WIDTH_CM * TD_UNITS_PER_CM / 2.0
-        half_depth = RECT_DEPTH_CM * TD_UNITS_PER_CM / 2.0
+        half_width = FLOOR_TARGET_WIDTH_CM * TD_UNITS_PER_CM / 2.0
+        half_depth = FLOOR_TARGET_DEPTH_CM * TD_UNITS_PER_CM / 2.0
 
         self.assertTrue(any(segment.y_td < -half_depth * 0.8 for segment in segments))
         self.assertTrue(any(segment.y_td > half_depth * 0.8 for segment in segments))
@@ -292,6 +308,16 @@ class StudyTargetFloorBuilderTests(unittest.TestCase):
         for segment in segments:
             self.assertLessEqual(abs(segment.x_td) + segment.width_td / 2.0, half_width)
             self.assertLessEqual(abs(segment.y_td) + segment.depth_td / 2.0, half_depth)
+        self.assertAlmostEqual(
+            max(segment.x_td + segment.width_td / 2.0 for segment in segments), half_width
+        )
+        self.assertAlmostEqual(
+            max(segment.y_td + segment.depth_td / 2.0 for segment in segments), half_depth
+        )
+
+    def test_targets_have_a_small_positive_depth_offset_above_source_outlines(self) -> None:
+        self.assertEqual(TARGET_DEPTH_OFFSET_TD, 0.001)
+        self.assertGreater(TARGET_DEPTH_OFFSET_TD, 0.0)
 
     def test_overlap_state_callback_reuses_study_motion_overlap(self) -> None:
         self.assertIn("motion_math.module.rect_motion_segments", STUDY_OVERLAP_CALLBACKS_DAT_SOURCE)

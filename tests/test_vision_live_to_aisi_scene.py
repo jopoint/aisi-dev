@@ -8,8 +8,12 @@ import unittest
 
 from aisi.app.vision_live_to_aisi_scene import (
     VisionSceneAdapter,
+    _capture_latency_ms,
     atomic_write_scene,
+    initial_live_offset,
     load_last_frame,
+    read_new_jsonl_lines,
+    publish_fresh_live_scene,
 )
 from aisi_sensing.core.types import DetectedEntity, FrameEvent, Pose2D
 
@@ -102,6 +106,49 @@ class VisionLiveToAisiSceneTests(unittest.TestCase):
         invalid.world["homography_applied"] = False
         with self.assertRaisesRegex(ValueError, "homography_applied"):
             VisionSceneAdapter().apply_frame(invalid)
+
+    def test_debug_perf_metadata_is_propagated_without_changing_table_contract(self) -> None:
+        frame = _frame(1, [("table_00", 100.0, 200.0, 0.0)])
+        frame.world["perf"] = {
+            "capture_wall_ns": 1_000_000_000,
+            "generic_yolo_ms": 12.5,
+            "table_obb_ms": 20.0,
+        }
+        adapter = VisionSceneAdapter()
+        adapter.apply_frame(frame)
+        self.assertEqual(adapter.scene()["vision_live"]["perf"], frame.world["perf"])
+        self.assertEqual(adapter.scene()["tables"][0]["x_cm"], 100.0)
+
+    def test_capture_latency_uses_the_shared_wall_clock_timestamp(self) -> None:
+        self.assertEqual(_capture_latency_ms({"capture_wall_ns": 1_000_000_000}, 1_025_000_000), 25.0)
+        self.assertIsNone(_capture_latency_ms({}, 1_025_000_000))
+
+    def test_live_tail_skips_existing_history_then_reads_append_and_truncate(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            source = Path(temporary_directory) / "events.jsonl"
+            source.write_bytes(b"old\n")
+            offset = initial_live_offset(source)
+            offset, pending, lines = read_new_jsonl_lines(source, offset, b"")
+            self.assertEqual(lines, [])
+            with source.open("ab") as handle:
+                handle.write(b"new\n")
+            offset, pending, lines = read_new_jsonl_lines(source, offset, pending)
+            self.assertEqual(lines, [b"new"])
+            source.write_bytes(b"fresh\n")
+            offset, pending, lines = read_new_jsonl_lines(source, offset, pending)
+            self.assertEqual(lines, [b"fresh"])
+
+    def test_fresh_live_scene_replaces_stale_tables_frame_and_perf_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            destination = Path(temporary_directory) / "vision_live_scene.json"
+            destination.write_text(json.dumps({
+                "tables": [{"id": "table_stale"}],
+                "vision_live": {"frame_id": 99, "perf": {"capture_wall_ns": 1}},
+            }), encoding="utf-8")
+            publish_fresh_live_scene(destination)
+            fresh = json.loads(destination.read_text(encoding="utf-8"))
+            self.assertEqual(fresh["tables"], [])
+            self.assertEqual(fresh["vision_live"], {"mode": "tables_only"})
 
 
 if __name__ == "__main__":

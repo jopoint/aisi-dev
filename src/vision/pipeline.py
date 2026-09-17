@@ -12,6 +12,7 @@ from typing import Optional, Dict, List, Tuple
 import json
 import os
 import time
+import threading
 from datetime import datetime
 
 from src.vision.detection.sam3_segmenter import SAM3Segmenter
@@ -20,6 +21,164 @@ from src.aisi_sensing.sensing.calibration.homography import apply_homography
 from src.aisi_sensing.core.types import FrameEvent, DetectedEntity, Pose2D
 from src.aisi_sensing.core.timebase import now_iso
 from src.vision.calibration.tabletop import TabletopCalibration, project_axis_angle, project_point
+
+
+# The current physical Rect table is 160 x 80 cm. This deliberately broad
+# creation-only ceiling rejects only a clearly impossible (>2x) tabletop-plane
+# footprint; it is not an association or track-update tolerance.
+RECT_TABLE_NOMINAL_AREA_CM2 = 160.0 * 80.0
+RECT_TABLE_OBVIOUSLY_OVERSIZED_AREA_CM2 = 2.0 * RECT_TABLE_NOMINAL_AREA_CM2
+
+
+class LatestFrameCameraCapture:
+    """Continuously drain one OpenCV capture, retaining only its newest frame.
+
+    This has intentionally no queue: a slow inference loop receives a newer
+    generation on its next read instead of accumulating camera latency.
+    """
+
+    def __init__(
+        self,
+        cap,
+        *,
+        first_frame_timeout_seconds: float = 3.0,
+        max_consecutive_read_failures: int = 3,
+    ) -> None:
+        self._cap = cap
+        self._condition = threading.Condition()
+        self._stop = False
+        self._failed = False
+        self._failure_reason: str | None = None
+        self._first_frame_timeout_seconds = float(first_frame_timeout_seconds)
+        self._max_consecutive_read_failures = int(max_consecutive_read_failures)
+        self._generation = 0
+        self._latest: tuple[int, np.ndarray, int, float] | None = None
+        self._thread = threading.Thread(target=self._run, name="aisi-camera-capture", daemon=True)
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def _run(self) -> None:
+        first_frame_deadline = time.monotonic() + self._first_frame_timeout_seconds
+        consecutive_failures = 0
+        while True:
+            with self._condition:
+                if self._stop:
+                    return
+            started = time.perf_counter()
+            try:
+                ret, frame = self._cap.read()
+            except Exception as exc:
+                with self._condition:
+                    self._failed = True
+                    self._failure_reason = f"capture worker exception: {exc!r}"
+                    self._condition.notify_all()
+                return
+            capture_wall_ns = time.time_ns() if ret else 0
+            read_ms = (time.perf_counter() - started) * 1000.0
+            with self._condition:
+                if not ret:
+                    consecutive_failures += 1
+                    before_first_frame = self._latest is None
+                    initial_timeout = before_first_frame and time.monotonic() >= first_frame_deadline
+                    repeated_failure = (
+                        not before_first_frame
+                        and consecutive_failures >= self._max_consecutive_read_failures
+                    )
+                    if initial_timeout or repeated_failure:
+                        self._failed = True
+                        if initial_timeout:
+                            self._failure_reason = (
+                                "timeout waiting for first frame; "
+                                f"cap.read() returned False {consecutive_failures} times"
+                            )
+                        else:
+                            self._failure_reason = (
+                                "capture read repeatedly failed after startup; "
+                                f"cap.read() returned False {consecutive_failures} times"
+                            )
+                        self._condition.notify_all()
+                        return
+                    # A few early False results are normal with some camera
+                    # backends. Wait on the condition so stop() remains prompt
+                    # without spinning until the first usable frame arrives.
+                    self._condition.wait(timeout=0.01)
+                    continue
+                consecutive_failures = 0
+                self._generation += 1
+                self._latest = (self._generation, frame, capture_wall_ns, read_ms)
+                self._condition.notify_all()
+
+    def wait_for_first_frame(self, timeout_seconds: float = 3.0):
+        """Wait for startup to produce a frame, fail, stop, or time out."""
+
+        return self.next_after(0, timeout_seconds=timeout_seconds)
+
+    def status_message(self) -> str:
+        """Return a concrete state explanation for startup/runtime diagnostics."""
+
+        with self._condition:
+            if self._failure_reason is not None:
+                return self._failure_reason
+            if self._stop:
+                return "capture worker was stopped"
+            if self._latest is None:
+                return "capture worker is running but no frame is available yet"
+            return "capture worker is running"
+
+    def next_after(self, generation: int, timeout_seconds: float = 0.25):
+        """Return the newest generation after ``generation``, or ``None`` otherwise."""
+
+        with self._condition:
+            self._condition.wait_for(
+                lambda: (
+                    (self._latest is not None and self._latest[0] > generation)
+                    or self._stop
+                    or self._failed
+                ),
+                timeout=timeout_seconds,
+            )
+            if self._latest is not None and self._latest[0] > generation:
+                return self._latest
+            return None
+
+    def stop(self) -> None:
+        with self._condition:
+            self._stop = True
+            self._condition.notify_all()
+        self._thread.join()
+
+
+def camera_capture_perf_label(camera_capture_mode: str) -> str:
+    """Name capture timing accurately for direct versus background capture."""
+
+    return "capture_read" if camera_capture_mode == "latest" else "capture"
+
+
+def format_vision_perf_log(
+    *,
+    camera_capture_mode: str,
+    fps: float,
+    capture_ms: float,
+    generic_yolo_ms: float,
+    table_obb_ms: float,
+    tracking_post_ms: float,
+    jsonl_ms: float,
+    frame_total_ms: float,
+    frame_total_p95_ms: float,
+) -> str:
+    """Format the aggregated Vision performance line without changing timings."""
+
+    return (
+        "[PERF vision] "
+        f"fps={fps:.1f} "
+        f"{camera_capture_perf_label(camera_capture_mode)}={capture_ms:.1f}ms "
+        f"generic_yolo={generic_yolo_ms:.1f}ms "
+        f"table_obb={table_obb_ms:.1f}ms "
+        f"tracking_post={tracking_post_ms:.1f}ms "
+        f"jsonl={jsonl_ms:.1f}ms "
+        f"total={frame_total_ms:.1f}ms p95={frame_total_p95_ms:.1f}ms"
+    )
 
 
 def normalize_unoriented_axis_yaw(theta_rad: float) -> float:
@@ -87,12 +246,14 @@ def validate_table_yaw_smoothing_alpha(value: float) -> float:
 def table_obb_detector_input(
     frame_bgr: np.ndarray,
     preprocess: str = "none",
+    levels_white_point: int = 235,
 ) -> np.ndarray:
     """Return the table-OBB-only inference frame for the selected safe mode.
 
-    ``none`` returns the original object unchanged.  ``gaussian5`` returns a
-    blurred copy exclusively for :class:`YOLOTableOBBDetector`; callers must
-    keep generic YOLO inference on ``frame_bgr``.
+    ``none`` returns the original object unchanged. ``levels`` applies the
+    explicit linear white-point transform exclusively for
+    :class:`YOLOTableOBBDetector`; callers must keep generic YOLO inference on
+    ``frame_bgr``.
     """
 
     mode = str(preprocess).strip().lower()
@@ -100,12 +261,29 @@ def table_obb_detector_input(
         return frame_bgr
     if mode == "gaussian5":
         return cv2.GaussianBlur(frame_bgr, (5, 5), 0)
-    raise ValueError("table_obb_preprocess must be 'none' or 'gaussian5'")
+    if mode == "levels":
+        white_point = int(levels_white_point)
+        if not 1 <= white_point <= 255:
+            raise ValueError("table_obb_levels_white_point must be in [1, 255]")
+        return np.clip(
+            frame_bgr.astype(np.float32) * (255.0 / float(white_point)), 0.0, 255.0
+        ).astype(np.uint8)
+    raise ValueError("table_obb_preprocess must be 'none', 'gaussian5', or 'levels'")
+
+
+def table_obb_preprocess_label(preprocess: str, levels_white_point: int = 235) -> str:
+    """Return the concise, user-facing table-OBB preprocessing configuration."""
+
+    mode = str(preprocess).strip().lower()
+    if mode == "levels":
+        return f"levels (white_point={int(levels_white_point)})"
+    return mode
 
 
 def yolo_detector_inputs(
     frame_bgr: np.ndarray,
     table_obb_preprocess: str = "none",
+    table_obb_levels_white_point: int = 235,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Return isolated generic-YOLO and table-OBB inference inputs.
 
@@ -113,7 +291,9 @@ def yolo_detector_inputs(
     preprocessed copy and must be passed only to the table OBB detector.
     """
 
-    return frame_bgr, table_obb_detector_input(frame_bgr, table_obb_preprocess)
+    return frame_bgr, table_obb_detector_input(
+        frame_bgr, table_obb_preprocess, table_obb_levels_white_point
+    )
 
 
 def hard_example_filename(frame_id: int, sequence: int, now: datetime | None = None) -> str:
@@ -270,6 +450,7 @@ class VisionPipeline:
         table_obb_max_det: int = 0,
         table_obb_raw_min_conf: Optional[float] = None,
         table_obb_preprocess: str = "none",
+        table_obb_levels_white_point: int = 235,
         yolo_max_det: int = 80,
         track_ttl_frames: int = 15,
         conf_create: Optional[float] = None,
@@ -324,6 +505,10 @@ class VisionPipeline:
         table_lost_track_ttl: int = 15,
         table_birth_block_near_lost_dist: float = 0.0,
         table_birth_block_near_lost_frames: int = 0,
+        table_tombstone_reactivation: bool = False,
+        table_tombstone_max_age_seconds: float = 10.0,
+        table_tombstone_max_distance_cm: float = 35.0,
+        table_tombstone_max_rotation_deg: float = 15.0,
         table_angle_deadband_deg: float = 0.0,
         table_render_grace_frames: int = 0,
         table_static_hold_frames: int = 0,
@@ -356,6 +541,7 @@ class VisionPipeline:
         hard_example_capture_dir: Optional[str] = None,
         hard_example_burst_frames: int = 1,
         show_table_ids: bool = False,
+        perf_log: bool = False,
     ):
         """
         Initialize vision pipeline.
@@ -380,7 +566,9 @@ class VisionPipeline:
             table_obb_iou: IoU threshold for table OBB model (defaults to yolo_iou).
             table_obb_max_det: Optional cap for raw table OBB detections before merge/tracking (0=off).
             table_obb_raw_min_conf: Optional min confidence for raw table OBB detections before merge/tracking.
-            table_obb_preprocess: Optional detector-only table OBB input preprocessing (none or gaussian5).
+            table_obb_preprocess: Optional detector-only table OBB input preprocessing
+                (none, gaussian5, or levels).
+            table_obb_levels_white_point: White point for detector-only levels mode.
             hard_example_capture_dir: Optional output directory enabled by the live ``c`` hotkey.
             hard_example_burst_frames: Frames saved per ``c`` trigger (default: 1).
             yolo_max_det: Max detections kept per class per frame (top-k by confidence).
@@ -477,8 +665,11 @@ class VisionPipeline:
         self.table_obb_max_det = int(table_obb_max_det)
         self.table_obb_raw_min_conf = None if table_obb_raw_min_conf is None else float(table_obb_raw_min_conf)
         self.table_obb_preprocess = str(table_obb_preprocess).strip().lower()
-        if self.table_obb_preprocess not in {"none", "gaussian5"}:
-            raise ValueError("table_obb_preprocess must be 'none' or 'gaussian5'")
+        if self.table_obb_preprocess not in {"none", "gaussian5", "levels"}:
+            raise ValueError("table_obb_preprocess must be 'none', 'gaussian5', or 'levels'")
+        self.table_obb_levels_white_point = int(table_obb_levels_white_point)
+        if not 1 <= self.table_obb_levels_white_point <= 255:
+            raise ValueError("table_obb_levels_white_point must be in [1, 255]")
         self._yolo_max_det = yolo_max_det
         self.track_ttl_frames = int(track_ttl_frames)
         self.conf_create = float(yolo_conf if conf_create is None else conf_create)
@@ -548,6 +739,16 @@ class VisionPipeline:
         self.table_protect_existing_tracks = bool(table_protect_existing_tracks)
         self.table_recover_lost_tracks = bool(table_recover_lost_tracks)
         self.table_lost_track_ttl = int(max(1, table_lost_track_ttl))
+        self.table_tombstone_reactivation = bool(table_tombstone_reactivation)
+        self.table_tombstone_max_age_seconds = float(table_tombstone_max_age_seconds)
+        self.table_tombstone_max_distance_cm = float(table_tombstone_max_distance_cm)
+        self.table_tombstone_max_rotation_deg = float(table_tombstone_max_rotation_deg)
+        if (
+            self.table_tombstone_max_age_seconds <= 0.0
+            or self.table_tombstone_max_distance_cm <= 0.0
+            or self.table_tombstone_max_rotation_deg <= 0.0
+        ):
+            raise ValueError("table tombstone reactivation thresholds must be > 0")
         self.table_birth_block_near_lost_dist = float(max(0.0, table_birth_block_near_lost_dist))
         self.table_birth_block_near_lost_frames = int(max(0, table_birth_block_near_lost_frames))
         self.table_angle_deadband_deg = float(max(0.0, table_angle_deadband_deg))
@@ -597,6 +798,9 @@ class VisionPipeline:
         self._hard_example_burst_remaining = 0
         self._hard_example_capture_sequence = 0
         self.show_table_ids = bool(show_table_ids)
+        # Diagnostic only: enables timing metadata/logging without altering
+        # camera acquisition, detector inputs, tracking, or output cadence.
+        self.perf_log = bool(perf_log)
         if self.calibration_profile is not None:
             if self.calibration_profile.camera_rotate != self.camera_rotate:
                 raise ValueError("Calibration camera_rotate does not match VisionPipeline camera_rotate")
@@ -706,6 +910,7 @@ class VisionPipeline:
         # Must exist before the first live frame; reset_tracks() also clears
         # this buffer when the operator requests a fresh tracker session.
         self._pending_table_births: List[Dict] = []
+        self._table_tombstones: Dict[str, Dict] = {}
         self._table_obb_detector = None
 
         self.frame_id = 0
@@ -862,6 +1067,7 @@ class VisionPipeline:
         # ID. Unlike an unconfirmed track, they cannot compete for an
         # established track's association.
         self._pending_table_births: List[Dict] = []
+        self._table_tombstones: Dict[str, Dict] = {}
 
     def _apply_input_crop(self, frame_bgr: np.ndarray) -> np.ndarray:
         """Apply optional fixed input crop, clamped to frame bounds."""
@@ -1053,6 +1259,72 @@ class VisionPipeline:
             "area": area,
             "aspect_ratio": long_side / short_side,
         }
+
+    def _table_obb_world_metrics(self, det: Dict) -> Optional[Dict[str, float]]:
+        """Measure a table OBB on the calibrated tabletop plane in centimetres.
+
+        A table-only OBB describes its tabletop boundary, so its four corners
+        can use the existing ``rect_tabletop`` calibration directly.  A generic
+        bare homography has no guaranteed centimetre unit contract, therefore
+        this creation gate intentionally stays inactive without a calibration
+        profile rather than introducing a parallel pixel-size heuristic.
+        """
+
+        if self.calibration_profile is None:
+            return None
+        poly = det.get("obb_poly_px")
+        if not isinstance(poly, list) or len(poly) != 4:
+            return None
+        try:
+            points_px = [(float(point[0]), float(point[1])) for point in poly]
+            points_cm = [project_point(point, self.calibration_profile) for point in points_px]
+        except (IndexError, TypeError, ValueError, np.linalg.LinAlgError):
+            return None
+        edges = [
+            float(np.hypot(
+                points_cm[(index + 1) % 4][0] - points_cm[index][0],
+                points_cm[(index + 1) % 4][1] - points_cm[index][1],
+            ))
+            for index in range(4)
+        ]
+        first = 0.5 * (edges[0] + edges[2])
+        second = 0.5 * (edges[1] + edges[3])
+        long_side = max(first, second)
+        short_side = min(first, second)
+        if long_side <= 0.0 or short_side <= 0.0:
+            return None
+        signed_area = sum(
+            points_cm[index][0] * points_cm[(index + 1) % 4][1]
+            - points_cm[(index + 1) % 4][0] * points_cm[index][1]
+            for index in range(4)
+        )
+        area = abs(0.5 * signed_area)
+        if area <= 0.0:
+            return None
+        return {
+            "width_cm": first,
+            "height_cm": second,
+            "long_side_cm": long_side,
+            "short_side_cm": short_side,
+            "area_cm2": area,
+            "aspect_ratio": long_side / short_side,
+        }
+
+    @staticmethod
+    def _new_table_world_size_rejection_reasons(
+        world_metrics: Optional[Dict[str, float]],
+    ) -> tuple[str, ...]:
+        """Reject only an obviously oversized calibrated Rect-table birth."""
+
+        if world_metrics is None:
+            return ()
+        try:
+            area_cm2 = float(world_metrics["area_cm2"])
+        except (KeyError, TypeError, ValueError):
+            return ()
+        if area_cm2 > RECT_TABLE_OBVIOUSLY_OVERSIZED_AREA_CM2:
+            return ("world_area_too_large",)
+        return ()
 
     def _table_obb_plausibility_reasons(
         self,
@@ -1327,6 +1599,131 @@ class VisionPipeline:
             return False
         del self._pending_table_births[best_index]
         return True
+
+    @staticmethod
+    def _rect_rotation_delta_deg(first_deg: float, second_deg: float) -> float:
+        """Return the unoriented Rect angle difference in the interval [0, 90]."""
+
+        difference = abs(float(first_deg) - float(second_deg)) % 180.0
+        return min(difference, 180.0 - difference)
+
+    def _expire_table_tombstones(self, now_monotonic: float) -> List[Dict]:
+        """Remove expired, never-rendered Table identity tombstones."""
+
+        events: List[Dict] = []
+        for track_id, tombstone in list(getattr(self, "_table_tombstones", {}).items()):
+            age_seconds = float(now_monotonic) - float(tombstone["deleted_monotonic"])
+            if age_seconds > self.table_tombstone_max_age_seconds:
+                del self._table_tombstones[track_id]
+                events.append({
+                    "event": "tombstone_expired",
+                    "table_id": track_id,
+                    "age_s": age_seconds,
+                })
+        return events
+
+    def _create_table_tombstone(
+        self, track_id: str, track: Dict, frame_id: int, now_monotonic: float
+    ) -> Dict | None:
+        """Retain a confirmed calibrated Rect identity after normal TTL deletion."""
+
+        if (
+            not self.table_tombstone_reactivation
+            or self.calibration_profile is None
+            or not bool(track.get("table_confirmed", False))
+        ):
+            return None
+        center = track.get("center_smoothed", track.get("center"))
+        yaw = track.get("prev_theta", track.get("obb_yaw_rad"))
+        if not isinstance(center, (tuple, list)) or len(center) != 2 or yaw is None:
+            return None
+        try:
+            world_x, world_y = self._project_world_point((float(center[0]), float(center[1])))
+            world_theta = self._project_table_theta((float(center[0]), float(center[1])), float(yaw))
+        except (TypeError, ValueError, np.linalg.LinAlgError):
+            return None
+        if world_theta is None:
+            return None
+        tombstone = {
+            "id": track_id,
+            "deleted_frame": int(frame_id),
+            "deleted_monotonic": float(now_monotonic),
+            "deleted_after_misses": int(track.get("miss_count", 0)),
+            "world_pose": {
+                "x_cm": float(world_x),
+                "y_cm": float(world_y),
+                "rotation_deg": float(np.degrees(world_theta)),
+            },
+            "full_anchor": track.get("table_full_anchor"),
+            "last_world_obb": self._table_obb_world_metrics({
+                "obb_poly_px": track.get("obb_poly_px"),
+            }),
+            "last_bbox_px": list(track.get("bbox", [])),
+        }
+        self._table_tombstones[track_id] = tombstone
+        return {
+            "event": "tombstone_created",
+            "table_id": track_id,
+            "frame": int(frame_id),
+            "world_pose": tombstone["world_pose"],
+            "deleted_after_misses": tombstone["deleted_after_misses"],
+        }
+
+    def _evaluate_table_tombstone_reactivation(
+        self, det: Dict, now_monotonic: float
+    ) -> tuple[Dict | None, List[Dict]]:
+        """Return the one unambiguous calibrated tombstone match, if any."""
+
+        if not self.table_tombstone_reactivation or self.calibration_profile is None:
+            return None, []
+        center = det.get("obb_center_px") or self._bbox_center(det["bbox_px"])
+        yaw = det.get("obb_yaw_rad")
+        if yaw is None:
+            return None, []
+        try:
+            world_x, world_y = self._project_world_point((float(center[0]), float(center[1])))
+            world_theta = self._project_table_theta((float(center[0]), float(center[1])), float(yaw))
+        except (IndexError, TypeError, ValueError, np.linalg.LinAlgError):
+            return None, []
+        if world_theta is None:
+            return None, []
+        candidate_pose = {
+            "x_cm": float(world_x), "y_cm": float(world_y),
+            "rotation_deg": float(np.degrees(world_theta)),
+        }
+        eligible: List[Dict] = []
+        evaluations: List[Dict] = []
+        for tombstone_id, tombstone in self._table_tombstones.items():
+            age = float(now_monotonic) - float(tombstone["deleted_monotonic"])
+            old_pose = tombstone["world_pose"]
+            distance = float(np.hypot(candidate_pose["x_cm"] - old_pose["x_cm"], candidate_pose["y_cm"] - old_pose["y_cm"]))
+            rotation = self._rect_rotation_delta_deg(candidate_pose["rotation_deg"], old_pose["rotation_deg"])
+            reasons: List[str] = []
+            if age > self.table_tombstone_max_age_seconds:
+                reasons.append("expired")
+            if distance > self.table_tombstone_max_distance_cm:
+                reasons.append("distance")
+            if rotation > self.table_tombstone_max_rotation_deg:
+                reasons.append("rotation")
+            evaluation = {
+                "tombstone_id": tombstone_id,
+                "tombstone_age_s": age,
+                "world_distance_cm": distance,
+                "rotation_delta_deg_mod180": rotation,
+                "eligible": not reasons,
+                "rejection_reasons": reasons,
+            }
+            evaluations.append(evaluation)
+            if not reasons:
+                eligible.append(tombstone)
+        if len(eligible) != 1:
+            if len(eligible) > 1:
+                for evaluation in evaluations:
+                    if evaluation["eligible"]:
+                        evaluation["eligible"] = False
+                        evaluation["rejection_reasons"].append("ambiguous")
+            return None, evaluations
+        return {"tombstone": eligible[0], "candidate_pose": candidate_pose}, evaluations
 
     @staticmethod
     def _bbox_center(bbox: List[int]) -> Tuple[float, float]:
@@ -1619,6 +2016,7 @@ class VisionPipeline:
         projector_display: bool = False,
         projector_monitor: int = 1,
         flush_every: int = 10,
+        camera_capture_mode: str = "direct",
     ):
         """
         Process live camera stream.
@@ -1630,7 +2028,11 @@ class VisionPipeline:
             projector_display: Whether to show a fullscreen projector overlay window
             projector_monitor: Monitor index for projector window (0=primary, 1=second, ...)
             flush_every: Flush/fsync every N frames (based on frame_id)
+            camera_capture_mode: ``direct`` reads in this loop; ``latest``
+                continuously drains the same capture in one background thread.
         """
+        if camera_capture_mode not in {"direct", "latest"}:
+            raise ValueError("camera_capture_mode must be 'direct' or 'latest'")
         cap = cv2.VideoCapture(camera_index)
         if not cap.isOpened():
             raise RuntimeError(f"Could not open camera {camera_index}")
@@ -1677,13 +2079,51 @@ class VisionPipeline:
         _logged_first_frame = False
         _saved_live_frame = False
         _saved_processed_live_frame = False
+        perf_window_started = time.perf_counter()
+        perf_samples: List[Dict[str, float]] = []
+        latest_capture = LatestFrameCameraCapture(cap) if camera_capture_mode == "latest" else None
+        latest_generation = 0
+        initial_latest = None
+        if latest_capture is not None:
+            latest_capture.start()
         
         try:
+            if latest_capture is not None:
+                initial_latest = latest_capture.wait_for_first_frame(timeout_seconds=3.0)
+                if initial_latest is None:
+                    print(
+                        "Latest-frame camera capture startup failed: "
+                        f"{latest_capture.status_message()}"
+                    )
+                    return
             while True:
-                ret, frame = cap.read()
-                if not ret:
-                    print("Failed to read frame from camera")
-                    break
+                loop_started = time.perf_counter()
+                if latest_capture is None:
+                    capture_started = time.perf_counter()
+                    ret, frame = cap.read()
+                    if not ret:
+                        print("Failed to read frame from camera")
+                        break
+                    capture_ms = (time.perf_counter() - capture_started) * 1000.0
+                    # Absolute wall time is intentionally debug-only metadata so
+                    # downstream local processes can measure end-to-end latency.
+                    capture_wall_ns = time.time_ns()
+                else:
+                    latest = initial_latest
+                    initial_latest = None
+                    if latest is None:
+                        latest = latest_capture.next_after(latest_generation)
+                    if latest is None:
+                        status = latest_capture.status_message()
+                        if status == "capture worker is running":
+                            # No new generation within this short wait. The
+                            # worker owns cap.read(); leave it running and wait
+                            # for its next frame instead of treating this as an
+                            # error.
+                            continue
+                        print(f"Latest-frame camera capture ended: {status}")
+                        break
+                    latest_generation, frame, capture_wall_ns, capture_ms = latest
 
                 raw_h, raw_w = frame.shape[:2]
                 frame = self._apply_camera_rotation(frame)
@@ -1737,16 +2177,20 @@ class VisionPipeline:
                         frame_bgr=frame,
                         frame_id=live_frame_id,
                         timestamp_iso=timestamp_iso,
+                        capture_wall_ns=capture_wall_ns if self.perf_log else None,
                     )
                 else:
                     frame_event = self.process_frame(frame, timestamp_iso=timestamp_iso)
                 live_frame_id += 1
                 
+                jsonl_ms = 0.0
                 if jsonl_file is not None:
+                    jsonl_started = time.perf_counter()
                     jsonl_file.write(json.dumps(frame_event.to_dict()) + "\n")
                     if flush_every > 0 and (frame_event.frame_id % flush_every == 0):
                         jsonl_file.flush()
                         os.fsync(jsonl_file.fileno())
+                    jsonl_ms = (time.perf_counter() - jsonl_started) * 1000.0
                 
                 if display:
                     if self._last_overlay_items:
@@ -1773,8 +2217,42 @@ class VisionPipeline:
                         self._trigger_hard_example_capture(frame, frame_event.frame_id)
                     if key == ord('q') or key == 27:  # q or ESC
                         break
+
+                if self.perf_log:
+                    process_perf = frame_event.world.get("perf", {})
+                    perf_samples.append({
+                        "capture_ms": capture_ms,
+                        "generic_yolo_ms": float(process_perf.get("generic_yolo_ms", 0.0)),
+                        "table_obb_ms": float(process_perf.get("table_obb_ms", 0.0)),
+                        "tracking_post_ms": float(process_perf.get("tracking_post_ms", 0.0)),
+                        "vision_process_ms": float(process_perf.get("vision_process_ms", 0.0)),
+                        "jsonl_ms": jsonl_ms,
+                        "frame_total_ms": (time.perf_counter() - loop_started) * 1000.0,
+                    })
+                    now_perf = time.perf_counter()
+                    elapsed = now_perf - perf_window_started
+                    if elapsed >= 2.0 and perf_samples:
+                        def _mean(name: str) -> float:
+                            return sum(sample[name] for sample in perf_samples) / len(perf_samples)
+                        totals = sorted(sample["frame_total_ms"] for sample in perf_samples)
+                        p95 = totals[min(len(totals) - 1, int(0.95 * (len(totals) - 1)))]
+                        print(format_vision_perf_log(
+                            camera_capture_mode=camera_capture_mode,
+                            fps=len(perf_samples) / elapsed,
+                            capture_ms=_mean("capture_ms"),
+                            generic_yolo_ms=_mean("generic_yolo_ms"),
+                            table_obb_ms=_mean("table_obb_ms"),
+                            tracking_post_ms=_mean("tracking_post_ms"),
+                            jsonl_ms=_mean("jsonl_ms"),
+                            frame_total_ms=_mean("frame_total_ms"),
+                            frame_total_p95_ms=p95,
+                        ))
+                        perf_samples.clear()
+                        perf_window_started = now_perf
         
         finally:
+            if latest_capture is not None:
+                latest_capture.stop()
             cap.release()
             if jsonl_file is not None:
                 jsonl_file.close()
@@ -3525,6 +4003,7 @@ class VisionPipeline:
         frame_bgr: np.ndarray,
         frame_id: int,
         timestamp_iso: str,
+        capture_wall_ns: Optional[int] = None,
     ) -> FrameEvent:
         """
         Process a single frame using YOLO detections directly (no SAM2).
@@ -3532,20 +4011,32 @@ class VisionPipeline:
         Uses greedy nearest-center matching per class with extra IoU/area gates,
         class-specific confidence filtering, and EMA bbox smoothing for stability.
         """
+        process_started = time.perf_counter() if self.perf_log else 0.0
         self._validate_calibration_frame(frame_bgr)
         from collections import Counter, defaultdict, deque
 
         # Generic YOLO always sees the original calibrated frame.  Only the
         # table-only OBB model can opt into the local A/B preprocessing mode.
         generic_yolo_frame = frame_bgr
+        detector_started = time.perf_counter() if self.perf_log else 0.0
         raw_detections = self._yolo_detector.detect(generic_yolo_frame)
+        generic_yolo_ms = (time.perf_counter() - detector_started) * 1000.0 if self.perf_log else 0.0
         raw_table_obb_detections: List[Dict] = []
         if self._table_obb_detector is not None:
-            _, table_obb_frame = yolo_detector_inputs(frame_bgr, self.table_obb_preprocess)
+            _, table_obb_frame = yolo_detector_inputs(
+                frame_bgr,
+                self.table_obb_preprocess,
+                self.table_obb_levels_white_point,
+            )
+            table_detector_started = time.perf_counter() if self.perf_log else 0.0
             table_obb_detections = self._table_obb_detector.detect_tables(table_obb_frame)
+            table_obb_ms = (time.perf_counter() - table_detector_started) * 1000.0 if self.perf_log else 0.0
             raw_table_obb_detections = list(table_obb_detections)
             raw_detections = [det for det in raw_detections if det.get("label") != "table"]
             raw_detections.extend(table_obb_detections)
+        else:
+            table_obb_ms = 0.0
+        detector_finished = time.perf_counter() if self.perf_log else 0.0
         frame_h, frame_w = frame_bgr.shape[:2]
         frame_area = float(frame_w * frame_h) if frame_w > 0 and frame_h > 0 else 1.0
         raw_table_dets = sum(1 for det in raw_detections if det.get("label") == "table")
@@ -3674,6 +4165,7 @@ class VisionPipeline:
         dbg_recoverable_lost_table_track_count = 0
         dbg_blocked_new_table_births_near_lost = 0
         dbg_suppressed_table_fragment_births = 0
+        dbg_rejected_physical_table_births = 0
         # Debug-only association audit. It is serialized only when
         # --table-obb-debug-jsonl is enabled; it has no role in matching.
         dbg_table_associations: List[Dict] = []
@@ -3681,6 +4173,7 @@ class VisionPipeline:
         dbg_table_new_track_ids: List[str] = []
         dbg_table_birth_candidates: List[Dict] = []
         dbg_table_anchor_reacquisition_candidates: List[Dict] = []
+        dbg_table_tombstone_events: List[Dict] = self._expire_table_tombstones(time.monotonic())
 
         furniture_entities: List[DetectedEntity] = []
         people_entities: List[DetectedEntity] = []
@@ -3933,6 +4426,12 @@ class VisionPipeline:
                 if miss_count > ttl_frames:
                     stale_ids.append(tid)
             for tid in stale_ids:
+                if label == "table":
+                    tombstone_event = self._create_table_tombstone(
+                        tid, class_tracks[tid], frame_id, time.monotonic()
+                    )
+                    if tombstone_event is not None:
+                        dbg_table_tombstone_events.append(tombstone_event)
                 del class_tracks[tid]
                 if label == "table":
                     dbg_table_deleted_track_ids.append(tid)
@@ -3981,6 +4480,42 @@ class VisionPipeline:
                         continue
 
                     candidate_obb_metrics = self._table_obb_metrics(det)
+                    candidate_world_metrics = self._table_obb_world_metrics(det)
+                    world_size_rejection_reasons = self._new_table_world_size_rejection_reasons(
+                        candidate_world_metrics
+                    )
+                    candidate_debug = {
+                        "tracking_detection_index": int(det_idx),
+                        "bbox_px": bbox,
+                        "obb": candidate_obb_metrics,
+                        "pixel_obb": (
+                            None if candidate_obb_metrics is None else {
+                                "width_px": float(candidate_obb_metrics["long_side"]),
+                                "height_px": float(candidate_obb_metrics["short_side"]),
+                                "area_px2": float(candidate_obb_metrics["area"]),
+                                "aspect_ratio": float(candidate_obb_metrics["aspect_ratio"]),
+                            }
+                        ),
+                        "world_obb": candidate_world_metrics,
+                        "world_size_rejection_reasons": list(world_size_rejection_reasons),
+                        "creation_size_accepted": not bool(world_size_rejection_reasons),
+                        "nearest_confirmed_track_id": None,
+                        "nearest_center_distance_px": None,
+                        "near_confirmed_track": False,
+                        "anchor_bbox": None,
+                        "anchor_obb": None,
+                        "local_plausibility_reasons": [],
+                        "suppression_reasons": [],
+                        "tombstone_evaluations": [],
+                        "final_action": None,
+                    }
+                    if world_size_rejection_reasons:
+                        candidate_debug["suppression_reasons"] = list(world_size_rejection_reasons)
+                        candidate_debug["final_action"] = "rejected_physical_size"
+                        dbg_table_birth_candidates.append(candidate_debug)
+                        dbg_rejected_physical_table_births += 1
+                        continue
+
                     suppress_new_table = False
                     suppression_reasons: list[str] = []
                     nearest_confirmed = None
@@ -4083,10 +4618,7 @@ class VisionPipeline:
                             suppress_new_table = True
                             suppression_reasons.extend(local_plausibility_reasons)
 
-                    candidate_debug = {
-                        "tracking_detection_index": int(det_idx),
-                        "bbox_px": bbox,
-                        "obb": candidate_obb_metrics,
+                    candidate_debug.update({
                         "nearest_confirmed_track_id": (
                             None if nearest_confirmed is None else nearest_confirmed["track_id"]
                         ),
@@ -4105,8 +4637,7 @@ class VisionPipeline:
                         ),
                         "local_plausibility_reasons": list(local_plausibility_reasons),
                         "suppression_reasons": suppression_reasons,
-                        "final_action": None,
-                    }
+                    })
 
                     if suppress_new_table:
                         candidate_debug["final_action"] = "suppressed_fragment"
@@ -4120,6 +4651,66 @@ class VisionPipeline:
                     if not self._advance_pending_table_birth(bbox, frame_id):
                         candidate_debug["final_action"] = "pending_birth"
                         dbg_table_birth_candidates.append(candidate_debug)
+                        continue
+
+                    tombstone_match, tombstone_evaluations = self._evaluate_table_tombstone_reactivation(
+                        det, time.monotonic()
+                    )
+                    candidate_debug["tombstone_evaluations"] = tombstone_evaluations
+                    if tombstone_match is not None:
+                        tombstone = tombstone_match["tombstone"]
+                        track_id = str(tombstone["id"])
+                        restored_anchor = tombstone.get("full_anchor")
+                        class_tracks[track_id] = {
+                            "id": track_id,
+                            "kind": "table",
+                            "bbox": bbox,
+                            "center": (ucx, ucy),
+                            "center_smoothed": (ucx, ucy),
+                            "score": score,
+                            "last_seen": frame_id,
+                            "last_seen_frame": frame_id,
+                            "miss_count": 0,
+                            "age": 1,
+                            "prev_theta": det.get("obb_yaw_rad"),
+                            "table_motion_state": "moving",
+                            "table_stable_count": 0,
+                            "table_center_shift_px": 0.0,
+                            "table_prev_iou": 1.0,
+                            "table_area_change": 0.0,
+                            "obb_poly_px": det.get("obb_poly_px"),
+                            "obb_center_px": det.get("obb_center_px"),
+                            "obb_yaw_rad": det.get("obb_yaw_rad"),
+                            "table_confirm_count": self.table_new_confirm_frames,
+                            "table_confirmed": True,
+                        }
+                        if isinstance(restored_anchor, dict):
+                            class_tracks[track_id]["table_full_anchor"] = restored_anchor.copy()
+                        else:
+                            initial_metrics = self._table_obb_metrics(det)
+                            if initial_metrics is not None:
+                                self._set_table_full_anchor(class_tracks[track_id], bbox, initial_metrics)
+                        del self._table_tombstones[track_id]
+                        candidate_debug["final_action"] = "reacquired_tombstone_id"
+                        candidate_debug["tombstone_reactivated_id"] = track_id
+                        dbg_table_birth_candidates.append(candidate_debug)
+                        old_pose = tombstone["world_pose"]
+                        new_pose = tombstone_match["candidate_pose"]
+                        evaluation = next(item for item in tombstone_evaluations if item["tombstone_id"] == track_id)
+                        dbg_table_tombstone_events.append({
+                            "event": "tombstone_reactivated",
+                            "table_id": track_id,
+                            "age_s": evaluation["tombstone_age_s"],
+                            "world_distance_cm": evaluation["world_distance_cm"],
+                            "rotation_delta_deg": evaluation["rotation_delta_deg_mod180"],
+                            "old_pose": old_pose,
+                            "new_pose": new_pose,
+                        })
+                        print(
+                            f"[TABLE REACTIVATE] {track_id} after {evaluation['tombstone_age_s']:.1f}s "
+                            f"dist={evaluation['world_distance_cm']:.1f}cm "
+                            f"rot={evaluation['rotation_delta_deg_mod180']:.1f}deg"
+                        )
                         continue
                     candidate_debug["final_action"] = "new_birth"
                     dbg_table_birth_candidates.append(candidate_debug)
@@ -4737,10 +5328,12 @@ class VisionPipeline:
                 "new_table_tracks_created": int(dbg_new_table_tracks_created),
                 "blocked_new_table_births_near_lost": int(dbg_blocked_new_table_births_near_lost),
                 "suppressed_table_fragment_births": int(dbg_suppressed_table_fragment_births),
+                "rejected_physical_table_births": int(dbg_rejected_physical_table_births),
                 "recoverable_lost_table_track_count": int(dbg_recoverable_lost_table_track_count),
                 "table_associations": dbg_table_associations,
                 "table_anchor_reacquisition_candidates": dbg_table_anchor_reacquisition_candidates,
                 "table_birth_candidates": dbg_table_birth_candidates,
+                "table_tombstone_events": dbg_table_tombstone_events,
                 "new_table_track_ids": dbg_table_new_track_ids,
                 "deleted_table_track_ids": dbg_table_deleted_track_ids,
             }
@@ -4779,12 +5372,22 @@ class VisionPipeline:
 
         self._last_overlay_items = overlay_items
 
+        world_metadata = self._world_metadata(auto_proposals="yolo")
+        if self.perf_log:
+            process_finished = time.perf_counter()
+            world_metadata["perf"] = {
+                "capture_wall_ns": int(capture_wall_ns) if capture_wall_ns is not None else None,
+                "generic_yolo_ms": generic_yolo_ms,
+                "table_obb_ms": table_obb_ms,
+                "tracking_post_ms": (process_finished - detector_finished) * 1000.0,
+                "vision_process_ms": (process_finished - process_started) * 1000.0,
+            }
         return FrameEvent(
             timestamp_iso=timestamp_iso,
             frame_id=frame_id,
             furniture=furniture_entities,
             people=people_entities,
-            world=self._world_metadata(auto_proposals="yolo"),
+            world=world_metadata,
         )
 
     def process_image_dir_with_proposals(

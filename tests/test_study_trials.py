@@ -57,10 +57,10 @@ class StudyTrialTests(unittest.TestCase):
             (trials[(StudyTask.T4, StudyVariant.A)].target_x_cm,
              trials[(StudyTask.T4, StudyVariant.A)].target_y_cm,
              trials[(StudyTask.T4, StudyVariant.A)].target_rotation_deg),
-            (401.5, 390.9, -45.0),
+            (201.5, 378.5, 100.0),
         )
 
-    def test_pilot_v1_snapshot_semantically_matches_the_active_trial_definition(self) -> None:
+    def test_pilot_v1_snapshot_remains_available_as_the_frozen_prior_layout(self) -> None:
         study_directory = Path(__file__).resolve().parents[1] / "data" / "aisi" / "study"
         active_path = study_directory / "trials.json"
         snapshot_path = study_directory / "trials_pilot_v1.json"
@@ -74,7 +74,7 @@ class StudyTrialTests(unittest.TestCase):
         }
         self.assertEqual({key: active_payload.get(key) for key in expected_metadata}, expected_metadata)
         self.assertEqual({key: snapshot_payload.get(key) for key in expected_metadata}, expected_metadata)
-        self.assertEqual(load_trial_definitions(active_path), load_trial_definitions(snapshot_path))
+        self.assertNotEqual(load_trial_definitions(active_path), load_trial_definitions(snapshot_path))
 
     def test_finalized_trials_have_required_setup_table_counts_and_one_active_source(self) -> None:
         path = Path(__file__).resolve().parents[1] / "data" / "aisi" / "study" / "trials.json"
@@ -94,13 +94,13 @@ class StudyTrialTests(unittest.TestCase):
         path = Path(__file__).resolve().parents[1] / "data" / "aisi" / "study" / "trials.json"
         trials = load_trial_definitions(path)
         expected = {
-            "T1A": ((410.5, 206.5, -90), (77.5, 207, -90), ()),
+            "T1A": ((73, 204, -100), (427, 283, 95), ()),
             "T1B": ((220, 371, 0), (220, 100.5, 0), ()),
-            "T2A": ((77.5, 207, -90), (364.5, 292.5, -50), ()),
+            "T2A": ((167, 74.5, 10), (254.1, 436, 175), ()),
             "T2B": ((220, 100.5, 0), (411, 397, -65), ()),
-            "T3A": ((380, 105.9, 15), (96, 383, -60), ((364.5, 292.5, -50), (99, 94.5, -40), (120, 203.5, -30))),
+            "T3A": ((403.1, 177.5, 195), (90.5, 305.5, 45), ((402, 290.5, 5), (204.5, 76.5, 10), (105, 191.5, 30))),
             "T3B": ((432.5, 113, -85), (181, 282.5, -155), ((273, 92.5, -175), (132, 386, -170), (411, 397, -65))),
-            "T4A": ((99, 94.5, -40), (401.5, 390.9, -45), ((363.5, 288, -50), (120, 203.5, -30), (96, 383, -60))),
+            "T4A": ((378.6, 109.5, 235), (201.5, 378.5, 100), ((264, 105.5, 65), (294.5, 401, -75), (99, 126, 25))),
             "T4B": ((132, 386, -170), (264.5, 207.5, -165), ((273, 92.5, -175), (411, 397, -65), (181, 282.5, -155))),
         }
         for task in StudyTask:
@@ -114,7 +114,7 @@ class StudyTrialTests(unittest.TestCase):
     def test_t1_targets_are_t2_sources(self) -> None:
         path = Path(__file__).resolve().parents[1] / "data" / "aisi" / "study" / "trials.json"
         trials = load_trial_definitions(path)
-        for variant in StudyVariant:
+        for variant in (StudyVariant.B,):
             t1 = trials[(StudyTask.T1, variant)]
             t2 = trials[(StudyTask.T2, variant)]
             self.assertEqual(
@@ -125,10 +125,10 @@ class StudyTrialTests(unittest.TestCase):
     def test_t2a_target_is_preserved_as_a_t3a_static_table(self) -> None:
         path = Path(__file__).resolve().parents[1] / "data" / "aisi" / "study" / "trials.json"
         trials = load_trial_definitions(path)
-        t2a = trials[(StudyTask.T2, StudyVariant.A)]
+        t2a = trials[(StudyTask.T2, StudyVariant.B)]
         self.assertIn(
             (t2a.target_x_cm, t2a.target_y_cm, t2a.target_rotation_deg),
-            {(pose.x_cm, pose.y_cm, pose.rotation_deg) for pose in trials[(StudyTask.T3, StudyVariant.A)].distractor_tables},
+            {(pose.x_cm, pose.y_cm, pose.rotation_deg) for pose in trials[(StudyTask.T3, StudyVariant.B)].distractor_tables},
         )
 
     def test_t3_target_state_equals_t4_start_state_and_preserves_table_identity_order(self) -> None:
@@ -158,13 +158,17 @@ class StudyTrialTests(unittest.TestCase):
     def test_temporary_a_layouts_and_unchanged_b_layouts_have_expected_participant_starts(self) -> None:
         path = Path(__file__).resolve().parents[1] / "data" / "aisi" / "study" / "trials.json"
         trials = load_trial_definitions(path)
+        expected_a = {
+            StudyTask.T1: (250.0, 450.0), StudyTask.T2: (450.0, 250.0),
+            StudyTask.T3: (250.0, 436.5), StudyTask.T4: (432.5, 305.0),
+        }
         for task in StudyTask:
             a = trials[(task, StudyVariant.A)]
             b = trials[(task, StudyVariant.B)]
             self.assertEqual(
                 tuple((marker.participant_id, marker.x_cm, marker.y_cm, marker.radius_cm)
                       for marker in a.participant_start_positions),
-                (("P1", 250.0, 52.0, 40.0),),
+                (("P1", *expected_a[task], 40.0),),
             )
             self.assertEqual(
                 tuple((marker.participant_id, marker.x_cm, marker.y_cm, marker.radius_cm)

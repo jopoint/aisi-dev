@@ -4,13 +4,19 @@ param(
     [string]$OutputPath = "data/vision/live/current_room_rect.jsonl",
     [ValidateSet("cuda", "cpu")]
     [string]$Device = "cuda",
-    [ValidateSet("none", "gaussian5")]
-    [string]$TableObbPreprocess = "none",
-    [string]$TableObbDebugJsonl,
+    [ValidateSet("none", "gaussian5", "levels")]
+    [string]$TableObbPreprocess = "levels",
+    [ValidateRange(1, 255)]
+    [int]$TableObbLevelsWhitePoint = 200,
+    [switch]$NoTableTombstoneReactivation,
+    [switch]$TableObbDebugJsonl,
     [string]$TablePoseLatencyDebugJsonl,
     [string]$HardExampleCaptureDir = "data/vision/debug/hard_examples",
     [ValidateRange(1, 1000)]
     [int]$HardExampleBurstFrames = 1,
+    [switch]$PerfLog,
+    [ValidateSet("direct", "latest")]
+    [string]$CameraCaptureMode = "latest",
     [switch]$NoDisplay,
     [switch]$DryRun
 )
@@ -37,10 +43,12 @@ $PipelineArgs = @(
     "--camera-width", "1920",
     "--camera-height", "1080",
     "--camera-rotate", "0",
+    "--camera-capture-mode", $CameraCaptureMode,
     "--auto-proposals", "yolo",
     "--yolo-model", $GenericYoloModel,
     "--table-obb-model", $TableObbModel,
     "--table-obb-preprocess", $TableObbPreprocess,
+    "--table-obb-levels-white-point", "$TableObbLevelsWhitePoint",
     "--calibration", $CalibrationProfile,
     "--device", $Device,
     "--show-table-ids",
@@ -60,28 +68,46 @@ $PipelineArgs = @(
     "--out", $OutputPath
 )
 
+if (-not $NoTableTombstoneReactivation) {
+    $PipelineArgs += @(
+        "--table-tombstone-reactivation",
+        "--table-tombstone-max-age-seconds", "10",
+        "--table-tombstone-max-distance-cm", "35",
+        "--table-tombstone-max-rotation-deg", "15"
+    )
+}
+
 if ($NoDisplay) {
     $PipelineArgs += "--no-display"
+}
+if ($PerfLog) {
+    $PipelineArgs += "--perf-log"
 }
 if (-not [string]::IsNullOrWhiteSpace($TablePoseLatencyDebugJsonl)) {
     $PipelineArgs += "--table-pose-latency-debug-jsonl", $TablePoseLatencyDebugJsonl
 }
-if (-not [string]::IsNullOrWhiteSpace($TableObbDebugJsonl)) {
-    $PipelineArgs += "--table-obb-debug-jsonl", $TableObbDebugJsonl
+if ($TableObbDebugJsonl) {
+    $TableObbDebugPath = Join-Path $RepositoryRoot "data\vision\debug\current_room_table_obb_association.jsonl"
+    $PipelineArgs += "--table-obb-debug-jsonl", $TableObbDebugPath
+}
+if ($PerfLog) {
+    Write-Host "  performance logging: enabled (~2 s aggregates)"
 }
 
 Write-Host "Current-room Rect-table vision configuration:"
 Write-Host "  tables:  $TableObbModel"
-Write-Host "  table OBB preprocessing: $TableObbPreprocess"
+$TableObbPreprocessDisplay = if ($TableObbPreprocess -eq "levels") { "levels (white_point=$TableObbLevelsWhitePoint)" } else { $TableObbPreprocess }
+Write-Host "  table OBB preprocessing: $TableObbPreprocessDisplay"
 Write-Host "  chairs/persons: $GenericYoloModel"
 Write-Host "  calibration: $CalibrationProfile"
 Write-Host "  camera: index=$CameraIndex, 1920x1080, rotate=0, crop=none"
+Write-Host "  Camera capture mode: $CameraCaptureMode"
 Write-Host "  hard-example capture: press c -> $HardExampleCaptureDir (burst=$HardExampleBurstFrames)"
 if (-not [string]::IsNullOrWhiteSpace($TablePoseLatencyDebugJsonl)) {
     Write-Host "  table pose latency debug: $TablePoseLatencyDebugJsonl"
 }
-if (-not [string]::IsNullOrWhiteSpace($TableObbDebugJsonl)) {
-    Write-Host "  table OBB association debug: $TableObbDebugJsonl"
+if ($TableObbDebugJsonl) {
+    Write-Host "  table OBB association debug: $TableObbDebugPath"
 }
 
 if ($DryRun) {

@@ -6,9 +6,9 @@
   "trials": [
     {
       "task_id": "T1", "variant": "A",
-      "source_pose": {"x_cm": 410.5, "y_cm": 206.5, "rotation_deg": -90.0},
-      "target_pose": {"x_cm": 77.5, "y_cm": 207.0, "rotation_deg": -90.0},
-      "participant_start_positions": [{"id": "P1", "x_cm": 250.0, "y_cm": 52.0, "radius_cm": 40}],
+      "source_pose": {"x_cm": 73.0, "y_cm": 204.0, "rotation_deg": -100.0},
+      "target_pose": {"x_cm": 427.0, "y_cm": 283.0, "rotation_deg": 95.0},
+      "participant_start_positions": [{"id": "P1", "x_cm": 250.0, "y_cm": 450.0, "radius_cm": 40}],
       "notes": "Simple translation baseline with no rotation; single active table."
     },
     {
@@ -20,9 +20,9 @@
     },
     {
       "task_id": "T2", "variant": "A",
-      "source_pose": {"x_cm": 77.5, "y_cm": 207.0, "rotation_deg": -90.0},
-      "target_pose": {"x_cm": 364.5, "y_cm": 292.5, "rotation_deg": -50.0},
-      "participant_start_positions": [{"id": "P1", "x_cm": 250.0, "y_cm": 52.0, "radius_cm": 40}],
+      "source_pose": {"x_cm": 167.0, "y_cm": 74.5, "rotation_deg": 10.0},
+      "target_pose": {"x_cm": 254.1, "y_cm": 436.0, "rotation_deg": 175.0},
+      "participant_start_positions": [{"id": "P1", "x_cm": 450.0, "y_cm": 250.0, "radius_cm": 40}],
       "notes": "Translation with clear rotation; T1A target is this source pose."
     },
     {
@@ -34,14 +34,14 @@
     },
     {
       "task_id": "T3", "variant": "A",
-      "source_pose": {"x_cm": 380.0, "y_cm": 105.9, "rotation_deg": 15.0},
-      "target_pose": {"x_cm": 96.0, "y_cm": 383.0, "rotation_deg": -60.0},
+      "source_pose": {"x_cm": 403.1, "y_cm": 177.5, "rotation_deg": 195.0},
+      "target_pose": {"x_cm": 90.5, "y_cm": 305.5, "rotation_deg": 45.0},
       "distractor_tables": [
-        {"x_cm": 364.5, "y_cm": 292.5, "rotation_deg": -50.0},
-        {"x_cm": 99.0, "y_cm": 94.5, "rotation_deg": -40.0},
-        {"x_cm": 120.0, "y_cm": 203.5, "rotation_deg": -30.0}
+        {"x_cm": 402.0, "y_cm": 290.5, "rotation_deg": 5.0},
+        {"x_cm": 204.5, "y_cm": 76.5, "rotation_deg": 10.0},
+        {"x_cm": 105.0, "y_cm": 191.5, "rotation_deg": 30.0}
       ],
-      "participant_start_positions": [{"id": "P1", "x_cm": 250.0, "y_cm": 52.0, "radius_cm": 40}],
+      "participant_start_positions": [{"id": "P1", "x_cm": 250.0, "y_cm": 436.5, "radius_cm": 40}],
       "notes": "Long translation and substantial rotation in a cluttered four-table configuration."
     },
     {
@@ -58,14 +58,14 @@
     },
     {
       "task_id": "T4", "variant": "A",
-      "source_pose": {"x_cm": 99.0, "y_cm": 94.5, "rotation_deg": -40.0},
-      "target_pose": {"x_cm": 401.5, "y_cm": 390.9, "rotation_deg": -45.0},
+      "source_pose": {"x_cm": 378.6, "y_cm": 109.5, "rotation_deg": 235.0},
+      "target_pose": {"x_cm": 201.5, "y_cm": 378.5, "rotation_deg": 100.0},
       "distractor_tables": [
-        {"x_cm": 363.5, "y_cm": 288.0, "rotation_deg": -50.0},
-        {"x_cm": 120.0, "y_cm": 203.5, "rotation_deg": -30.0},
-        {"x_cm": 96.0, "y_cm": 383.0, "rotation_deg": -60.0}
+        {"x_cm": 264.0, "y_cm": 105.5, "rotation_deg": 65.0},
+        {"x_cm": 294.5, "y_cm": 401.0, "rotation_deg": -75.0},
+        {"x_cm": 99.0, "y_cm": 126.0, "rotation_deg": 25.0}
       ],
-      "participant_start_positions": [{"id": "P1", "x_cm": 250.0, "y_cm": 52.0, "radius_cm": 40}],
+      "participant_start_positions": [{"id": "P1", "x_cm": 432.5, "y_cm": 305.0, "radius_cm": 40}],
       "notes": "High-complexity clutter task with small active-table rotation; T3A target is static setup table 3."
     },
     {

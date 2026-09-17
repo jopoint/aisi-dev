@@ -117,6 +117,12 @@ def parse_args() -> argparse.Namespace:
             "tracking-only output routes its latched ID to /table/0."
         ),
     )
+    parser.add_argument("--perf-log", action="store_true",
+                        help="Emit aggregate latency for newly received live vision frames every ~2 seconds.")
+    parser.add_argument(
+        "--require-fresh-live-scene", action="store_true",
+        help="At startup, send nothing until the live adapter has published its fresh empty scene.",
+    )
     return parser.parse_args()
 
 
@@ -159,6 +165,47 @@ class RetainingSceneReader:
             return None
         self.last_valid_scene = scene
         return scene
+
+
+def vision_frame_perf(scene: dict[str, Any], now_wall_ns: int) -> tuple[int, float, float] | None:
+    """Extract local capture/scene latency for one scene's Vision frame."""
+
+    vision_live = scene.get("vision_live")
+    if not isinstance(vision_live, dict):
+        return None
+    perf = vision_live.get("perf")
+    if not isinstance(perf, dict):
+        return None
+    try:
+        frame_id = int(vision_live["frame_id"])
+        capture_wall_ns = int(perf["capture_wall_ns"])
+        scene_ready_wall_ns = int(perf["scene_ready_wall_ns"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return (
+        frame_id,
+        max(0.0, (now_wall_ns - capture_wall_ns) / 1_000_000.0),
+        max(0.0, (now_wall_ns - scene_ready_wall_ns) / 1_000_000.0),
+    )
+
+
+def is_fresh_empty_live_scene(scene: dict[str, Any]) -> bool:
+    """Recognize the adapter's startup reset without accepting stale metadata."""
+
+    vision_live = scene.get("vision_live")
+    return (
+        isinstance(vision_live, dict)
+        and vision_live.get("mode") == "tables_only"
+        and "frame_id" not in vision_live
+        and "perf" not in vision_live
+        and scene.get("tables") == []
+    )
+
+
+def is_current_live_scene(scene: dict[str, Any], scene_mtime_ns: int, sender_started_wall_ns: int) -> bool:
+    """Accept the adapter reset or a scene file written after this sender started."""
+
+    return is_fresh_empty_live_scene(scene) or scene_mtime_ns >= sender_started_wall_ns
 
 
 def load_learning_format(path: Path) -> str | None:
@@ -581,6 +628,11 @@ def main() -> None:
             StudyActiveTrackBindingStore(args.study_active_binding or args.study_table_tracks_binding.parent / "study_active_track.json"),
         ) if args.study_table_tracks_binding is not None else None
     )
+    last_perf_frame_id: int | None = None
+    perf_window_started = time.perf_counter()
+    perf_samples: list[tuple[float, float]] = []
+    fresh_live_scene_seen = not args.require_fresh_live_scene
+    sender_started_wall_ns = time.time_ns()
 
     try:
         while not stop_event.is_set():
@@ -626,6 +678,14 @@ def main() -> None:
                 time.sleep(args.interval)
                 continue
 
+            if not fresh_live_scene_seen:
+                if is_current_live_scene(scene, scene_path.stat().st_mtime_ns, sender_started_wall_ns):
+                    fresh_live_scene_seen = True
+                    print("Fresh live scene observed; OSC output enabled.")
+                else:
+                    time.sleep(args.interval)
+                    continue
+
             _, show_persons, show_chairs, transformation_strength = load_learning_settings(file_path)
 
             with state_lock:
@@ -654,6 +714,24 @@ def main() -> None:
                 if tracking_rejection is not None:
                     print(f"Tracking-only: sending zero tables ({tracking_rejection}).")
                 last_tracking_rejection = tracking_rejection
+            # Deliberately sampled once per new Vision frame, immediately
+            # before OSC sends. The normal 10 ms resend cadence is untouched.
+            if args.perf_log:
+                perf_sample = vision_frame_perf(scene, time.time_ns())
+                if perf_sample is not None and perf_sample[0] != last_perf_frame_id:
+                    last_perf_frame_id = perf_sample[0]
+                    perf_samples.append((perf_sample[1], perf_sample[2]))
+                    now_perf = time.perf_counter()
+                    elapsed = now_perf - perf_window_started
+                    if elapsed >= 2.0:
+                        capture_mean = sum(sample[0] for sample in perf_samples) / len(perf_samples)
+                        scene_mean = sum(sample[1] for sample in perf_samples) / len(perf_samples)
+                        print(
+                            f"[PERF osc] fps_new={len(perf_samples) / elapsed:.1f} "
+                            f"capture_to_osc={capture_mean:.1f}ms scene_to_osc={scene_mean:.1f}ms"
+                        )
+                        perf_samples.clear()
+                        perf_window_started = now_perf
             client.send_message("/table/count", len(tables))
             client.send_message("/person/count", len(persons))
             client.send_message("/chair/count", len(chairs))
