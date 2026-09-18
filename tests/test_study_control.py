@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import unittest
 import inspect
+import json
+from pathlib import Path
+import tempfile
+from unittest.mock import patch
 
 from aisi.app.study_control import (
     StudyCondition,
@@ -20,6 +24,7 @@ from aisi.app.study_trials import (
     StudyVariant,
     TrialSpec,
 )
+from aisi.app.study_logging import StudySessionLogger
 
 
 class _RecordingOscClient:
@@ -229,6 +234,8 @@ class StudyControlTests(unittest.TestCase):
         self.assertEqual([event["event_type"] for event in logger.events], ["trial_loaded"])
 
     def test_normal_phase_sequence_uses_home_active_complete(self) -> None:
+        self.controller.set_participant_id("P001")
+        self.controller.set_mode(StudyMode.STUDY)
         self.assertFalse(self.controller.home())
         self.assertTrue(self.controller.start_trial())
         self.assertTrue(self.controller.complete_trial())
@@ -242,18 +249,147 @@ class StudyControlTests(unittest.TestCase):
     def test_trial_transitions_record_timestamps_and_active_pose(self) -> None:
         logger = _RecordingLogger()
         controller = StudyStateController(StudyStatePublisher(self.client), event_logger=logger, source_pose_provider=lambda: {"id": "table_00", "x_cm": 12.0})
+        controller.set_participant_id("P001")
+        controller.set_mode(StudyMode.STUDY)
         self.assertTrue(controller.ready())
         self.assertTrue(controller.start_trial())
         self.assertIsNotNone(controller.trial_started_at_iso)
         self.assertTrue(controller.record_active_pose())
         self.assertTrue(controller.complete_trial())
         self.assertIsNotNone(controller.trial_completed_at_iso)
-        self.assertEqual([event["event_type"] for event in logger.events], ["phase_ready", "trial_started", "active_pose_sample", "trial_completed"])
-        self.assertEqual(logger.events[2]["source_pose"]["id"], "table_00")
+        self.assertEqual([event["event_type"] for event in logger.events], ["participant_id_set", "mode_changed", "phase_ready", "trial_started", "active_pose_sample", "trial_completed"])
+        self.assertEqual(logger.events[4]["source_pose"]["id"], "table_00")
+
+    def test_objective_arrival_events_are_logged_without_changing_active_phase(self) -> None:
+        logger = _RecordingLogger()
+        pose = {"id": "table_00", "x_cm": 0.0, "y_cm": 0.0, "rotation_deg": 0.0}
+        controller = StudyStateController(
+            StudyStatePublisher(self.client), event_logger=logger, source_pose_provider=lambda: dict(pose)
+        )
+        controller.set_participant_id("P001")
+        controller.set_mode(StudyMode.STUDY)
+        controller.set_target_pose(100.0, 100.0, 0.0)
+        controller.start_trial()
+        pose.update(x_cm=104.0, y_cm=103.0, rotation_deg=4.0)
+        with patch("aisi.app.study_control.time.monotonic", side_effect=(10.0, 10.5, 10.7)):
+            controller.record_active_pose()  # arrival_entered
+            controller.record_active_pose()  # 0.5 s confirmation
+            pose.update(x_cm=120.0)
+            controller.record_active_pose()  # arrival_exited
+        self.assertEqual(controller.state.phase, StudyPhase.ACTIVE)
+        events = [event for event in logger.events if event["event_type"].startswith("arrival_")]
+        self.assertEqual([event["event_type"] for event in events], [
+            "arrival_entered", "arrival_confirmed", "arrival_exited",
+        ])
+        self.assertTrue(events[0]["objective_within_tolerance"])
+        self.assertTrue(events[1]["objective_within_tolerance"])
+        self.assertFalse(events[2]["objective_within_tolerance"])
+        self.assertTrue(events[2]["arrival_was_confirmed"])
+
+    def test_complete_records_subjective_declaration_even_outside_objective_tolerance(self) -> None:
+        logger = _RecordingLogger()
+        pose = {"id": "table_00", "x_cm": 0.0, "y_cm": 0.0, "rotation_deg": 0.0}
+        controller = StudyStateController(
+            StudyStatePublisher(self.client), event_logger=logger, source_pose_provider=lambda: dict(pose)
+        )
+        controller.set_participant_id("P001")
+        controller.set_mode(StudyMode.STUDY)
+        controller.set_target_pose(100.0, 100.0, 0.0)
+        controller.start_trial()
+        self.assertTrue(controller.complete_trial())
+        completed = logger.events[-1]
+        self.assertEqual(controller.state.phase, StudyPhase.COMPLETE)
+        self.assertEqual(completed["event_type"], "trial_completed")
+        self.assertEqual(completed["source_pose"], pose)
+        self.assertFalse(completed["objective_within_tolerance"])
+        self.assertGreater(completed["objective_translation_error_cm"], 8.0)
+        self.assertIn("participant_declared_completion_at_iso", completed)
+
+    def test_complete_requires_an_active_trial(self) -> None:
+        self.assertFalse(self.controller.complete_trial())
+
+    def test_participant_id_is_required_and_every_start_creates_new_attempt(self) -> None:
+        logger = _RecordingLogger()
+        controller = StudyStateController(StudyStatePublisher(self.client), event_logger=logger)
+        self.assertFalse(controller.start_trial())
+        self.assertEqual(controller.start_block_reason, "participant ID missing")
+        controller.set_participant_id("P001")
+        controller.set_mode(StudyMode.STUDY)
+        self.assertTrue(controller.start_trial())
+        self.assertEqual(controller.attempt, 1)
+        self.assertTrue(controller.complete_trial())
+        self.assertTrue(controller.start_trial())
+        self.assertEqual(controller.attempt, 2)
+        self.assertEqual(controller.state.phase, StudyPhase.ACTIVE)
+        self.assertTrue(controller.abort_trial("setup error"))
+        self.assertTrue(controller.start_trial())
+        self.assertEqual(controller.attempt, 3)
+        self.assertNotIn("retry_requested", [event["event_type"] for event in logger.events])
+
+    def test_abort_reset_and_tracking_loss_recovery_preserve_latched_state(self) -> None:
+        logger = _RecordingLogger()
+        pose: dict | None = {"id": "table_09", "x_cm": 1.0, "y_cm": 2.0, "rotation_deg": 3.0}
+        controller = StudyStateController(StudyStatePublisher(self.client), event_logger=logger, source_pose_provider=lambda: pose)
+        controller.set_participant_id("P001")
+        controller.set_mode(StudyMode.STUDY)
+        controller.start_trial()
+        controller.record_active_pose()
+        pose = None
+        with patch("aisi.app.study_control.time.monotonic", return_value=10.0):
+            controller.record_active_pose()
+        pose = {"id": "table_09", "x_cm": 2.0, "y_cm": 3.0, "rotation_deg": 4.0}
+        with patch("aisi.app.study_control.time.monotonic", return_value=11.25):
+            controller.record_active_pose()
+        self.assertEqual([event["event_type"] for event in logger.events if event["event_type"].startswith("tracking_")], ["tracking_lost", "tracking_recovered"])
+        recovered = [event for event in logger.events if event["event_type"] == "tracking_recovered"][0]
+        self.assertAlmostEqual(recovered["tracking_missing_duration_s"], 1.25)
+        self.assertTrue(controller.abort_trial("tracking failure"))
+        self.assertEqual(controller.state.phase, StudyPhase.HOME)
+        self.assertIn("trial_aborted", [event["event_type"] for event in logger.events])
+        self.assertFalse(controller.reset_to_home())  # already HOME, but logs remain untouched
+
+    def test_session_metadata_is_written_to_session_started_event(self) -> None:
+        logger = _RecordingLogger()
+        controller = StudyStateController(StudyStatePublisher(self.client), event_logger=logger)
+        controller.start_session({"trial_definitions_sha256": "abc123", "trial_definitions_version": "pilot_v2"})
+        controller.set_participant_id("P001")
+        controller.set_mode(StudyMode.STUDY)
+        event = next(event for event in logger.events if event["event_type"] == "session_started")
+        self.assertEqual(event["trial_definitions_sha256"], "abc123")
+        self.assertEqual(event["trial_definitions_version"], "pilot_v2")
+        self.assertEqual(event["participant_id"], "P001")
+
+    def test_participant_set_is_session_boundary_and_preserves_prior_files(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            factory = lambda: StudySessionLogger(directory)
+            controller = StudyStateController(
+                StudyStatePublisher(self.client), StudyState(mode=StudyMode.STUDY), session_logger_factory=factory,
+            )
+            controller.start_session({"trial_definitions_sha256": "frozen", "trial_definitions_version": "pilot_v2"})
+            self.assertTrue(controller.set_participant_id("P001"))
+            first_session = controller.session_id
+            self.assertIsNotNone(first_session)
+            self.assertFalse(controller.set_participant_id("P001"))
+            self.assertEqual(controller.session_id, first_session)
+            self.assertTrue(controller.start_trial())
+            self.assertTrue(controller.complete_trial())
+            first_directory = Path(directory) / str(first_session)
+            self.assertTrue(controller.participant_switch_requires_confirmation("P002"))
+            self.assertTrue(controller.set_participant_id("P002"))
+            self.assertNotEqual(controller.session_id, first_session)
+            self.assertEqual((controller.participant_id, controller.attempt, controller.state.phase), ("P002", 0, StudyPhase.HOME))
+            first_events = [json.loads(line) for line in (first_directory / "events.jsonl").read_text(encoding="utf-8").splitlines()]
+            self.assertEqual({event["participant_id"] for event in first_events}, {"P001"})
+            first_manifest = json.loads((first_directory / "manifest.json").read_text(encoding="utf-8"))
+            self.assertEqual(first_manifest["participant_id"], "P001")
+            self.assertIn("session_ended_at_iso", first_manifest)
+            controller.close_session()
 
     def test_unavailable_source_pose_does_not_break_active_logging(self) -> None:
         logger = _RecordingLogger()
         controller = StudyStateController(StudyStatePublisher(self.client), event_logger=logger, source_pose_provider=lambda: None)
+        controller.set_participant_id("P001")
+        controller.set_mode(StudyMode.STUDY)
         controller.start_trial()
         self.assertTrue(controller.record_active_pose())
         self.assertIsNone(logger.events[-1]["source_pose"])

@@ -28,11 +28,12 @@ SUCCESS_POSITION_TOLERANCE_CM = 8.0
 SUCCESS_ROTATION_TOLERANCE_DEG = 5.0
 
 METRIC_COLUMNS = (
-    "source_log_filename", "session_id", "task_id", "task", "variant", "condition",
+    "source_log_filename", "participant_id", "session_id", "task_id", "task", "variant", "condition", "attempt", "status",
     "trial_start_timestamp", "trial_end_timestamp", "trial_duration_s",
+    "first_arrival_entered_timestamp", "first_arrival_confirmed_timestamp", "participant_declared_completion_timestamp", "arrival_to_completion_delay_s",
     "translation_path_cm", "rotation_path_deg", "final_position_error_cm",
-    "final_rotation_error_deg", "success", "stop_count", "correction_count",
-    "valid_pose_sample_count", "missing_pose_sample_count",
+    "final_rotation_error_deg", "objective_within_tolerance_at_completion", "success", "stop_count", "correction_count",
+    "valid_pose_sample_count", "missing_pose_sample_count", "target_exits_after_first_arrival", "post_arrival_correction_count", "movement_after_first_confirmed_arrival_cm", "rotation_after_first_confirmed_arrival_deg", "tracking_loss_interval_count", "tracking_loss_total_duration_s",
 )
 
 
@@ -66,16 +67,16 @@ def analyze_log(path: str | Path) -> list[dict[str, Any]]:
     source = Path(path)
     records: list[dict[str, Any]] = []
     active_trial: dict[str, Any] | None = None
-    active_samples: list[dict[str, Any]] = []
+    active_events: list[dict[str, Any]] = []
     for event in read_jsonl_events(source):
         event_type = event.get("event_type")
         if event_type == "trial_started":
-            active_trial, active_samples = event, []
-        elif event_type == "active_pose_sample" and active_trial is not None:
-            active_samples.append(event)
-        elif event_type == "trial_completed" and active_trial is not None:
-            records.append(_trial_metrics(source, active_trial, event, active_samples))
-            active_trial, active_samples = None, []
+            active_trial, active_events = event, []
+        elif active_trial is not None:
+            active_events.append(event)
+            if event_type in {"trial_completed", "trial_aborted"}:
+                records.append(_trial_metrics(source, active_trial, event, active_events, "completed" if event_type == "trial_completed" else "aborted"))
+                active_trial, active_events = None, []
     return records
 
 
@@ -85,13 +86,14 @@ def analyze_logs(paths: Iterable[str | Path]) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     for item in paths:
         path = Path(item)
-        files = sorted(path.glob("*.jsonl")) if path.is_dir() else [path]
+        files = sorted(path.rglob("*.jsonl")) if path.is_dir() else [path]
         for file_path in files:
             records.extend(analyze_log(file_path))
     return records
 
 
-def _trial_metrics(source: Path, started: dict[str, Any], completed: dict[str, Any], sample_events: list[dict[str, Any]]) -> dict[str, Any]:
+def _trial_metrics(source: Path, started: dict[str, Any], completed: dict[str, Any], trial_events: list[dict[str, Any]], status: str) -> dict[str, Any]:
+    sample_events = [event for event in trial_events if event.get("event_type") == "active_pose_sample"]
     valid_samples: list[tuple[float | None, float, float, float]] = []
     missing_count = 0
     for event in sample_events:
@@ -105,6 +107,18 @@ def _trial_metrics(source: Path, started: dict[str, Any], completed: dict[str, A
     completion_pose = _pose(completed.get("source_pose"))
     final_pose = completion_pose or (valid_samples[-1][1:] if valid_samples else None)
     translation_path, rotation_path, stops, corrections = _trajectory_metrics(valid_samples, target)
+    arrival_entered = next((event for event in trial_events if event.get("event_type") == "arrival_entered"), None)
+    arrival_confirmed = next((event for event in trial_events if event.get("event_type") == "arrival_confirmed"), None)
+    first_arrival_time = _event_time(arrival_entered) if arrival_entered else None
+    first_confirmed_time = _event_time(arrival_confirmed) if arrival_confirmed else None
+    completion_time = _event_time(completed)
+    post_samples = [sample for sample in valid_samples if first_confirmed_time is not None and sample[0] is not None and sample[0] >= first_confirmed_time]
+    post_translation, post_rotation, _, post_corrections = _trajectory_metrics(post_samples, target)
+    tracking_losses = [event for event in trial_events if event.get("event_type") == "tracking_lost"]
+    tracking_intervals = [
+        event for event in trial_events
+        if event.get("event_type") in {"tracking_recovered", "tracking_loss_ended"}
+    ]
     final_position_error = None
     final_rotation_error = None
     if final_pose is not None and target is not None:
@@ -117,23 +131,37 @@ def _trial_metrics(source: Path, started: dict[str, Any], completed: dict[str, A
     )
     return {
         "source_log_filename": source.name,
-        "session_id": source.stem,
+        "participant_id": completed.get("participant_id", started.get("participant_id")),
+        "session_id": completed.get("session_id", started.get("session_id", source.parent.name)),
         "task_id": completed.get("task_id", started.get("task_id")),
         "task": completed.get("task", started.get("task")),
         "variant": completed.get("variant", started.get("variant")),
         "condition": completed.get("condition", started.get("condition")),
+        "attempt": completed.get("attempt", started.get("attempt")),
+        "status": status,
         "trial_start_timestamp": started.get("timestamp_iso"),
         "trial_end_timestamp": completed.get("timestamp_iso"),
         "trial_duration_s": _duration_s(started, completed),
+        "first_arrival_entered_timestamp": arrival_entered.get("timestamp_iso") if arrival_entered else None,
+        "first_arrival_confirmed_timestamp": arrival_confirmed.get("timestamp_iso") if arrival_confirmed else None,
+        "participant_declared_completion_timestamp": completed.get("participant_declared_completion_at_iso"),
+        "arrival_to_completion_delay_s": (completion_time - first_arrival_time if completion_time is not None and first_arrival_time is not None else None),
         "translation_path_cm": translation_path,
         "rotation_path_deg": rotation_path,
         "final_position_error_cm": final_position_error,
         "final_rotation_error_deg": final_rotation_error,
+        "objective_within_tolerance_at_completion": completed.get("objective_within_tolerance"),
         "success": success,
         "stop_count": stops,
         "correction_count": corrections,
         "valid_pose_sample_count": len(valid_samples),
         "missing_pose_sample_count": missing_count,
+        "target_exits_after_first_arrival": any(event.get("event_type") == "arrival_exited" for event in trial_events if first_arrival_time is not None),
+        "post_arrival_correction_count": post_corrections,
+        "movement_after_first_confirmed_arrival_cm": post_translation,
+        "rotation_after_first_confirmed_arrival_deg": post_rotation,
+        "tracking_loss_interval_count": len(tracking_losses),
+        "tracking_loss_total_duration_s": sum(float(event.get("tracking_missing_duration_s", 0.0)) for event in tracking_intervals),
     }
 
 
@@ -251,19 +279,20 @@ def write_metrics_json(records: list[dict[str, Any]], path: str | Path) -> Path:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("logs", type=Path, nargs="+", help="JSONL files or directories containing them.")
-    parser.add_argument("--output-dir", type=Path, default=Path("data/aisi/study/analysis"))
-    parser.add_argument("--json", action="store_true", help="Also write study_metrics.json.")
+    parser.add_argument("logs", type=Path, nargs="+", help="Session directory, JSONL file, or directory containing sessions.")
+    parser.add_argument("--output-dir", type=Path, help="Defaults to the supplied session directory.")
+    parser.add_argument("--json", action="store_true", default=True, help="Write metrics.json (enabled by default).")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
     records = analyze_logs(args.logs)
-    csv_path = write_metrics_csv(records, args.output_dir / "study_metrics.csv")
-    print(f"Wrote {len(records)} completed trial metric row(s) to {csv_path}")
+    output_dir = args.output_dir or (args.logs[0] if len(args.logs) == 1 and args.logs[0].is_dir() else Path("data/aisi/study/analysis"))
+    csv_path = write_metrics_csv(records, output_dir / "metrics.csv")
+    print(f"Wrote {len(records)} trial-attempt metric row(s) to {csv_path}")
     if args.json:
-        print(f"Wrote {write_metrics_json(records, args.output_dir / 'study_metrics.json')}")
+        print(f"Wrote {write_metrics_json(records, output_dir / 'metrics.json')}")
 
 
 if __name__ == "__main__":

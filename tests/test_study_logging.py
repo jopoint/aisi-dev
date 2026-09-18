@@ -5,7 +5,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from aisi.app.study_logging import JsonlEventLogger, LiveSceneSourcePoseProvider
+from aisi.app.study_logging import JsonlEventLogger, LiveSceneSourcePoseProvider, StudySessionLogger
 
 
 class StudyLoggingTests(unittest.TestCase):
@@ -28,3 +28,16 @@ class StudyLoggingTests(unittest.TestCase):
             path.write_text(json.dumps({"tables": [{"id": "table_01", "x_cm": 1, "y_cm": 2, "rotation_deg": 3}]}), encoding="utf-8")
             pose = LiveSceneSourcePoseProvider(path, "table_01")()
         self.assertEqual(pose, {"id": "table_01", "x_cm": 1.0, "y_cm": 2.0, "rotation_deg": 3.0})
+
+    def test_session_logger_creates_append_only_events_and_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            logger = StudySessionLogger(directory, session_id="study_test")
+            logger.log({"event_type": "first"})
+            logger.log({"event_type": "second"})
+            logger.update_manifest({"participant_id": "P001", "trial_definitions_sha256": "frozen"})
+            logger.close()
+            self.assertEqual(logger.path.name, "events.jsonl")
+            self.assertEqual(len(logger.path.read_text(encoding="utf-8").splitlines()), 2)
+            manifest = json.loads(logger.manifest_path.read_text(encoding="utf-8"))
+            self.assertEqual(manifest["participant_id"], "P001")
+            self.assertEqual(manifest["session_id"], "study_test")

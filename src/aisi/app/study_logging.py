@@ -8,6 +8,7 @@ from pathlib import Path
 import queue
 import threading
 import time
+import uuid
 from typing import Any, Callable
 
 
@@ -47,6 +48,29 @@ class JsonlEventLogger:
                     return
                 handle.write(json.dumps(record, sort_keys=True) + "\n")
                 handle.flush()
+
+
+class StudySessionLogger(JsonlEventLogger):
+    """Append-only event logger owned by one participant-facing Study session."""
+
+    def __init__(self, runs_directory: str | Path, *, session_id: str | None = None) -> None:
+        self.session_id = session_id or (
+            datetime.now(timezone.utc).strftime("study_%Y%m%dT%H%M%SZ")
+            + "_" + uuid.uuid4().hex[:8]
+        )
+        self.session_directory = Path(runs_directory) / self.session_id
+        self.session_directory.mkdir(parents=True, exist_ok=False)
+        # Keep the existing asynchronous, flushed JSONL implementation; only
+        # its canonical destination changes for participant sessions.
+        super().__init__(self.session_directory, session_name="events")
+        self.manifest_path = self.session_directory / "manifest.json"
+        self._manifest: dict[str, Any] = {"session_id": self.session_id}
+
+    def update_manifest(self, updates: dict[str, Any]) -> None:
+        self._manifest.update(updates)
+        temporary = self.manifest_path.with_suffix(".json.tmp")
+        temporary.write_text(json.dumps(self._manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        temporary.replace(self.manifest_path)
 
 
 class LiveSceneSourcePoseProvider:

@@ -6,7 +6,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from aisi.app.study_trials import StudyTask, StudyVariant, load_trial_definitions
+from aisi.app.study_trials import StudyTask, StudyVariant, load_trial_definitions, trial_definition_metadata
 from aisi.core.table_geometry import convex_polygons_intersect, polygon_inside_roi, world_footprint
 
 
@@ -57,24 +57,49 @@ class StudyTrialTests(unittest.TestCase):
             (trials[(StudyTask.T4, StudyVariant.A)].target_x_cm,
              trials[(StudyTask.T4, StudyVariant.A)].target_y_cm,
              trials[(StudyTask.T4, StudyVariant.A)].target_rotation_deg),
-            (201.5, 378.5, 100.0),
+            (234.84473024735843, 404.1752983481141, -91.7400727688127),
         )
 
-    def test_pilot_v1_snapshot_remains_available_as_the_frozen_prior_layout(self) -> None:
+    def test_pilot_v1_through_v6_snapshots_preserve_their_respective_frozen_layouts(self) -> None:
         study_directory = Path(__file__).resolve().parents[1] / "data" / "aisi" / "study"
         active_path = study_directory / "trials.json"
-        snapshot_path = study_directory / "trials_pilot_v1.json"
+        prior_snapshot_path = study_directory / "trials_pilot_v1.json"
+        snapshot_path = study_directory / "trials_pilot_v2.json"
+        current_snapshot_path = study_directory / "trials_pilot_v3.json"
+        final_snapshot_path = study_directory / "trials_pilot_v4.json"
+        prior_final_snapshot_path = study_directory / "trials_pilot_v5.json"
+        newest_snapshot_path = study_directory / "trials_pilot_v6.json"
+        self.assertTrue(prior_snapshot_path.is_file())
         self.assertTrue(snapshot_path.is_file())
+        self.assertTrue(current_snapshot_path.is_file())
+        self.assertTrue(final_snapshot_path.is_file())
+        self.assertTrue(prior_final_snapshot_path.is_file())
+        self.assertTrue(newest_snapshot_path.is_file())
         active_payload = json.loads(active_path.read_text(encoding="utf-8"))
+        prior_snapshot_payload = json.loads(prior_snapshot_path.read_text(encoding="utf-8"))
         snapshot_payload = json.loads(snapshot_path.read_text(encoding="utf-8"))
-        expected_metadata = {
-            "version": "pilot_v1",
-            "status": "frozen_for_pilot",
-            "description": "Physically validated pilot geometry for AISI dual-surface study",
+        current_snapshot_payload = json.loads(current_snapshot_path.read_text(encoding="utf-8"))
+        final_snapshot_payload = json.loads(final_snapshot_path.read_text(encoding="utf-8"))
+        prior_final_snapshot_payload = json.loads(prior_final_snapshot_path.read_text(encoding="utf-8"))
+        newest_snapshot_payload = json.loads(newest_snapshot_path.read_text(encoding="utf-8"))
+        expected_active_metadata = {
+            "version": "pilot_v6",
+            "status": "frozen_for_study",
+            "description": "Frozen final T1-T4 geometry with task-specific A/B counterbalancing",
         }
-        self.assertEqual({key: active_payload.get(key) for key in expected_metadata}, expected_metadata)
-        self.assertEqual({key: snapshot_payload.get(key) for key in expected_metadata}, expected_metadata)
+        self.assertEqual({key: active_payload.get(key) for key in expected_active_metadata}, expected_active_metadata)
+        self.assertEqual({key: newest_snapshot_payload.get(key) for key in expected_active_metadata}, expected_active_metadata)
+        self.assertEqual(prior_final_snapshot_payload["version"], "pilot_v5")
+        self.assertEqual(final_snapshot_payload["version"], "pilot_v4")
+        self.assertEqual(current_snapshot_payload["version"], "pilot_v3")
+        self.assertEqual(snapshot_payload["version"], "pilot_v2")
+        self.assertEqual(load_trial_definitions(active_path), load_trial_definitions(newest_snapshot_path))
+        self.assertNotEqual(load_trial_definitions(active_path), load_trial_definitions(prior_final_snapshot_path))
+        self.assertNotEqual(load_trial_definitions(active_path), load_trial_definitions(current_snapshot_path))
         self.assertNotEqual(load_trial_definitions(active_path), load_trial_definitions(snapshot_path))
+        self.assertNotEqual(load_trial_definitions(active_path), load_trial_definitions(prior_snapshot_path))
+        self.assertEqual(len(trial_definition_metadata(active_path)["trial_definitions_sha256"]), 64)
+        self.assertEqual(len(trial_definition_metadata(newest_snapshot_path)["trial_definitions_sha256"]), 64)
 
     def test_finalized_trials_have_required_setup_table_counts_and_one_active_source(self) -> None:
         path = Path(__file__).resolve().parents[1] / "data" / "aisi" / "study" / "trials.json"
@@ -84,24 +109,26 @@ class StudyTrialTests(unittest.TestCase):
                 trial = trials[(task, variant)]
                 self.assertIsNotNone(trial.source_pose)
                 self.assertEqual(len(trial.distractor_tables), 0)
+                self.assertEqual(len((trial.source_pose, *trial.distractor_tables)), 1)
         for task in (StudyTask.T3, StudyTask.T4):
             for variant in StudyVariant:
                 trial = trials[(task, variant)]
                 self.assertIsNotNone(trial.source_pose)
-                self.assertEqual(len(trial.distractor_tables), 3)
+                self.assertEqual(len(trial.distractor_tables), 2)
+                self.assertEqual(len((trial.source_pose, *trial.distractor_tables)), 3)
 
-    def test_current_trials_include_exact_temporary_a_geometry_and_unchanged_b_geometry(self) -> None:
+    def test_current_trials_include_exact_frozen_geometry(self) -> None:
         path = Path(__file__).resolve().parents[1] / "data" / "aisi" / "study" / "trials.json"
         trials = load_trial_definitions(path)
         expected = {
             "T1A": ((73, 204, -100), (427, 283, 95), ()),
-            "T1B": ((220, 371, 0), (220, 100.5, 0), ()),
+            "T1B": ((73, 296, -80), (427, 217, 85), ()),
             "T2A": ((167, 74.5, 10), (254.1, 436, 175), ()),
-            "T2B": ((220, 100.5, 0), (411, 397, -65), ()),
-            "T3A": ((403.1, 177.5, 195), (90.5, 305.5, 45), ((402, 290.5, 5), (204.5, 76.5, 10), (105, 191.5, 30))),
-            "T3B": ((432.5, 113, -85), (181, 282.5, -155), ((273, 92.5, -175), (132, 386, -170), (411, 397, -65))),
-            "T4A": ((378.6, 109.5, 235), (201.5, 378.5, 100), ((264, 105.5, 65), (294.5, 401, -75), (99, 126, 25))),
-            "T4B": ((132, 386, -170), (264.5, 207.5, -165), ((273, 92.5, -175), (411, 397, -65), (181, 282.5, -155))),
+            "T2B": ((333, 74.5, -10), (245.9, 436, -175), ()),
+            "T3A": ((87.44109878029548, 271.7760216418562, 101.15960012857052), (397.2182816800569, 237.33178597669993, -96.01579621441935), ((197.4417669961654, 194.69924154574431, 99.75089545617918), (295.01593705427456, 228.7988341653692, -91.69820657021306))),
+            "T3B": ((87.44109878029548, 228.2239783581438, 78.84039987142948), (397.2182816800569, 262.66821402330007, -83.98420378558065), ((197.4417669961654, 305.3007584542557, 80.24910454382082), (295.01593705427456, 271.2011658346308, -88.30179342978694))),
+            "T4A": ((265.37464310054287, 53.30026150452769, 179.1565691228634), (234.84473024735843, 404.1752983481141, -91.7400727688127), ((200.27976364082878, 154.83289474640358, 173.23873712478508), (330.79043090699105, 393.6398110955178, -101.87692619306351))),
+            "T4B": ((234.62535689945713, 53.30026150452769, -179.1565691228634), (265.1552697526416, 404.1752983481141, 91.7400727688127), ((299.7202363591712, 154.83289474640358, -173.23873712478508), (169.20956909300895, 393.6398110955178, 101.87692619306351))),
         }
         for task in StudyTask:
             for variant in StudyVariant:
@@ -111,56 +138,56 @@ class StudyTrialTests(unittest.TestCase):
                 self.assertEqual((trial.target_x_cm, trial.target_y_cm, trial.target_rotation_deg), target)
                 self.assertEqual(tuple((pose.x_cm, pose.y_cm, pose.rotation_deg) for pose in trial.distractor_tables), distractors)
 
-    def test_t1_targets_are_t2_sources(self) -> None:
+    def test_all_b_variants_follow_the_projector_axis_transform_and_are_involutions(self) -> None:
         path = Path(__file__).resolve().parents[1] / "data" / "aisi" / "study" / "trials.json"
         trials = load_trial_definitions(path)
-        for variant in (StudyVariant.B,):
-            t1 = trials[(StudyTask.T1, variant)]
-            t2 = trials[(StudyTask.T2, variant)]
-            self.assertEqual(
-                (t1.target_x_cm, t1.target_y_cm, t1.target_rotation_deg),
-                (t2.source_pose.x_cm, t2.source_pose.y_cm, t2.source_pose.rotation_deg),
+        def transform(task, pose):
+            if task in (StudyTask.T1, StudyTask.T3):
+                return (pose.x_cm, 500.0 - pose.y_cm, (180.0 - pose.rotation_deg + 180.0) % 360.0 - 180.0)
+            return (500.0 - pose.x_cm, pose.y_cm, (-pose.rotation_deg + 180.0) % 360.0 - 180.0)
+        def assert_pose(actual, expected):
+            for actual_value, expected_value in zip(actual, expected):
+                self.assertAlmostEqual(actual_value, expected_value, places=10)
+        for task in StudyTask:
+            a = trials[(task, StudyVariant.A)]
+            b = trials[(task, StudyVariant.B)]
+            assert_pose(
+                (b.source_pose.x_cm, b.source_pose.y_cm, b.source_pose.rotation_deg),
+                transform(task, a.source_pose),
             )
-
-    def test_t2a_target_is_preserved_as_a_t3a_static_table(self) -> None:
-        path = Path(__file__).resolve().parents[1] / "data" / "aisi" / "study" / "trials.json"
-        trials = load_trial_definitions(path)
-        t2a = trials[(StudyTask.T2, StudyVariant.B)]
-        self.assertIn(
-            (t2a.target_x_cm, t2a.target_y_cm, t2a.target_rotation_deg),
-            {(pose.x_cm, pose.y_cm, pose.rotation_deg) for pose in trials[(StudyTask.T3, StudyVariant.B)].distractor_tables},
-        )
-
-    def test_t3_target_state_equals_t4_start_state_and_preserves_table_identity_order(self) -> None:
-        path = Path(__file__).resolve().parents[1] / "data" / "aisi" / "study" / "trials.json"
-        trials = load_trial_definitions(path)
-        # T3A/T4A are intentionally discontinuous for this temporary
-        # physical-occlusion test; preserve the established B sequence check.
-        for variant in (StudyVariant.B,):
-            t3 = trials[(StudyTask.T3, variant)]
-            t4 = trials[(StudyTask.T4, variant)]
-            pose = lambda item: (item.x_cm, item.y_cm, item.rotation_deg)
-            target_pose = lambda trial: (
-                trial.target_x_cm, trial.target_y_cm, trial.target_rotation_deg
+            assert_pose(
+                (b.target_x_cm, b.target_y_cm, b.target_rotation_deg),
+                transform(task, type("Pose", (), {"x_cm": a.target_x_cm, "y_cm": a.target_y_cm, "rotation_deg": a.target_rotation_deg})()),
             )
-            self.assertEqual(
-                {target_pose(t3), *(pose(item) for item in t3.distractor_tables)},
-                {pose(item) for item in (t4.source_pose, *t4.distractor_tables)},
-            )
-            # M0 -> M1 -> M2 physical-table mapping in the fixed positional
-            # schema: T3 active becomes T4 distractor 3; T3 distractor 2
-            # becomes T4 active; the remaining static tables keep order.
-            self.assertEqual(target_pose(t3), pose(t4.distractor_tables[2]))
-            self.assertEqual(pose(t3.distractor_tables[0]), pose(t4.distractor_tables[0]))
-            self.assertEqual(pose(t3.distractor_tables[1]), pose(t4.source_pose))
-            self.assertEqual(pose(t3.distractor_tables[2]), pose(t4.distractor_tables[1]))
+            for actual, expected in zip(b.distractor_tables, a.distractor_tables):
+                assert_pose((actual.x_cm, actual.y_cm, actual.rotation_deg), transform(task, expected))
+            assert_pose(transform(task, type("Pose", (), {"x_cm": b.source_pose.x_cm, "y_cm": b.source_pose.y_cm, "rotation_deg": b.source_pose.rotation_deg})()), (a.source_pose.x_cm, a.source_pose.y_cm, a.source_pose.rotation_deg))
+            for actual, expected in zip(b.participant_start_positions, a.participant_start_positions):
+                expected_position = (
+                    expected.x_cm if task in (StudyTask.T1, StudyTask.T3) else 500.0 - expected.x_cm,
+                    500.0 - expected.y_cm if task in (StudyTask.T1, StudyTask.T3) else expected.y_cm,
+                )
+                self.assertEqual((actual.x_cm, actual.y_cm), expected_position)
+            a_tables = (a.source_pose, *a.distractor_tables)
+            b_tables = (b.source_pose, *b.distractor_tables)
+            for left in range(len(a_tables)):
+                for right in range(left + 1, len(a_tables)):
+                    self.assertAlmostEqual(
+                        math.hypot(a_tables[left].x_cm - a_tables[right].x_cm, a_tables[left].y_cm - a_tables[right].y_cm),
+                        math.hypot(b_tables[left].x_cm - b_tables[right].x_cm, b_tables[left].y_cm - b_tables[right].y_cm),
+                        places=10,
+                    )
 
-    def test_temporary_a_layouts_and_unchanged_b_layouts_have_expected_participant_starts(self) -> None:
+    def test_final_layouts_have_expected_participant_starts(self) -> None:
         path = Path(__file__).resolve().parents[1] / "data" / "aisi" / "study" / "trials.json"
         trials = load_trial_definitions(path)
         expected_a = {
             StudyTask.T1: (250.0, 450.0), StudyTask.T2: (450.0, 250.0),
-            StudyTask.T3: (250.0, 436.5), StudyTask.T4: (432.5, 305.0),
+            StudyTask.T3: (250.0, 445.0), StudyTask.T4: (55.0, 250.0),
+        }
+        expected_b = {
+            StudyTask.T1: (250.0, 50.0), StudyTask.T2: (50.0, 250.0),
+            StudyTask.T3: (250.0, 55.0), StudyTask.T4: (445.0, 250.0),
         }
         for task in StudyTask:
             a = trials[(task, StudyVariant.A)]
@@ -173,7 +200,7 @@ class StudyTrialTests(unittest.TestCase):
             self.assertEqual(
                 tuple((marker.participant_id, marker.x_cm, marker.y_cm, marker.radius_cm)
                       for marker in b.participant_start_positions),
-                (("P1", 53.5, 234.5, 40.0),),
+                (("P1", *expected_b[task], 40.0),),
             )
 
     def test_participant_markers_are_roi_safe_and_do_not_overlap_home_tables(self) -> None:
@@ -204,7 +231,7 @@ class StudyTrialTests(unittest.TestCase):
                         collisions.add((task.name + variant.name, marker.participant_id, table_name))
         self.assertEqual(collisions, set())
 
-    def test_all_trial_rect_source_target_and_static_footprints_are_roi_safe(self) -> None:
+    def test_all_trial_rect_footprints_are_roi_safe(self) -> None:
         path = Path(__file__).resolve().parents[1] / "data" / "aisi" / "study" / "trials.json"
         for (task, variant), trial in load_trial_definitions(path).items():
             poses = (trial.source_pose, *trial.distractor_tables, type(trial.source_pose)(

@@ -112,3 +112,28 @@ class StudyMetricTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             csv_path = write_metrics_csv([row], Path(directory) / "metrics.csv")
             self.assertIn("final_position_error_cm", csv_path.read_text(encoding="utf-8"))
+
+    def test_attempt_identity_arrival_tracking_and_abort_are_exported(self) -> None:
+        row = self._analyze([
+            _event("trial_started", 0, participant_id="P001", session_id="S1", attempt=2),
+            _event("active_pose_sample", 1, pose=(10, 0, 0), participant_id="P001", session_id="S1", attempt=2),
+            _event("arrival_entered", 2, pose=(100, 0, 0), participant_id="P001", session_id="S1", attempt=2),
+            _event("arrival_confirmed", 2.5, pose=(100, 0, 0), participant_id="P001", session_id="S1", attempt=2),
+            _event("tracking_lost", 3, participant_id="P001", session_id="S1", attempt=2),
+            _event("tracking_recovered", 4, participant_id="P001", session_id="S1", attempt=2, tracking_missing_duration_s=1.0),
+            _event("trial_aborted", 5, pose=(100, 0, 0), participant_id="P001", session_id="S1", attempt=2),
+        ])
+        self.assertEqual((row["participant_id"], row["attempt"], row["status"]), ("P001", 2, "aborted"))
+        self.assertEqual(row["tracking_loss_interval_count"], 1)
+        self.assertEqual(row["tracking_loss_total_duration_s"], 1.0)
+        self.assertIsNotNone(row["first_arrival_confirmed_timestamp"])
+
+    def test_open_tracking_loss_is_exported_at_terminal_attempt_and_session_id_is_real(self) -> None:
+        row = self._analyze([
+            _event("trial_started", 0, participant_id="P001", session_id="study_real", attempt=1),
+            _event("tracking_lost", 1, participant_id="P001", session_id="study_real", attempt=1),
+            _event("tracking_loss_ended", 3, participant_id="P001", session_id="study_real", attempt=1, tracking_missing_duration_s=2.0),
+            _event("trial_completed", 3, pose=(100, 0, 0), participant_id="P001", session_id="study_real", attempt=1),
+        ])
+        self.assertEqual(row["session_id"], "study_real")
+        self.assertEqual((row["tracking_loss_interval_count"], row["tracking_loss_total_duration_s"]), (1, 2.0))

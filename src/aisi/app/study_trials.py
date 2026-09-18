@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import IntEnum
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -215,3 +216,25 @@ def load_trial_definitions(path: str | Path) -> dict[tuple[StudyTask, StudyVaria
             notes=notes,
         )
     return result
+
+
+def trial_definition_metadata(path: str | Path) -> dict[str, str]:
+    """Return immutable provenance fields for a Study session-start record."""
+
+    source = Path(path)
+    try:
+        raw = source.read_bytes()
+        payload = json.loads(raw.decode("utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError(f"Unable to read trial-definition metadata {source}: {error}") from error
+    if not isinstance(payload, dict):
+        raise ValueError("Trial-definition metadata must be an object")
+    metadata = {
+        "trial_definitions_path": str(source.resolve()),
+        "trial_definitions_sha256": hashlib.sha256(raw).hexdigest(),
+    }
+    for key in ("version", "status"):
+        value = payload.get(key)
+        if isinstance(value, str):
+            metadata[f"trial_definitions_{key}"] = value
+    return metadata

@@ -87,6 +87,7 @@ class StudyTrackingTests(unittest.TestCase):
         selector = StudyTableTrackSelector(self.scene_path, registry)
         self._write_scene([_track("table_00", 371.0, 220.0, 90.0)])
         controller = StudyStateController(StudyStatePublisher(_RecordingClient()), StudyState(mode=StudyMode.STUDY), active_track_selector=selector)
+        controller.set_participant_id("P001")
         controller.apply_trial(TrialSpec(StudyTask.T1, StudyVariant.A, 0, 0, 0, source_pose=setup))
         self.assertEqual(selector.bindings, {0: "table_00"})
         self._write_scene([_track("table_08", 280.0, 246.0, -147.0)])
@@ -122,6 +123,7 @@ class StudyTrackingTests(unittest.TestCase):
             StudyState(mode=StudyMode.STUDY),
             active_track_selector=self.selector,
         )
+        controller.set_participant_id("P001")
         trial = TrialSpec(StudyTask.T3, StudyVariant.A, 282.5, 181.0, 65.0, source_pose=PoseSpec(113.0, 432.5, -5.0))
         controller.apply_trial(trial)
         self.assertEqual(controller.state.active_track_id, "table_00")
@@ -140,6 +142,8 @@ class StudyTrackingTests(unittest.TestCase):
             StudyStatePublisher(_RecordingClient()), StudyState(mode=StudyMode.STUDY),
             active_track_selector=self.selector,
         )
+        controller.set_participant_id("P001")
+        controller.set_participant_id("P001")
         controller.apply_trial(TrialSpec(StudyTask.T3, StudyVariant.A, 282.5, 181.0, 65.0, source_pose=source))
         self.assertIsNone(controller.state.active_track_id)
 
@@ -172,6 +176,7 @@ class StudyTrackingTests(unittest.TestCase):
             StudyStatePublisher(_RecordingClient()), StudyState(mode=StudyMode.STUDY),
             active_track_selector=self.selector,
         )
+        controller.set_participant_id("P001")
         controller.apply_trial(TrialSpec(StudyTask.T1, StudyVariant.A, 100.5, 220.0, 90.0, source_pose=source))
         self.assertIsNone(controller.state.active_track_id)
 
@@ -229,6 +234,7 @@ class StudyTrackingTests(unittest.TestCase):
         setup = (PoseSpec(113.0, 432.5, -5.0), PoseSpec(92.5, 273.0, -95.0), PoseSpec(386.0, 132.0, 80.0), PoseSpec(397.0, 411.0, -25.0))
         self._write_scene([_track("table_02", 113.0, 432.5, 175.0), _track("table_00", 92.5, 273.0, 85.0), _track("table_03", 386.0, 132.0, -100.0), _track("table_01", 397.0, 411.0, 155.0)])
         controller = StudyStateController(StudyStatePublisher(_RecordingClient()), StudyState(mode=StudyMode.STUDY), active_track_selector=selector)
+        controller.set_participant_id("P001")
         trial = TrialSpec(StudyTask.T3, StudyVariant.A, 0, 0, 0, source_pose=setup[0], distractor_tables=setup[1:])
         controller.apply_trial(trial)
         self.assertEqual(selector.bindings, {0: "table_02", 1: "table_00", 2: "table_03", 3: "table_01"})
@@ -245,6 +251,7 @@ class StudyTrackingTests(unittest.TestCase):
         setup = (PoseSpec(100, 100, 0), PoseSpec(300, 300, 90))
         self._write_scene([_track("table_00", 100, 100, 0)])
         controller = StudyStateController(StudyStatePublisher(_RecordingClient()), StudyState(mode=StudyMode.STUDY), active_track_selector=selector)
+        controller.set_participant_id("P001")
         controller.apply_trial(TrialSpec(StudyTask.T3, StudyVariant.A, 0, 0, 0, source_pose=setup[0], distractor_tables=(setup[1],)))
         self.assertFalse(controller.start_trial())
         self._write_scene([_track("table_00", 100, 100, 0), _track("table_01", 300, 300, -90)])
@@ -308,6 +315,7 @@ class StudyTrackingTests(unittest.TestCase):
         setup = (PoseSpec(100, 100, 0), PoseSpec(300, 300, 90))
         self._write_scene([_track("table_02", 100, 100, 0)])
         controller = StudyStateController(StudyStatePublisher(_RecordingClient()), StudyState(), active_track_selector=selector)
+        controller.set_participant_id("P001")
         controller.apply_trial(TrialSpec(StudyTask.T4, StudyVariant.A, 0, 0, 0, source_pose=setup[0], distractor_tables=(setup[1],)))
         self.assertFalse(registry.path.exists())
         controller.set_mode(StudyMode.STUDY)
