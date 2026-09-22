@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import builtins
+import sys
 
 
 TD_UNITS_PER_CM = 0.0052
@@ -26,7 +27,11 @@ SOURCE_MATERIAL_NAME = "mat_study_source"
 def _td_symbol(name: str):
     """Resolve a TouchDesigner operator type in Textport or injected modules."""
 
-    symbol = globals().get(name) or getattr(builtins, name, None)
+    symbol = (
+        globals().get(name)
+        or getattr(builtins, name, None)
+        or getattr(sys.modules.get("__main__"), name, None)
+    )
     if symbol is None:
         raise RuntimeError(f"TouchDesigner symbol is unavailable: {name}")
     return symbol
