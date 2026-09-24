@@ -5,7 +5,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from aisi.analysis.study_metrics import analyze_log, rect_angle_delta_deg, write_metrics_csv
+from aisi.analysis.study_metrics import METRIC_COLUMNS, analyze_log, rect_angle_delta_deg, write_metrics_csv
 
 
 def _event(event_type: str, time_s: float, *, pose: tuple[float, float, float] | None = None, target: tuple[float, float, float] = (100.0, 0.0, 0.0), **extra) -> dict:
@@ -112,6 +112,8 @@ class StudyMetricTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             csv_path = write_metrics_csv([row], Path(directory) / "metrics.csv")
             self.assertIn("final_position_error_cm", csv_path.read_text(encoding="utf-8"))
+        self.assertNotIn("arrival_to_completion_delay_s", METRIC_COLUMNS)
+        self.assertNotIn("movement_after_first_confirmed_arrival_cm", METRIC_COLUMNS)
 
     def test_attempt_identity_arrival_tracking_and_abort_are_exported(self) -> None:
         row = self._analyze([
@@ -123,7 +125,7 @@ class StudyMetricTests(unittest.TestCase):
             _event("tracking_recovered", 4, participant_id="P001", session_id="S1", attempt=2, tracking_missing_duration_s=1.0),
             _event("trial_aborted", 5, pose=(100, 0, 0), participant_id="P001", session_id="S1", attempt=2),
         ])
-        self.assertEqual((row["participant_id"], row["attempt"], row["status"]), ("P001", 2, "aborted"))
+        self.assertEqual((row["participant_id"], row["run_index"], row["attempt"], row["status"]), ("P001", 1, 1, "aborted"))
         self.assertEqual(row["tracking_loss_interval_count"], 1)
         self.assertEqual(row["tracking_loss_total_duration_s"], 1.0)
         self.assertIsNotNone(row["first_arrival_confirmed_timestamp"])
@@ -137,3 +139,48 @@ class StudyMetricTests(unittest.TestCase):
         ])
         self.assertEqual(row["session_id"], "study_real")
         self.assertEqual((row["tracking_loss_interval_count"], row["tracking_loss_total_duration_s"]), (1, 2.0))
+
+    def test_legacy_global_attempts_are_reconstructed_as_local_attempts_and_run_indices(self) -> None:
+        directory = tempfile.TemporaryDirectory(); self.addCleanup(directory.cleanup)
+        path = Path(directory.name) / "legacy.jsonl"
+        events = [
+            _event("trial_started", 0, task_id="T1", variant="A", condition=0, attempt=1),
+            _event("trial_completed", 1, pose=(100, 0, 0), task_id="T1", variant="A", condition=0, attempt=1),
+            _event("trial_started", 2, task_id="T2", variant="A", condition=0, attempt=2),
+            _event("trial_completed", 3, pose=(100, 0, 0), task_id="T2", variant="A", condition=0, attempt=2),
+            _event("trial_started", 4, task_id="T1", variant="A", condition=0, attempt=3),
+            _event("trial_completed", 5, pose=(100, 0, 0), task_id="T1", variant="A", condition=0, attempt=3),
+        ]
+        path.write_text("\n".join(json.dumps(event) for event in events), encoding="utf-8")
+        rows = analyze_log(path)
+        self.assertEqual([(row["run_index"], row["attempt"]) for row in rows], [(1, 1), (2, 1), (3, 2)])
+
+    def test_arrival_delays_and_post_arrival_displacements_are_explicit(self) -> None:
+        row = self._analyze([
+            _event("trial_started", 0),
+            _event("arrival_entered", 2, pose=(100, 0, 0)),
+            _event("arrival_confirmed", 2.5, pose=(100, 0, 0)),
+            _event("active_pose_sample", 3, pose=(100.4, 0, 179)),
+            _event("active_pose_sample", 3.5, pose=(102, 0, 178)),
+            _event("trial_completed", 4, pose=(100.6, .8, 180)),
+        ])
+        self.assertEqual(row["arrival_entered_to_completion_delay_s"], 2.0)
+        self.assertEqual(row["arrival_confirmed_to_completion_delay_s"], 1.5)
+        self.assertNotIn("arrival_to_completion_delay_s", row)
+        self.assertAlmostEqual(row["net_displacement_after_first_confirmed_arrival_cm"], 1.0)
+        self.assertAlmostEqual(row["max_displacement_from_first_confirmed_arrival_cm"], 2.0)
+        self.assertEqual(row["net_rotation_after_first_confirmed_arrival_deg"], 0.0)
+        self.assertEqual(row["max_rotation_deviation_from_first_confirmed_arrival_deg"], 2.0)
+        self.assertNotIn("movement_after_first_confirmed_arrival_cm", row)
+
+    def test_only_measured_post_confirmation_target_exits_count(self) -> None:
+        row = self._analyze([
+            _event("trial_started", 0),
+            _event("arrival_confirmed", 1, pose=(100, 0, 0)),
+            _event("arrival_exited", 2, objective_arrival_available=False),
+            _event("tracking_lost", 2.1),
+            _event("arrival_exited", 3, objective_arrival_available=True, objective_within_tolerance=False),
+            _event("trial_completed", 4, pose=(100, 0, 0)),
+        ])
+        self.assertTrue(row["target_exits_after_first_confirmed_arrival"])
+        self.assertEqual(row["target_exit_count_after_first_confirmed_arrival"], 1)

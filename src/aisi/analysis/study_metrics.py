@@ -28,12 +28,12 @@ SUCCESS_POSITION_TOLERANCE_CM = 8.0
 SUCCESS_ROTATION_TOLERANCE_DEG = 5.0
 
 METRIC_COLUMNS = (
-    "source_log_filename", "participant_id", "session_id", "task_id", "task", "variant", "condition", "attempt", "status",
+    "source_log_filename", "participant_id", "session_id", "task_id", "task", "variant", "condition", "run_index", "attempt", "status",
     "trial_start_timestamp", "trial_end_timestamp", "trial_duration_s",
-    "first_arrival_entered_timestamp", "first_arrival_confirmed_timestamp", "participant_declared_completion_timestamp", "arrival_to_completion_delay_s",
+    "first_arrival_entered_timestamp", "first_arrival_confirmed_timestamp", "participant_declared_completion_timestamp", "arrival_entered_to_completion_delay_s", "arrival_confirmed_to_completion_delay_s",
     "translation_path_cm", "rotation_path_deg", "final_position_error_cm",
     "final_rotation_error_deg", "objective_within_tolerance_at_completion", "success", "stop_count", "correction_count",
-    "valid_pose_sample_count", "missing_pose_sample_count", "target_exits_after_first_arrival", "post_arrival_correction_count", "movement_after_first_confirmed_arrival_cm", "rotation_after_first_confirmed_arrival_deg", "tracking_loss_interval_count", "tracking_loss_total_duration_s",
+    "valid_pose_sample_count", "missing_pose_sample_count", "target_exits_after_first_confirmed_arrival", "target_exit_count_after_first_confirmed_arrival", "post_arrival_correction_count", "net_displacement_after_first_confirmed_arrival_cm", "max_displacement_from_first_confirmed_arrival_cm", "net_rotation_after_first_confirmed_arrival_deg", "max_rotation_deviation_from_first_confirmed_arrival_deg", "tracking_loss_interval_count", "tracking_loss_total_duration_s",
 )
 
 
@@ -68,10 +68,19 @@ def analyze_log(path: str | Path) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     active_trial: dict[str, Any] | None = None
     active_events: list[dict[str, Any]] = []
+    legacy_run_index = 0
+    legacy_attempts: dict[tuple[object, object, object], int] = {}
     for event in read_jsonl_events(source):
         event_type = event.get("event_type")
         if event_type == "trial_started":
-            active_trial, active_events = event, []
+            legacy_run_index += 1
+            active_trial = dict(event)
+            if "run_index" not in event:
+                identity = (event.get("task_id"), event.get("variant"), event.get("condition"))
+                legacy_attempts[identity] = legacy_attempts.get(identity, 0) + 1
+                active_trial["run_index"] = legacy_run_index
+                active_trial["attempt"] = legacy_attempts[identity]
+            active_events = []
         elif active_trial is not None:
             active_events.append(event)
             if event_type in {"trial_completed", "trial_aborted"}:
@@ -113,7 +122,14 @@ def _trial_metrics(source: Path, started: dict[str, Any], completed: dict[str, A
     first_confirmed_time = _event_time(arrival_confirmed) if arrival_confirmed else None
     completion_time = _event_time(completed)
     post_samples = [sample for sample in valid_samples if first_confirmed_time is not None and sample[0] is not None and sample[0] >= first_confirmed_time]
-    post_translation, post_rotation, _, post_corrections = _trajectory_metrics(post_samples, target)
+    _, _, _, post_corrections = _trajectory_metrics(post_samples, target)
+    confirmed_pose = _pose(arrival_confirmed.get("source_pose")) if arrival_confirmed else None
+    post_poses = [sample[1:] for sample in post_samples]
+    if completion_pose is not None:
+        post_poses.append(completion_pose)
+    net_displacement, max_displacement, net_rotation, max_rotation = _post_arrival_displacements(
+        confirmed_pose, post_poses, completion_pose
+    )
     tracking_losses = [event for event in trial_events if event.get("event_type") == "tracking_lost"]
     tracking_intervals = [
         event for event in trial_events
@@ -137,7 +153,8 @@ def _trial_metrics(source: Path, started: dict[str, Any], completed: dict[str, A
         "task": completed.get("task", started.get("task")),
         "variant": completed.get("variant", started.get("variant")),
         "condition": completed.get("condition", started.get("condition")),
-        "attempt": completed.get("attempt", started.get("attempt")),
+        "run_index": started.get("run_index", completed.get("run_index")),
+        "attempt": started.get("attempt", completed.get("attempt")),
         "status": status,
         "trial_start_timestamp": started.get("timestamp_iso"),
         "trial_end_timestamp": completed.get("timestamp_iso"),
@@ -145,7 +162,8 @@ def _trial_metrics(source: Path, started: dict[str, Any], completed: dict[str, A
         "first_arrival_entered_timestamp": arrival_entered.get("timestamp_iso") if arrival_entered else None,
         "first_arrival_confirmed_timestamp": arrival_confirmed.get("timestamp_iso") if arrival_confirmed else None,
         "participant_declared_completion_timestamp": completed.get("participant_declared_completion_at_iso"),
-        "arrival_to_completion_delay_s": (completion_time - first_arrival_time if completion_time is not None and first_arrival_time is not None else None),
+        "arrival_entered_to_completion_delay_s": (completion_time - first_arrival_time if completion_time is not None and first_arrival_time is not None else None),
+        "arrival_confirmed_to_completion_delay_s": (completion_time - first_confirmed_time if completion_time is not None and first_confirmed_time is not None else None),
         "translation_path_cm": translation_path,
         "rotation_path_deg": rotation_path,
         "final_position_error_cm": final_position_error,
@@ -156,13 +174,51 @@ def _trial_metrics(source: Path, started: dict[str, Any], completed: dict[str, A
         "correction_count": corrections,
         "valid_pose_sample_count": len(valid_samples),
         "missing_pose_sample_count": missing_count,
-        "target_exits_after_first_arrival": any(event.get("event_type") == "arrival_exited" for event in trial_events if first_arrival_time is not None),
+        "target_exits_after_first_confirmed_arrival": bool(_target_exit_events(trial_events, first_confirmed_time)),
+        "target_exit_count_after_first_confirmed_arrival": len(_target_exit_events(trial_events, first_confirmed_time)),
         "post_arrival_correction_count": post_corrections,
-        "movement_after_first_confirmed_arrival_cm": post_translation,
-        "rotation_after_first_confirmed_arrival_deg": post_rotation,
+        "net_displacement_after_first_confirmed_arrival_cm": net_displacement,
+        "max_displacement_from_first_confirmed_arrival_cm": max_displacement,
+        "net_rotation_after_first_confirmed_arrival_deg": net_rotation,
+        "max_rotation_deviation_from_first_confirmed_arrival_deg": max_rotation,
         "tracking_loss_interval_count": len(tracking_losses),
         "tracking_loss_total_duration_s": sum(float(event.get("tracking_missing_duration_s", 0.0)) for event in tracking_intervals),
     }
+
+
+def _target_exit_events(events: list[dict[str, Any]], first_confirmed_time: float | None) -> list[dict[str, Any]]:
+    """Return only measured, post-confirmation exits from the target."""
+
+    if first_confirmed_time is None:
+        return []
+    return [
+        event for event in events
+        if event.get("event_type") == "arrival_exited"
+        and _event_time(event) is not None and _event_time(event) >= first_confirmed_time
+        and event.get("objective_arrival_available") is True
+        and event.get("objective_within_tolerance") is False
+    ]
+
+
+def _post_arrival_displacements(
+    confirmed_pose: tuple[float, float, float] | None,
+    post_poses: list[tuple[float, float, float]],
+    completion_pose: tuple[float, float, float] | None,
+) -> tuple[float | None, float | None, float | None, float | None]:
+    """Return interpretable net and maximum deviations from first confirmation."""
+
+    if confirmed_pose is None:
+        return None, None, None, None
+    reference_x, reference_y, reference_rotation = confirmed_pose
+    distances = [math.hypot(x - reference_x, y - reference_y) for x, y, _ in post_poses]
+    rotations = [rect_angle_delta_deg(reference_rotation, rotation) for _, _, rotation in post_poses]
+    final = completion_pose or (post_poses[-1] if post_poses else confirmed_pose)
+    return (
+        math.hypot(final[0] - reference_x, final[1] - reference_y),
+        max(distances, default=0.0),
+        rect_angle_delta_deg(reference_rotation, final[2]),
+        max(rotations, default=0.0),
+    )
 
 
 def _trajectory_metrics(samples: list[tuple[float | None, float, float, float]], target: tuple[float, float, float] | None) -> tuple[float, float, int, int]:

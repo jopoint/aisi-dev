@@ -170,6 +170,8 @@ class StudyStateController:
         self.participant_id = ""
         self.session_id = getattr(event_logger, "session_id", None)
         self.attempt = 0
+        self.run_index = 0
+        self._attempts_by_trial_identity: dict[tuple[str, str, str], int] = {}
         self.start_block_reason = "participant ID missing"
         self._arrival_entered_monotonic_s: float | None = None
         self._arrival_confirmed = False
@@ -223,7 +225,7 @@ class StudyStateController:
             bool(str(participant_id).strip())
             and str(participant_id).strip() != self.participant_id
             and self.session_id is not None
-            and self.attempt > 0
+            and self.run_index > 0
         )
 
     def close_session(self) -> None:
@@ -241,6 +243,8 @@ class StudyStateController:
 
     def _reset_for_new_participant(self) -> None:
         self.attempt = 0
+        self.run_index = 0
+        self._attempts_by_trial_identity = {}
         self._clear_trial_local_state()
         self._completed_attempts = []
         self._aborted_attempts = []
@@ -338,9 +342,12 @@ class StudyStateController:
         if not allowed:
             self._log_event("trial_start_blocked", {"start_block_reason": reason})
             return False
-        # Each execution is an immutable attempt. Earlier completed/aborted
-        # records remain in this session's append-only JSONL stream.
-        self.attempt += 1
+        # ``run_index`` is session-global; ``attempt`` is local to the exact
+        # task/variant/condition identity. Earlier records stay append-only.
+        identity = (self.state.task.name, self.state.variant.name, self.state.condition.name)
+        self.run_index += 1
+        self.attempt = self._attempts_by_trial_identity.get(identity, 0) + 1
+        self._attempts_by_trial_identity[identity] = self.attempt
         self._clear_trial_local_state()
         self.trial_started_at_iso, self.trial_completed_at_iso = _utc_iso_now(), None
         return self._update(replace(self.state, phase=StudyPhase.ACTIVE), "trial_started", {"trial_started_at_iso": self.trial_started_at_iso})
@@ -560,7 +567,13 @@ class StudyStateController:
         """Log raw entry/exit/confirmation events; never change Study phase."""
 
         now = time.monotonic()
-        within_tolerance = bool(arrival and arrival["objective_within_tolerance"])
+        if arrival is None:
+            # Missing tracking is unknown, not evidence that the table left
+            # the target. A merely-entered interval cannot span that gap.
+            if not self._arrival_confirmed:
+                self._arrival_entered_monotonic_s = None
+            return
+        within_tolerance = bool(arrival["objective_within_tolerance"])
         if within_tolerance:
             if self._arrival_entered_monotonic_s is None:
                 self._arrival_entered_monotonic_s = now
@@ -578,7 +591,7 @@ class StudyStateController:
                 )
             return
         if self._arrival_entered_monotonic_s is not None:
-            exit_details = (arrival or {"objective_arrival_available": False}) | {
+            exit_details = arrival | {
                 "arrival_continuous_duration_s": now - self._arrival_entered_monotonic_s,
                 "arrival_was_confirmed": self._arrival_confirmed,
             }
@@ -592,7 +605,7 @@ class StudyStateController:
         if source_pose is _UNSET:
             source_pose = self._read_source_pose()
         state = self.state
-        event: dict[str, Any] = {"event_type": event_type, "participant_id": self.participant_id, "session_id": self.session_id, "attempt": self.attempt, "mode": int(state.mode), "condition": int(state.condition), "phase": int(state.phase), "task_id": state.task.name, "task": int(state.task), "variant": state.variant.name, "variant_id": int(state.variant), "active_track_id": state.active_track_id, "target_x_cm": state.target_x, "target_y_cm": state.target_y, "target_rotation_deg": state.target_rot, "source_pose": source_pose}
+        event: dict[str, Any] = {"event_type": event_type, "participant_id": self.participant_id, "session_id": self.session_id, "run_index": self.run_index, "attempt": self.attempt, "mode": int(state.mode), "condition": int(state.condition), "phase": int(state.phase), "task_id": state.task.name, "task": int(state.task), "variant": state.variant.name, "variant_id": int(state.variant), "active_track_id": state.active_track_id, "target_x_cm": state.target_x, "target_y_cm": state.target_y, "target_rotation_deg": state.target_rot, "source_pose": source_pose}
         if extra:
             event.update(extra)
         self._event_logger.log(event)
@@ -608,6 +621,7 @@ class StudyStateController:
             "variant": self.state.variant.name,
             "condition": self.state.condition.name,
             "attempt": self.attempt,
+            "run_index": self.run_index,
             "status": status,
         }
         (self._completed_attempts if status == "completed" else self._aborted_attempts).append(attempt)
