@@ -12,7 +12,7 @@ import matplotlib
 matplotlib.use("Agg")
 
 from aisi.core.models import ROI, SceneState, TableState, TargetStructure
-from aisi.generation.layout_synthesizer import synthesize_layout
+from aisi.generation.layout_synthesizer import MAX_LAYOUT_TABLES, synthesize_layout
 from aisi.projection.debug_plotter import plot_layout_proposal
 
 
@@ -42,7 +42,7 @@ def main() -> None:
     args = parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
     for learning_format in ("input", "groupwork", "discussion"):
-        for table_count in (1, 3, 4, 5, 6):
+        for table_count in range(1, MAX_LAYOUT_TABLES + 1):
             scene = make_scene(table_count, learning_format)
             proposal = synthesize_layout(
                 scene,

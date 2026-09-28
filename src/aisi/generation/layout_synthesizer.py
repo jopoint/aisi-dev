@@ -28,9 +28,19 @@ from aisi.generation.target_structure_generator import pair_tables_for_groupwork
 
 GROUPWORK_PAIR_SEAM_GAP_CM = 4.0
 INPUT_TABLE_GAP_CM = 8.0
-RECT_TEMPLATE_MAX_TABLES = 6
-RECT_INPUT_TWO_COLUMN_SPACING_CM = 220.0
-RECT_INPUT_ROW_SPACING_CM = 190.0
+# Layout generation is intentionally limited to at most five tables in the
+# current 500×500 cm AISI ROI.
+MAX_LAYOUT_TABLES = 5
+
+# Explicit frontal Rect templates for the current 500×500 cm ROI.  Slot order
+# is bound deterministically to tables sorted by table_id.
+RECT_INPUT_TEMPLATE_POSITIONS: dict[int, tuple[tuple[float, float], ...]] = {
+    1: ((250.0, 250.0),),
+    2: ((140.0, 250.0), (360.0, 250.0)),
+    3: ((122.0, 150.0), (250.0, 250.0), (378.0, 350.0)),
+    4: ((140.0, 155.0), (360.0, 155.0), (140.0, 345.0), (360.0, 345.0)),
+    5: ((110.0, 150.0), (250.0, 250.0), (390.0, 150.0), (110.0, 350.0), (390.0, 350.0)),
+}
 
 
 def synthesize_layout(
@@ -41,6 +51,14 @@ def synthesize_layout(
     transformation_strength: float = 0.5,
 ) -> LayoutProposal:
     """Synthesize adaptive table-only layouts from target structure + current scene."""
+    table_count = len(scene_state.tables)
+    if table_count > MAX_LAYOUT_TABLES:
+        raise ValueError(
+            "AISI layout generation supports at most "
+            f"{MAX_LAYOUT_TABLES} tables in the current 500x500 cm ROI; "
+            f"received {table_count}."
+        )
+
     tables = sorted(scene_state.tables, key=lambda table: table.table_id)
     strength = _clamp(transformation_strength, 0.0, 1.0)
 
@@ -107,7 +125,7 @@ def synthesize_layout(
 
 def _uses_rect_template_layout(tables: list[TableState]) -> bool:
     """Return whether a small all-rect scene uses the restored template path."""
-    return 1 <= len(tables) <= RECT_TEMPLATE_MAX_TABLES and all(
+    return 1 <= len(tables) <= MAX_LAYOUT_TABLES and all(
         table.table_type == "rect" for table in tables
     )
 
@@ -128,22 +146,11 @@ def _layout_rect_input_templates(
     scene_state: SceneState,
     tables: list[TableState],
 ) -> tuple[list[TableTarget], list[str]]:
-    """Restore frontal rect rows with spacing that satisfies current clearance."""
-    occupancy_by_count = {
-        1: (1,),
-        2: (2,),
-        3: (2, 1),
-        4: (2, 2),
-        5: (3, 2),
-        6: (3, 3),
-    }
-    occupancy = occupancy_by_count[len(tables)]
-    row_y = (250.0,) if len(occupancy) == 1 else (155.0, 345.0)
-    rotation_deg = long_axis_rotation_from_facing_vector((0.0, -1.0), reference_rot_deg=0.0)
-
-    slots: list[tuple[float, float]] = []
-    for row_size, y in zip(occupancy, row_y):
-        slots.extend((x, y) for x in _rect_input_row_x_positions(tables[0], row_size))
+    """Build the explicit current frontal Rect Input templates."""
+    try:
+        slots = RECT_INPUT_TEMPLATE_POSITIONS[len(tables)]
+    except KeyError as exc:
+        raise ValueError(f"No Rect Input template for {len(tables)} tables") from exc
 
     targets = [
         TableTarget(
@@ -151,7 +158,7 @@ def _layout_rect_input_templates(
             target_x=slot[0],
             target_y=slot[1],
             source_rot_deg=table.rot_deg,
-            target_rot_deg=rotation_deg,
+            target_rot_deg=0.0,
             facing_target_x=slot[0],
             facing_target_y=slot[1] - 100.0,
         )
@@ -159,28 +166,8 @@ def _layout_rect_input_templates(
     ]
     return targets, [
         "rect_template=input",
-        f"rect_input_occupancy={list(occupancy)}",
-        f"rect_input_two_column_spacing_cm={RECT_INPUT_TWO_COLUMN_SPACING_CM:.1f}",
-        f"rect_input_row_spacing_cm={RECT_INPUT_ROW_SPACING_CM:.1f}",
+        f"rect_input_template_count={len(tables)}",
     ]
-
-
-def _rect_input_row_x_positions(table: TableState, row_size: int) -> tuple[float, ...]:
-    if row_size == 1:
-        return (250.0,)
-    if row_size == 2:
-        half_spacing = RECT_INPUT_TWO_COLUMN_SPACING_CM * 0.5
-        return (250.0 - half_spacing, 250.0 + half_spacing)
-
-    lateral_spacing = required_table_center_separation(
-        table,
-        0.0,
-        table,
-        0.0,
-        (1.0, 0.0),
-        gap=INPUT_TABLE_GAP_CM,
-    )
-    return tuple(250.0 + (index - 1) * lateral_spacing for index in range(row_size))
 
 
 def _layout_rect_groupwork_templates(
