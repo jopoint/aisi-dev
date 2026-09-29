@@ -5,7 +5,7 @@ import unittest
 from unittest import mock
 
 from aisi.core.models import ROI, SceneState, TableState, TargetStructure, choose_facing_normal_toward_target
-from aisi.core.table_geometry import required_table_center_separation
+from aisi.analysis.rect_groupwork_adaptive_prototype import solve_rect_groupwork_prototype
 from aisi.generation.layout_constraints import _primary_seat_clearance_zone, evaluate_hard_constraints
 from aisi.generation.layout_synthesizer import (
     _layout_rect_discussion_templates,
@@ -95,15 +95,17 @@ class RectTemplateLayoutTests(unittest.TestCase):
         scene = _rect_scene(4, "groupwork")
         ordered = sorted(scene.tables, key=lambda table: table.table_id)
         targets, notes = _layout_rect_groupwork_templates(scene, ordered)
-        expected = required_table_center_separation(
-            ordered[0], 0.0, ordered[1], 0.0, (0.0, 1.0), gap=4.0
+        expected = solve_rect_groupwork_prototype(scene, selection="clearance")
+        self.assertIn("rect_groupwork=adaptive_local_clearance", notes)
+        self.assertIn("groupwork_pair_seam_gap_cm=8.0", notes)
+        self.assertEqual(
+            [(target.table_id, target.target_x, target.target_y, target.target_rot_deg) for target in targets],
+            [
+                (target.table_id, target.target_x, target.target_y, target.target_rot_deg)
+                for target in expected.table_targets
+            ],
         )
-        self.assertAlmostEqual(expected, 84.0)
-        self.assertIn("groupwork_assignments=table_1->pair0, table_10->pair0, table_2->pair1, table_7->pair1", notes)
-        self.assertIn("groupwork_pair_geometry=pair0", notes[3])
-        by_id = {target.table_id: target for target in targets}
-        self.assertAlmostEqual(abs(by_id["table_10"].target_y - by_id["table_1"].target_y), expected)
-        self.assertAlmostEqual(abs(by_id["table_7"].target_y - by_id["table_2"].target_y), expected)
+        self.assertEqual({target.target_rot_deg for target in targets}, {0.0})
 
     def test_discussion_templates_form_an_inward_facing_common_center_ring(self) -> None:
         for count in range(2, 6):

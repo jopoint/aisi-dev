@@ -104,7 +104,32 @@ def synthesize_layout(
     targets = _blend_targets_with_source(scene_state, targets, strength)
     notes.append(f"transformation_strength={strength:.3f}")
 
-    repaired_targets, repair_notes = _apply_hard_constraint_repair(scene_state, targets, notes)
+    # Rect Groupwork has approved island-level clearance geometry (pair ellipse
+    # and singleton long-side strips).  The generic repair only understands a
+    # one-sided table clearance and would destroy the selected pair geometry.
+    rect_groupwork = (
+        scene_state.learning_format == "groupwork"
+        and 2 <= len(tables) <= MAX_LAYOUT_TABLES
+        and all(table.table_type == "rect" for table in tables)
+    )
+    if rect_groupwork:
+        repaired_targets, repair_notes, repaired_groupwork_notes = _repair_rect_groupwork_after_blend(
+            scene_state,
+            targets,
+            strength,
+        )
+        if repaired_groupwork_notes:
+            notes = [
+                note
+                for note in notes
+                if not (
+                    note.startswith("rect_groupwork_prototype=")
+                    or note.startswith("groupwork_")
+                )
+            ]
+            notes.extend(repaired_groupwork_notes)
+    else:
+        repaired_targets, repair_notes = _apply_hard_constraint_repair(scene_state, targets, notes)
     notes = [*notes, *repair_notes]
 
     final_stats = _evaluate_for_learning_format(scene_state, repaired_targets, notes)
@@ -121,6 +146,73 @@ def synthesize_layout(
         chair_targets=[],
         generation_notes=notes,
     )
+
+
+def _repair_rect_groupwork_after_blend(
+    scene_state: SceneState,
+    blended_targets: list[TableTarget],
+    strength: float,
+) -> tuple[list[TableTarget], list[str], list[str]]:
+    """Repair a blended Rect Groupwork pose with its full island geometry.
+
+    The generic repair is intentionally not used here: it only knows directed
+    single-table clearance and would compact or split an approved pair ellipse.
+    At partial strength, the blended pose becomes the local source for one more
+    adaptive solve. This retains the normal blend-before-repair contract while
+    ensuring that the emitted pose again satisfies the complete Groupwork
+    clearance model.
+    """
+    if strength >= 1.0 - 1e-9:
+        return blended_targets, ["repair_skipped=rect_groupwork_target_already_valid"], []
+
+    source_by_id = {table.table_id: table for table in scene_state.tables}
+    intermediate = SceneState(
+        roi=scene_state.roi,
+        tables=[
+            TableState(
+                table_id=target.table_id,
+                x=target.target_x,
+                y=target.target_y,
+                rot_deg=target.target_rot_deg,
+                width=source_by_id[target.table_id].width,
+                height=source_by_id[target.table_id].height,
+                confidence=source_by_id[target.table_id].confidence,
+                table_type=source_by_id[target.table_id].table_type,
+            )
+            for target in blended_targets
+        ],
+        learning_format="groupwork",
+    )
+    from aisi.analysis.rect_groupwork_adaptive_prototype import solve_rect_groupwork_prototype
+
+    result = solve_rect_groupwork_prototype(intermediate, selection="clearance")
+    repaired = [
+        TableTarget(
+            table_id=target.table_id,
+            target_x=target.target_x,
+            target_y=target.target_y,
+            source_rot_deg=source_by_id[target.table_id].rot_deg,
+            target_rot_deg=target.target_rot_deg,
+            facing_target_x=target.facing_target_x,
+            facing_target_y=target.facing_target_y,
+        )
+        for target in result.table_targets
+    ]
+    objective = result.objective
+    groupwork_notes = [
+        *result.generation_notes,
+        f"groupwork_zone_overlap_cm2={objective.clearance_overlap_area_cm2:.3f}",
+        f"groupwork_max_displacement_cm={objective.max_displacement_cm:.3f}",
+        f"groupwork_total_displacement_cm={objective.total_displacement_cm:.3f}",
+        f"groupwork_total_rotation_change_deg={objective.total_rotation_change_deg:.3f}",
+        f"groupwork_crossing_count={objective.crossing_count}",
+        f"groupwork_min_intergroup_gap_cm={objective.min_intergroup_gap_cm:.3f}",
+    ]
+    return repaired, [
+        "repair_applied=rect_groupwork_custom_clearance",
+        f"repair_strength={strength:.3f}",
+        f"repair_zone_overlap_cm2={result.objective.clearance_overlap_area_cm2:.3f}",
+    ], groupwork_notes
 
 
 def _uses_rect_template_layout(tables: list[TableState]) -> bool:
@@ -174,69 +266,34 @@ def _layout_rect_groupwork_templates(
     scene_state: SceneState,
     tables: list[TableState],
 ) -> tuple[list[TableTarget], list[str]]:
-    """Arrange rect tables as compact, centered pair islands and singletons."""
-    groups = [tables[index : index + 2] for index in range(0, len(tables), 2)]
-    centers = _rect_groupwork_group_centers(len(tables))
-    targets: list[TableTarget] = []
-    assignment_notes: list[str] = []
-    geometry_notes: list[str] = []
-    rotation_deg = 0.0
-
-    for group_index, (group, center) in enumerate(zip(groups, centers)):
-        group_id = f"pair{group_index}"
-        if len(group) == 2:
-            separation = required_table_center_separation(
-                group[0],
-                rotation_deg,
-                group[1],
-                rotation_deg,
-                (0.0, 1.0),
-                gap=GROUPWORK_PAIR_SEAM_GAP_CM,
+    """Generate source-adaptive Rect Groupwork islands for counts two through five."""
+    if len(tables) == 1:
+        table = tables[0]
+        return [
+            TableTarget(
+                table_id=table.table_id,
+                target_x=table.x,
+                target_y=table.y,
+                source_rot_deg=table.rot_deg,
+                target_rot_deg=table.rot_deg,
             )
-            half_separation = separation * 0.5
-            slots = ((center[0], center[1] - half_separation), (center[0], center[1] + half_separation))
-            seat_directions = ((0.0, -1.0), (0.0, 1.0))
-            geometry_notes.append(
-                f"{group_id}|center={center[0]:.3f},{center[1]:.3f}|normal=0.000000,1.000000|gap_cm={separation:.3f}"
-            )
-        else:
-            slots = (center,)
-            seat_directions = ((0.0, -1.0),)
+        ], ["rect_template=groupwork", "rect_groupwork=single_table_source_pose"]
 
-        for table, slot, seat_direction in zip(group, slots, seat_directions):
-            targets.append(
-                TableTarget(
-                    table_id=table.table_id,
-                    target_x=slot[0],
-                    target_y=slot[1],
-                    source_rot_deg=table.rot_deg,
-                    target_rot_deg=rotation_deg,
-                    facing_target_x=slot[0] + seat_direction[0] * 100.0,
-                    facing_target_y=slot[1] + seat_direction[1] * 100.0,
-                )
-            )
-            assignment_notes.append(f"{table.table_id}->{group_id}")
+    from aisi.analysis.rect_groupwork_adaptive_prototype import solve_rect_groupwork_prototype
 
-    return targets, [
+    result = solve_rect_groupwork_prototype(scene_state, selection="clearance")
+    objective = result.objective
+    return list(result.table_targets), [
         "rect_template=groupwork",
-        f"groupwork_pair_count={len(groups)}",
-        f"groupwork_assignments={', '.join(assignment_notes)}",
-        f"groupwork_pair_geometry={'; '.join(geometry_notes)}",
-        f"groupwork_pair_seam_gap_cm={GROUPWORK_PAIR_SEAM_GAP_CM:.1f}",
+        "rect_groupwork=adaptive_local_clearance",
+        *result.generation_notes,
+        f"groupwork_zone_overlap_cm2={objective.clearance_overlap_area_cm2:.3f}",
+        f"groupwork_max_displacement_cm={objective.max_displacement_cm:.3f}",
+        f"groupwork_total_displacement_cm={objective.total_displacement_cm:.3f}",
+        f"groupwork_total_rotation_change_deg={objective.total_rotation_change_deg:.3f}",
+        f"groupwork_crossing_count={objective.crossing_count}",
+        f"groupwork_min_intergroup_gap_cm={objective.min_intergroup_gap_cm:.3f}",
     ]
-
-
-def _rect_groupwork_group_centers(table_count: int) -> tuple[tuple[float, float], ...]:
-    """Return deliberate centered compositions for one to three islands."""
-    by_count = {
-        1: ((250.0, 250.0),),
-        2: ((250.0, 250.0),),
-        3: ((150.0, 250.0), (350.0, 250.0)),
-        4: ((150.0, 250.0), (350.0, 250.0)),
-        5: ((120.0, 160.0), (380.0, 160.0), (250.0, 360.0)),
-        6: ((120.0, 180.0), (380.0, 180.0), (250.0, 350.0)),
-    }
-    return by_count[table_count]
 
 
 def _layout_rect_discussion_templates(
@@ -426,7 +483,23 @@ def _evaluate_for_learning_format(
     targets: list[TableTarget],
     notes: list[str],
 ):
-    depth_factor = 0.65 if scene_state.learning_format == "input" else 0.80 if scene_state.learning_format == "discussion" else 1.0
+    rect_groupwork = (
+        scene_state.learning_format == "groupwork"
+        and 2 <= len(scene_state.tables) <= MAX_LAYOUT_TABLES
+        and all(table.table_type == "rect" for table in scene_state.tables)
+    )
+    # The adaptive Rect Groupwork solver has already validated its own
+    # singleton-strip and pair-ellipse clearances.  The generic evaluator is
+    # retained here for the shared footprint/ROI check, but must not reapply
+    # its superseded one-sided table clearance.
+    if rect_groupwork:
+        depth_factor = 0.0
+    elif scene_state.learning_format == "input":
+        depth_factor = 0.65
+    elif scene_state.learning_format == "discussion":
+        depth_factor = 0.80
+    else:
+        depth_factor = 1.0
     return evaluate_hard_constraints(
         scene_state,
         targets,

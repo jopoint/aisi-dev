@@ -1,6 +1,6 @@
 # AISI Project Context
 
-Last updated: 2026-09-28
+Last updated: 2026-09-29
 
 ## 1. Purpose
 
@@ -28,23 +28,27 @@ Repository-confirmed:
 
 - macOS checkout: `/Users/Johannes/dev/Promotion_Prototypen/AISI`
 - branch: `vision/wip-dark-proposals`
-- HEAD: `6fae98a` — `Finalize study logging and metrics`
-- remote branch matched at inspection time.
+- HEAD: `5141e77` — `Finalize Rect input templates`
+- remote branch matched after the Rect Input checkpoint was pushed.
 
 Dirty tracked files:
 
+- `AGENTS.md`
 - `NOTES.md`
-- `scripts/generate_rect_layout_debug_plots.py`
-- `src/aisi/generation/layout_synthesizer.py`
-- `tests/test_rect_template_layouts.py`
+- `TODO.md`
+- `docs/DECISIONS.md`
+- `docs/PROJECT_CONTEXT.md`
 
-Untracked generated analysis directories:
+Untracked analysis code and generated directories:
 
+- `docs/RECT_GROUPWORK_DECISION_SESSION.md`
+- `scripts/analyze_rect_groupwork_decision_basis.py`
 - `data/aisi/debug/rect_layout_templates/final_rect_templates_2026-09-25/`
 - `data/aisi/debug/rect_layout_templates/groupwork_templates_analysis_2026-09-25/`
 - `data/aisi/debug/rect_layout_templates/input_5_table_3plus2_analysis_2026-09-25/`
 - `data/aisi/debug/rect_layout_templates/input_layout_audit_2026-09-25/`
 - `data/aisi/debug/rect_layout_templates/staggered_input_analysis_2026-09-25/`
+- `data/aisi/debug/rect_layout_templates/groupwork_decision_basis_2026-09-28/`
 
 These changes belong to the user. Do not clean, reset, overwrite, or bulk-stage them.
 
@@ -88,6 +92,11 @@ Main entry points:
 - `aisi.app.sim_room_editor`
 - `aisi.app.learning_format_server`
 - `aisi.app.sim_scene_to_osc`
+
+Validierungsreihenfolge: Nach jeder produktiven Format-Umsetzung wird das
+Format einzeln über die Simulationspipeline mit Room Editor,
+Learning-Format-Interface und OSC geprüft. Ein kurzer gemeinsamer Durchlauf
+folgt erst danach und prüft Formatwechsel sowie gemeinsame Schnittstellen.
 
 State files:
 
@@ -145,7 +154,12 @@ Physical-room-reported structure:
 - floor/tabletop/mask ordering is physically consequential;
 - Calibration + Floor requires a black table-mask input so the inverted mask becomes white and leaves the floor image unchanged.
 
-Known plotting-backend rule:
+Bekannte Plot-Backend-Regel:
+
+- Der interaktive Room Editor verwendet `tkinter` direkt und initialisiert kein
+  Matplotlib-Backend. Dadurch bleibt sein Import in nicht-grafischen Tests frei
+  von macOS-Tk-Initialisierung.
+- Headless PNG-/Debug-Generierung wählt `Agg`, bevor `pyplot` importiert wird.
 
 - Room Editor uses `TkAgg` on macOS;
 - `scripts/generate_rect_layout_debug_plots.py` selects `Agg` before importing plotting code;
@@ -175,9 +189,9 @@ Scout-specific seating/pairing semantics are not finalized. The geometry layer s
 
 ## 8. Rect layout generation
 
-### Input — current dirty worktree
+### Input — committed baseline
 
-Repository-confirmed uncommitted implementation:
+Repository-confirmed implementation in commit `5141e77`:
 
 - explicit Rect Input templates for counts 1–5;
 - all targets have `rotation = 0°` and face `−Y`;
@@ -200,36 +214,66 @@ Exact slots:
    (110,350), (390,350)
 ```
 
-History-reported verification for this uncommitted block:
+Repository-confirmed verification for this committed block:
 
 - 33 focused tests passed;
 - overlap, clearance, and ROI violations were zero for counts 1–5;
 - directed Input seat-clearance zones were inside the ROI;
 - `git diff --check` passed.
+- freshly generated Input plots for counts 1–5 were visually reviewed;
+- the generated plots were byte-identical to the untracked
+  `final_rect_templates_2026-09-25` copies.
 
-These tests were not re-run during handoff creation.
+Physical-room validation of Rect Input counts 1–5 has not yet been performed
+and remains open. Repository checks and plot review do not establish physical
+projection, tracking, movement, or furniture-placement quality.
 
-### Groupwork — audited, not yet finalized
+### Groupwork — quelladaptiv produktiv umgesetzt
 
-Current audited rules:
+Für Rect-Groupwork zählen `2–5` werden alle Pair-/Singleton-Partitionen aus
+der Ausgangsszene abgeleitet. Starre Zielslots, orthogonale Winkelraster und
+eine ID-basierte Paarbildung sind verworfen. `table_id` bewahrt ausschließlich
+Identität und ursprüngliche Scene Order.
 
-- tables sorted by `table_id` and paired; one remainder becomes a singleton;
-- Rect pair seam gap: `4 cm`;
-- at `rotation = 0°`, the vertical center distance is `84 cm`;
-- pair members face outward; singleton faces `−Y`;
-- pair centers are manually defined.
+Der Pair-Seam beträgt `8 cm`. Ein Singleton besitzt zwei volle, je `60 cm`
+tiefe Sitz-/Bewegungsstreifen ausschließlich an den Längsseiten; ein Pair
+besitzt eine elliptische, mindestens `60 cm` auskragende Clearance. Sämtliche
+Zonen müssen vollständig in der ROI liegen. Die beiden äußeren Ecken jedes
+Singleton-Streifens sind mit `30 cm` Radius abgerundet, während die Sitzkante
+am Tisch über die volle Länge gerade bleibt. Das aggressive Profil minimiert
+zuerst Zonenüberlappung, dann maximale und gesamte Bewegung, Rotation,
+Kreuzungen und schließlich den Inselabstand.
 
-Audit findings:
+Die produktive Synthese nutzt denselben Suchkern wie die bestätigten
+Count-3-/Count-5-Plots. Bei Teilstärken wird der geblendete Zwischenstand mit
+dieser vollständigen Inselgeometrie repariert, nicht mit der generischen
+einseitigen Clearance-Reparatur. Für unveränderte Live-Szenen werden Ergebnisse
+kurz zwischengespeichert. Die Kandidatensuche prüft nur kanonische Tisch-
+Footprints und die beschlossenen Inselzonen; dadurch entfällt die zusätzliche,
+fachlich überholte einseitige Standard-Clearance-Prüfung.
+Die axiale mittlere Orientierung der beiden Source-Tische ist außerdem eine
+starke Präferenz für die Zielrotation eines Pairs; die reine
+Source-Verbindungsachse darf sie nicht überschreiben.
+Die begrenzte Kandidatenauswahl erhält dafür pro Richtung eine
+orientierungstreue Außenvariante, damit eine überlappungsfreie globale
+Partition nicht bereits lokal verloren geht.
 
-- counts 1–4 were formally valid under current hard constraints;
-- count 5 was formally valid but its outer seat/movement zones extended outside the ROI;
-- counts 3 and 4 had only `40 cm` between separate table islands;
-- `4 cm` seam has little setup/tracking tolerance;
-- the old six-table group-center entry is unreachable under the new capacity limit.
+Repository-validiert am 2026-09-29:
 
-The current hard constraint checks zone-versus-foreign-table collision but does not by itself guarantee that each clearance zone remains inside the ROI. New Groupwork tests must make that explicit.
+- fokussierte Rect-, Footprint- und Geometrietests: `44` erfolgreich;
+- Regressionen für Rotation, Translation, ID-Unabhängigkeit, Determinismus,
+  bessere Zuordnung und vollständige Zonenprüfung erfolgreich;
+- Learning-Format-Interface, Simulationsadapter und lokaler OSC-Ausgang für
+  die Count-5-Regression mit fünf Zieltabellen erfolgreich geprüft.
 
-Do not describe Rect Groupwork as final until coordinates, seam tolerance, singleton semantics, and full-clearance-in-ROI tests are implemented.
+Die grafische Room-Editor-Interaktion sowie die TouchDesigner- und physische
+Raumprüfung bleiben offen. Sie sind nicht durch lokale JSON-/OSC-Prüfungen
+abgedeckt.
+
+Die Learning-Format-Simulationsoberfläche steuert ausschließlich das Format
+und die Sichtbarkeit von Personen/Stühlen. Sie verwendet fest den vollständigen
+Layoutvorschlag (`100 %`); eine veränderbare Umbauintensität gehört nicht zur
+Live-Simulationssteuerung.
 
 ### Discussion
 
@@ -312,7 +356,7 @@ Repository-confirmed documentation drift:
 - the root `README.md` still describes simulation as the primary workflow and vision as not actively driving the prototype; this no longer captures the committed Study/tracking work;
 - the README still describes old rectangular serialization and older layout priorities that have been superseded by polygon geometry and later Study work;
 - `docs/PROJECT_STATE_2026-05.md` is a historical snapshot, not current state;
-- current dirty Rect Input changes are not yet represented in durable repository documentation.
+- Rect Input counts 1–5 are now committed and represented in the current handoff documents.
 
 Potential Study-definition inconsistency to review before the next pilot:
 
@@ -326,12 +370,13 @@ Repository-confirmed at handoff:
 
 - current branch and dirty diff were inspected;
 - current trial definitions and exact-geometry tests were inspected;
-- no tests were executed during creation of this handoff because the repository is outside the writable handoff workspace.
+- Rect Input and geometry verification passed 33 focused tests after commit `5141e77`;
+- Rect Input plots for counts 1–5 were regenerated and visually reviewed;
+- `git diff --check` passed before and after the Rect Input commit.
 
 History-reported:
 
 - committed Study/tracking milestones were tested before their commits;
-- Rect Input work reported 33 passing focused tests;
 - Groupwork audit reported 7 passing Rect template tests and no production-code changes for that audit;
 - headless Rect debug plotting completed after the `Agg` fix.
 

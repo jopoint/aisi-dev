@@ -1,6 +1,6 @@
 # AISI Decision Log
 
-Last updated: 2026-09-28
+Last updated: 2026-09-29
 
 Statuses:
 
@@ -55,14 +55,18 @@ Status: **Accepted**
 
 ## D006 — Maximum layout capacity
 
-Status: **Accepted in current worktree**
+Status: **Accepted**
 
 - The current `500 × 500 cm` layout-generation path supports at most five tables.
 - Six tables must fail before synthesis/repair instead of silently using stale templates.
 
 ## D007 — Rect Input templates
 
-Status: **Provisional until the dirty worktree is reviewed and committed**
+Status: **Accepted**
+
+Finalized in commit `5141e77` (`Finalize Rect input templates`).
+Acceptance covers repository geometry, tests, and plot review. Physical-room
+validation remains open.
 
 - Counts 1–5 use explicit deterministic slots.
 - All rotations are `0°` and facing is `−Y`.
@@ -80,20 +84,64 @@ Status: **Provisional until the dirty worktree is reviewed and committed**
 
 ## D008 — Rect Groupwork topology
 
-Status: **Provisional/Open**
+Status: **Accepted und produktiv umgesetzt**
 
-- Current topology: pairs plus optional singleton.
-- Rect pairs are vertical at `rotation = 0°`, with outward-facing seating sides.
-- Current seam gap is `4 cm`, yielding `84 cm` center separation.
-- The pair represents a shared work island, not face-to-face seating across the seam.
+- Starre absolute Zielslots sind verworfen.
+- Zielwinkel dürfen nicht auf `0°`, `90°` oder ein anderes Raster beschränkt
+  werden.
+- `table_id` dient ausschließlich der Identität und der Wiederherstellung der
+  ursprünglichen Scene Order, nicht der Pair-Bildung oder Rollenvergabe.
+- Jede Groupwork-Sitz-/Bewegungszone muss vollständig innerhalb der
+  `500 × 500 cm` ROI liegen.
+- Der Rect Pair-Seam beträgt `8 cm`.
+- Ein Rect-Singleton erhält zwei mindestens `60 cm` tiefe Sitz-/Bewegungs-
+  streifen über die vollständige Breite seiner Längsseiten, jedoch keine
+  Sitzflächen an den Stirnseiten. Die zwei dem Tisch abgewandten Ecken jedes
+  Streifens sind mit `30 cm` Radius abgerundet; die dem Tisch zugewandte
+  Sitzkante bleibt über die volle Breite gerade.
+- Ein Rect-Pair erhält eine elliptische mindestens `60 cm` auskragende
+  Clearance um seine gemeinsame Geometrie. Die Kurve statt einer quadratischen
+  Hülle reduziert die Gewichtung der Pair-Ecken und lässt frei gedrehte Paare zu.
+- Die Zielrotation eines Rect-Pairs erhält die axiale mittlere Orientierung
+  seiner beiden Source-Tische als starke Präferenz. Die Lage der beiden
+  Source-Zentren allein bestimmt keinen Paarwinkel.
+- Das aggressive Clearance-Profil minimiert ohne Bewegungsbudget zuerst die
+  gesamte Überlappungsfläche aller Sitz-/Bewegungszonen. Erst bei gleicher
+  Überlappung minimiert es Bewegung und maximiert anschließend Inselabstand.
 
-Still open:
+Die frühere Auswertung mit globalen Mittelpunkt-Templates, ID-sortierter
+Slotbindung und orthogonalen Zielwinkeln darf nicht als Entscheidungsgrundlage
+oder Produktionsmodell verwendet werden.
 
-- whether `4 cm` is enough for physical and tracking tolerance;
-- final coordinates for counts 3–5;
-- whether the singleton is pedagogically an individual station or part of an open group;
-- whether all seat/movement zones must be fully inside the ROI (recommended: yes);
-- implementation of the final count-5 solution.
+Der produktive Suchkern enumeriert für Counts 2–5 alle Pair-/Singleton-
+Partitionen, prüft beide Mitgliederzuordnungen eines Pairs und optimiert lokale
+Gruppenmittelpunkte sowie freie Winkel. Er wählt lexikographisch zuerst die
+Zonenüberlappung, danach maximale und gesamte Verschiebung, Rotationsänderung,
+Kreuzungen und Inselabstand. Bei Teilstärken repariert ein zweiter adaptiver
+Suchlauf den geblendeten Zwischenstand mit derselben vollständigen
+Inselgeometrie. Die Kandidatenprüfung nutzt dafür die kanonischen Tisch-
+Footprints sowie ausschließlich diese beschlossenen Inselzonen; die frühere
+einseitige Standard-Clearance ist kein zusätzliches, widersprüchliches
+Kriterium. Die begrenzte lokale Kandidatenauswahl muss außerdem je Richtung
+orientierungstreue Außenvarianten erhalten, damit sie eine valide
+überlappungsfreie Pair-/Singleton-Partition nicht vor der Gesamtauswahl
+verwirft. Die Details und bestätigten Plots stehen in
+`docs/RECT_GROUPWORK_ADAPTIVE_PROTOTYPE.md`.
+
+## D008a — Validierung über die Simulationspipeline
+
+Status: **Accepted**
+
+- Rect Groupwork wurde einzeln über Learning-Format-Interface,
+  Simulationsadapter und lokalen OSC-Ausgang geprüft. Der Room Editor konnte
+  in der vorliegenden Automationsumgebung nicht offen gehalten werden und
+  bleibt als manuelle GUI-Prüfung offen.
+- Die Simulationspipeline verwendet fest `100 %` Transformationsstärke. Der
+  frühere Strength-Regler ist weder Teil des Learning-Format-Interfaces noch
+  der gespeicherten Simulationssteuerung.
+- Erst nach diesen Einzelprüfungen folgt ein kurzer gemeinsamer Durchlauf für
+  Formatwechsel, Scene Order, vollständige Layoutvorschläge und gemeinsame
+  OSC-Schnittstellen.
 
 ## D009 — Discussion topology
 

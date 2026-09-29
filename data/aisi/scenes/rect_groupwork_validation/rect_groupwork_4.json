@@ -1,0 +1,10 @@
+{
+  "scene_id": "rect_groupwork_validation_4",
+  "roi": {"x_min": 0, "y_min": 0, "x_max": 500, "y_max": 500},
+  "tables": [
+    {"id": "table_10", "type": "rect", "x": 110, "y": 120, "rot_deg": 25},
+    {"id": "table_2", "type": "rect", "x": 390, "y": 115, "rot_deg": -30},
+    {"id": "table_7", "type": "rect", "x": 115, "y": 375, "rot_deg": 95},
+    {"id": "table_1", "type": "rect", "x": 385, "y": 365, "rot_deg": -75}
+  ]
+}

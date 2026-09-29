@@ -34,10 +34,21 @@ Where a statement has not been re-tested, the handoff labels it as reported rath
 
 ## Working method
 
+- Treat `AGENTS.md`, `TODO.md`, `docs/PROJECT_CONTEXT.md`, and
+  `docs/DECISIONS.md` as persistent project memory. After each completed
+  milestone, update the affected documents when the recorded state changed.
+- Neue oder aktualisierte Markdown-Texte werden auf Deutsch geschrieben, sofern
+  Johannes nicht ausdrücklich eine andere Sprache wünscht. Historische Texte
+  bleiben unverändert, außer eine Übersetzung ist Teil des Auftrags.
 - Inspect the relevant implementation and data flow before editing.
 - Make the smallest coherent change that satisfies the task.
 - Preserve interfaces unless the task explicitly requires changing them.
-- Ask only when a decision materially affects physical behavior, calibration, data contracts, study design, or participant data.
+- Make reversible technical-detail decisions independently.
+- Ask only when a real decision materially affects research goals, pedagogy,
+  room or geometry assumptions, calibration, interfaces, participant data, or
+  requires a destructive or difficult-to-reverse action.
+- When no such decision blocks the current goal, continue autonomously through
+  its definition of done; do not ask merely whether to proceed.
 - Do not modify unrelated files, formatting, dependencies, or generated artifacts.
 - Run the narrowest relevant existing tests/checks.
 - Inspect the final diff when Git access allows it.
@@ -53,9 +64,20 @@ Known local paths:
 Handoff-time Git state:
 
 - branch: `vision/wip-dark-proposals`
-- HEAD: `6fae98a` (`Finalize study logging and metrics`)
-- the branch matched `origin/vision/wip-dark-proposals` at inspection time;
-- the worktree was dirty with Rect layout work and debug artifacts.
+- HEAD: `5141e77` (`Finalize Rect input templates`)
+- the branch matched `origin/vision/wip-dark-proposals` after the Rect Input push;
+- the separate `NOTES.md` launch documentation remains an unrelated tracked change;
+- starre Rect-Groupwork-Templates sind verworfen; die quelladaptive Rect-
+  Groupwork-Synthese für Counts 2–5 ist im aktuellen Worktree produktiv;
+- die Kandidatensuche bewertet dabei ausschließlich die beschlossenen
+  Inselzonen; die frühere einseitige Standard-Clearance wird nicht zusätzlich
+  als abweichendes Ausschlusskriterium angewendet;
+- die Rotation eines Rect-Pairs erhält die axiale mittlere Source-Ausrichtung
+  als starke Präferenz;
+- die lokale Kandidatenauswahl bewahrt pro Richtung orientierungstreue
+  Außenvarianten, damit sie überlappungsfreie globale Partitionen nicht
+  vorzeitig ausschließt;
+- generated Rect layout analysis plots remain untracked.
 
 Do not overwrite or clean the dirty worktree. Inspect `git status` and the diff before editing.
 
@@ -82,7 +104,19 @@ Never manually edit generated artifacts such as:
 Two states coexist and must not be confused:
 
 1. The Study/Tracking baseline is committed and should remain stable unless the user explicitly asks to change it.
-2. Rect layout generation has newer uncommitted work. Rect Input counts 1–5 have explicit proposed/finalized templates in the worktree; Rect Groupwork counts 1–5 were audited but still require a deliberate implementation decision.
+2. Rect Input counts 1–5 are finalized in commit `5141e77`. Starre Rect-
+   Groupwork-Templates und orthogonale Zielwinkel sind verworfen. Die
+   quelladaptive Synthese für Counts 2–5 ist produktiv umgesetzt. Für Rect
+   gelten `8 cm` Pair-Seam sowie mindestens
+   zwei volle `60 cm`-Sitzstreifen an den Längsseiten eines Singletons und eine
+   elliptische `60 cm`-Clearance um ein Pair. Die dem Tisch abgewandten
+   Singleton-Streifenecken sind mit `30 cm` Radius abgerundet. Die
+   aggressive Clearance-Auswahl minimiert die Überlappungsfläche dieser Zonen
+   ohne Bewegungsbudget; erst bei gleicher Überlappung werden Bewegungsaufwand
+   und Inselabstand herangezogen. Die Prototyp-Plots sind fachlich bestätigt.
+   Die lokale Formatsteuerung, der Simulationsadapter und der OSC-Ausgang sind
+   geprüft; Room-Editor-, TouchDesigner- und physische Raumprüfung bleiben
+   manuelle Folgeaufgaben.
 
 The current worktree, not an older README or chat summary, is the source of truth for code state.
 
@@ -171,11 +205,12 @@ Protected unless explicitly requested:
 
 Do not infer the active manual TouchDesigner graph solely from repository builders. Do not claim projection correctness without testing the running `.toe` file in the room.
 
-Known rendering convention:
+Bekannte Rendering-Konvention:
 
-- interactive Room Editor: `TkAgg` on macOS;
-- headless PNG/debug generation: select `Agg` before importing `pyplot`;
-- shared plotting modules should remain backend-neutral.
+- der interaktive Room Editor verwendet `tkinter` direkt und konfiguriert kein
+  Matplotlib-Backend;
+- für headless PNG-/Debug-Generierung vor dem Import von `pyplot` `Agg` wählen;
+- gemeinsame Plot-Module bleiben backend-neutral.
 
 ## OSC and integration safety
 
@@ -209,6 +244,13 @@ Before declaring a task complete:
 
 Do not invent a repository-wide test/lint/typecheck command if none is documented.
 
+Für die interaktive Live-/Offline-Validierung der Layoutformate gilt: Jedes
+Format wird direkt nach seiner produktiven Umsetzung einzeln über Room Editor,
+Learning-Format-Interface und OSC geprüft. Erst danach folgt ein kurzer
+formatübergreifender Durchlauf für Formatwechsel und gemeinsame Schnittstellen.
+Die Learning-Format-Simulationsoberfläche verwendet fest den vollständigen
+Layoutvorschlag (`100 %`) und bietet keine veränderbare Umbauintensität an.
+
 ## Git safety
 
 - Never reset, discard, or overwrite unrelated changes.
@@ -218,11 +260,16 @@ Do not invent a repository-wide test/lint/typecheck command if none is documente
 
 ## Communication
 
-Be concise and result-oriented. For substantial tasks report:
+Keep status and completion messages short. Use at most:
 
-- what changed;
-- verification result;
-- remaining risk;
-- next concrete physical or software check.
+- **Result:** one or two sentences;
+- **Verified:** tests or checks that were run;
+- **Decision needed:** only when genuinely required;
+- **Next:** one sentence.
+
+Do not give a chronological activity log or file-by-file summary unless the
+user explicitly asks for one. Hand off primarily through the updated repository
+memory documents. After a completed goal, leave a clear repository state and
+name at most one short starting task for the next independent block.
 
 When referring to known TouchDesigner nodes, use `name (operator type)`.

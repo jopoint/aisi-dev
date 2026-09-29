@@ -1,49 +1,86 @@
 # AISI TODO / Handoff Checklist
 
-Last updated: 2026-09-28
+Last updated: 2026-09-29
 
 This list separates immediate repository hygiene, current layout work, Study readiness, and deferred research work. Do not execute all items automatically; use it to select a coherent next task.
 
-## P0 — Preserve and understand the current worktree
+## Completed — Rect Input checkpoint
 
-- [ ] Inspect `git status` and the complete diff before editing.
-- [ ] Review the uncommitted Rect Input implementation in:
+- [x] Inspect `git status` and the complete diff before editing.
+- [x] Review the Rect Input implementation in:
   - `src/aisi/generation/layout_synthesizer.py`
   - `tests/test_rect_template_layouts.py`
   - `scripts/generate_rect_layout_debug_plots.py`
   - `NOTES.md`
-- [ ] Re-run the focused Rect layout tests in the actual repository environment.
-- [ ] Re-run `git diff --check`.
-- [ ] Inspect the final count-1–5 Input plots, especially counts 3 and 5.
-- [ ] Decide whether generated debug directories should remain untracked, be archived elsewhere, or be intentionally committed.
-- [ ] Commit the Rect Input block only after explicit user approval.
+- [x] Re-run the focused Rect layout tests in the actual repository environment.
+- [x] Re-run `git diff --check`.
+- [x] Inspect the final count-1–5 Input plots, especially counts 3 and 5.
+- [x] Keep the generated debug directories untracked for this checkpoint.
+- [x] Commit and push the Rect Input block after explicit user approval.
+- [ ] Validate Rect Input counts 1–5 in the physical room.
 
-Done when:
+Completed in `5141e77` (`Finalize Rect input templates`). `NOTES.md` remains a
+separate uncommitted documentation change, and the generated debug directories
+remain untracked. Repository and plot verification is complete; physical-room
+validation remains open.
+
+Completion criteria:
 
 - the dirty diff is understood;
 - tests are current rather than only history-reported;
 - no unrelated/runtime artifacts are staged;
-- Input counts 1–5 are either deliberately committed or deliberately left as work in progress.
+- Input counts 1–5 are deliberately committed and pushed.
 
-## P0 — Finalize Rect Groupwork counts 1–5
+## Verworfen — starre Rect-Groupwork-Entscheidungsgrundlage
 
-- [ ] Treat full seat/movement clearance inside the ROI as an explicit acceptance criterion, or record a deliberate contrary decision.
-- [ ] Decide whether the `4 cm` pair seam is intentional and sufficiently tolerant.
-- [ ] Find final count-3 geometry with a Pair + Singleton and more than the current `40 cm` inter-island footprint gap where feasible.
-- [ ] Find final count-4 geometry with two readable islands and sufficient movement space.
-- [ ] Solve count 5 (`2 Pairs + Singleton`) under full clearance-in-ROI requirements.
-- [ ] If count 5 is infeasible under current semantics, document the geometric proof/limitations before changing constraints.
-- [ ] Remove unreachable six-table Groupwork template data after the five-table capacity decision is finalized.
-- [ ] Add exact coordinate, pair membership, rotation/facing, overlap, clearance, ROI, and full-clearance-in-ROI tests.
-- [ ] Regenerate and inspect comparison plots for counts 1–5.
-- [ ] Do not change Input, Discussion, Study Mode, tracking, calibration, or TouchDesigner during this block.
+- [x] Treat full seat/movement clearance inside the ROI as a hard requirement.
+- [x] Analyze pair seams of `4`, `6`, `8`, `10`, and `12 cm`.
+- [x] Maximize the minimum footprint gap between separate islands.
+- [x] Compare an independent singleton with a singleton attached to an open group.
+- [x] Validate candidate geometry with the canonical table footprints and directed clearance zones.
+- [x] Generate and inspect only the count-3 and count-5 comparison plots.
+- [x] Record a recommendation without changing production Groupwork logic.
 
-Done when:
+Diese Auswertung darf nicht weiterverwendet werden: Die globalen Zielpositionen,
+die orthogonalen Zielwinkel und die ID-basierte Slotbindung ignorieren die
+Ausgangsgeometrie. Ihre Plots bleiben nur als negative Regression-Cases erhalten.
 
-- all counts 1–5 have explicit, defensible geometry;
-- hard constraints and full clearance-in-ROI checks pass;
-- the pair seam and singleton meaning are documented;
-- plots and focused tests agree with the implementation.
+## P0 — Quelladaptiver Rect-Groupwork-Prototyp
+
+- [x] Alle Pair-/Singleton-Partitionen für Counts 2–5 enumerieren.
+- [x] Lokale, frei gedrehte Gruppen aus den beteiligten Ausgangstischen ableiten.
+- [x] Beide Mitgliederzuordnungen je Pair prüfen.
+- [x] Harte Kollisions-, ROI- und vollständige Clearance-Prüfungen integrieren:
+  Singletons mit zwei vollen `60 cm`-Streifen nur an Längsseiten, Pairs mit
+  einer elliptischen `60 cm`-Clearance.
+- [x] Im aggressiven Clearance-Profil Zonenüberlappungen ohne Bewegungsbudget
+  minimieren; erst danach Bewegungsaufwand und Inselabstand optimieren.
+- [x] Rotations-/Translationsäquivarianz, ID-Unabhängigkeit, Determinismus und
+  bessere Zuordnung gegenüber dem verworfenen ID-Referenzmodell testen.
+- [x] Aussagekräftige Count-3- und Count-5-Plots mit Zuordnung und Metriken erzeugen.
+- [x] Die Prototyp-Plots fachlich bestätigen: aggressive Clearance-Auswahl mit
+  `0 cm²` Zonenüberlappung für Count 5 ist akzeptiert.
+- [x] Die produktive, quelladaptive Rect-Groupwork-Implementierung beauftragen
+  und für Counts 2–5 umsetzen.
+- [x] Rect Groupwork einzeln über Learning-Format-Interface,
+  Simulationsadapter und lokalen OSC-Ausgang prüfen.
+- [x] Die Simulationspipeline auf vollständige Layoutvorschläge (`100 %`)
+  festlegen und die veränderbare Umbauintensität aus Interface und Zustand
+  entfernen.
+- [x] Die Count-5-Kandidatensuche auf die beschlossenen Inselzonen begrenzen;
+  die lokale Vorauswahl behält dabei auch orientierungstreue, nach außen
+  versetzte Kandidaten für eine überlappungsfreie Gesamtkomposition.
+- [x] Rect-Paarrotationen an der axialen mittleren Source-Ausrichtung stark
+  priorisieren; eine räumliche Verbindungsachse allein darf die Tischrotation
+  nicht mehr bestimmen.
+- [x] Die zwei Singleton-Sitzstreifen an ihren vom Tisch abgewandten Ecken mit
+  `30 cm` Radius abrunden; die vollständige gerade Sitzbreite am Tisch bleibt
+  erhalten.
+- [ ] Die interaktive Rect-Groupwork-Prüfung im Room Editor sowie in
+  TouchDesigner manuell durchführen.
+- [ ] Nach den Einzelprüfungen einen kurzen formatübergreifenden Pipeline-
+  Durchlauf für Formatwechsel, Scene Order, vollständige Layoutvorschläge und
+  OSC-Kopplung machen.
 
 ## P0 — Pilot/Study readiness review
 
@@ -124,9 +161,12 @@ Do not install optional dependencies merely to expand test scope.
 
 ## Open decisions requiring Johannes
 
-- [ ] Is the Rect Groupwork pair seam exactly `4 cm`, or should it include a physical/tracking tolerance?
-- [ ] Must every Groupwork seat/movement zone lie completely inside the `500 × 500 cm` ROI?
-- [ ] Is a Groupwork singleton an individual station or part of an open group?
+- [x] Der Rect-Groupwork Pair-Seam beträgt `8 cm`.
+- [x] Every Groupwork seat/movement zone must lie completely inside the `500 × 500 cm` ROI.
+- [x] Groupwork-Singletons sind eigenständige Arbeitsstationen.
+- [x] Rect-Singletons erhalten zwei volle, ausschließlich an den Längsseiten
+  liegende `60 cm`-Sitz-/Bewegungsstreifen; Pairs erhalten eine elliptische
+  `60 cm`-Clearance um die gemeinsame Gruppe. Alle Flächen liegen in der ROI.
 - [ ] Is `pilot_v6` ready for data collection, or still a pre-pilot geometry?
 - [ ] Which measures are formally primary versus exploratory?
-- [ ] Should the current dirty Rect Input block be committed before Groupwork implementation starts?
+- [x] Commit the finalized Rect Input block before Groupwork implementation starts (`5141e77`).
