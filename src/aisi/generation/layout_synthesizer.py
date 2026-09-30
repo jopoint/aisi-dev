@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from itertools import permutations
 from statistics import mean, median
 
 from aisi.core.models import (
@@ -30,22 +31,12 @@ from aisi.generation.target_structure_generator import pair_tables_for_groupwork
 
 GROUPWORK_PAIR_SEAM_GAP_CM = 4.0
 INPUT_TABLE_GAP_CM = 8.0
+INPUT_SEAT_CLEARANCE_DEPTH_CM = 70.0
 DISCUSSION_SEAT_CLEARANCE_DEPTH_CM = 50.0
 _DISCUSSION_CLEARANCE_PHASE_SAMPLES = 1440
 # Layout generation is intentionally limited to at most five tables in the
 # current 500×500 cm AISI ROI.
 MAX_LAYOUT_TABLES = 5
-
-# Explicit frontal Rect templates for the current 500×500 cm ROI.  Slot order
-# is bound deterministically to tables sorted by table_id.
-RECT_INPUT_TEMPLATE_POSITIONS: dict[int, tuple[tuple[float, float], ...]] = {
-    1: ((250.0, 250.0),),
-    2: ((140.0, 250.0), (360.0, 250.0)),
-    3: ((122.0, 150.0), (250.0, 250.0), (378.0, 350.0)),
-    4: ((140.0, 155.0), (360.0, 155.0), (140.0, 345.0), (360.0, 345.0)),
-    5: ((110.0, 150.0), (250.0, 250.0), (390.0, 150.0), (110.0, 350.0), (390.0, 350.0)),
-}
-
 
 def synthesize_layout(
     scene_state: SceneState,
@@ -111,6 +102,11 @@ def synthesize_layout(
     # Rect Groupwork has approved island-level clearance geometry (pair ellipse
     # and singleton long-side strips).  The generic repair only understands a
     # one-sided table clearance and would destroy the selected pair geometry.
+    rect_input = (
+        scene_state.learning_format == "input"
+        and 1 <= len(tables) <= MAX_LAYOUT_TABLES
+        and all(table.table_type == "rect" for table in tables)
+    )
     rect_groupwork = (
         scene_state.learning_format == "groupwork"
         and 2 <= len(tables) <= MAX_LAYOUT_TABLES
@@ -121,7 +117,9 @@ def synthesize_layout(
         and 1 <= len(tables) <= MAX_LAYOUT_TABLES
         and all(table.table_type == "rect" for table in tables)
     )
-    if rect_groupwork:
+    if rect_input and strength >= 1.0 - 1e-9:
+        repaired_targets, repair_notes = _repair_rect_input_after_blend(scene_state, targets, strength)
+    elif rect_groupwork:
         repaired_targets, repair_notes, repaired_groupwork_notes = _repair_rect_groupwork_after_blend(
             scene_state,
             targets,
@@ -230,6 +228,19 @@ def _repair_rect_groupwork_after_blend(
     ], groupwork_notes
 
 
+def _repair_rect_input_after_blend(
+    scene_state: SceneState,
+    blended_targets: list[TableTarget],
+    strength: float,
+) -> tuple[list[TableTarget], list[str]]:
+    """Validate complete one-sided Input seating zones at the full target."""
+    if strength < 1.0 - 1e-9:
+        raise AssertionError("Die vollständige Input-Clearance gilt nur für den 100-%-Endzustand.")
+    if not _rect_input_clearances_valid(scene_state, blended_targets):
+        raise ValueError("Rect-Input-Ziel verletzt die 70-cm-Sitz-/Bewegungsflächen.")
+    return blended_targets, ["repair_skipped=rect_input_target_clearance_valid"]
+
+
 def _repair_rect_discussion_after_blend(
     scene_state: SceneState,
     blended_targets: list[TableTarget],
@@ -267,28 +278,133 @@ def _layout_rect_input_templates(
     scene_state: SceneState,
     tables: list[TableState],
 ) -> tuple[list[TableTarget], list[str]]:
-    """Build the explicit current frontal Rect Input templates."""
-    try:
-        slots = RECT_INPUT_TEMPLATE_POSITIONS[len(tables)]
-    except KeyError as exc:
-        raise ValueError(f"No Rect Input template for {len(tables)} tables") from exc
-
+    """Build a source-adaptive Input presentation and audience formation."""
+    presenter, source_axis = _rect_input_presenter_and_axis(tables)
+    local_positions = _rect_input_local_positions(len(tables))
+    axis, anchor, axis_strategy = _rect_input_fitted_axis_and_anchor(
+        scene_state, tables, presenter, source_axis, local_positions
+    )
+    lateral = (-axis[1], axis[0])
+    audience = [table for table in tables if table.table_id != presenter.table_id]
+    audience_slots = local_positions[1:]
+    slot_assignment = min(
+        permutations(audience_slots),
+        key=lambda slots: _rect_input_assignment_key(audience, slots, anchor, lateral, axis),
+    ) if audience else ()
     targets = [
-        TableTarget(
-            table_id=table.table_id,
-            target_x=slot[0],
-            target_y=slot[1],
-            source_rot_deg=table.rot_deg,
-            target_rot_deg=0.0,
-            facing_target_x=slot[0],
-            facing_target_y=slot[1] - 100.0,
-        )
-        for table, slot in zip(tables, slots)
+        _rect_input_target(presenter, anchor, local_positions[0], lateral, axis, facing=(-axis[0], -axis[1])),
+        *[
+            _rect_input_target(table, anchor, local, lateral, axis, facing=axis)
+            for table, local in zip(audience, slot_assignment)
+        ],
     ]
+    if not _rect_input_clearances_valid(scene_state, targets, presenter.table_id, axis):
+        raise ValueError("Die quelladaptive Rect-Input-Formation verletzt die 70-cm-Sitz-/Bewegungsflächen.")
     return targets, [
         "rect_template=input",
-        f"rect_input_template_count={len(tables)}",
+        "rect_input_topology=source_adaptive_presenter_audience",
+        f"rect_input_presenter_id={presenter.table_id}",
+        f"rect_input_presentation_axis=({axis[0]:.4f},{axis[1]:.4f})",
+        f"rect_input_axis_strategy={axis_strategy}",
+        f"rect_input_single_side_clearance_depth_cm={INPUT_SEAT_CLEARANCE_DEPTH_CM:.1f}",
     ]
+
+
+def _rect_input_presenter_and_axis(tables: list[TableState]) -> tuple[TableState, tuple[float, float]]:
+    if len(tables) == 1:
+        table = tables[0]
+        return table, _normalize_vector((math.cos(math.radians(table.rot_deg + 90.0)), math.sin(math.radians(table.rot_deg + 90.0))))
+    center = (mean(table.x for table in tables), mean(table.y for table in tables))
+    sxx = mean((table.x - center[0]) ** 2 for table in tables)
+    syy = mean((table.y - center[1]) ** 2 for table in tables)
+    sxy = mean((table.x - center[0]) * (table.y - center[1]) for table in tables)
+    angle = 0.0 if abs(sxy) <= 1e-9 and abs(sxx - syy) <= 1e-9 else 0.5 * math.atan2(2.0 * sxy, sxx - syy)
+    axis = (math.cos(angle), math.sin(angle))
+    endpoints = (
+        min(tables, key=lambda table: (_dot((table.x - center[0], table.y - center[1]), axis), table.table_id)),
+        max(tables, key=lambda table: (_dot((table.x - center[0], table.y - center[1]), axis), table.table_id)),
+    )
+    presenter = max(
+        endpoints,
+        key=lambda table: (
+            sum(math.dist((table.x, table.y), (other.x, other.y)) for other in tables if other is not table),
+            abs(_dot((table.x - center[0], table.y - center[1]), axis)),
+            table.table_id,
+        ),
+    )
+    if _dot((presenter.x - center[0], presenter.y - center[1]), axis) < 0.0:
+        axis = (-axis[0], -axis[1])
+    return presenter, axis
+
+
+def _rect_input_local_positions(count: int) -> tuple[tuple[float, float], ...]:
+    layouts = {
+        1: ((0.0, 0.0),),
+        2: ((0.0, 100.0), (0.0, -100.0)),
+        3: ((0.0, 110.0), (-84.0, -80.0), (84.0, -80.0)),
+        4: ((0.0, 110.0), (-84.0, 10.0), (84.0, 10.0), (0.0, -148.0)),
+        5: ((0.0, 125.0), (-84.0, 20.0), (84.0, 20.0), (-84.0, -138.0), (84.0, -138.0)),
+    }
+    return layouts[count]
+
+
+def _rect_input_fitted_axis_and_anchor(
+    scene_state: SceneState,
+    tables: list[TableState],
+    presenter: TableState,
+    source_axis: tuple[float, float],
+    local_positions: tuple[tuple[float, float], ...],
+) -> tuple[tuple[float, float], tuple[float, float], str]:
+    candidates = [(source_axis, "source_continuous")]
+    if len(tables) >= 5:
+        cardinal = (math.copysign(1.0, source_axis[0]), 0.0) if abs(source_axis[0]) >= abs(source_axis[1]) else (0.0, math.copysign(1.0, source_axis[1]))
+        candidates.append((cardinal, "source_axis_room_fit"))
+    for axis, strategy in candidates:
+        anchor = _rect_input_anchor(scene_state, tables, presenter, axis, local_positions)
+        if anchor is not None:
+            return axis, anchor, strategy
+    raise ValueError("Die 70-cm-Input-Sitzflächen passen nicht vollständig in die ROI.")
+
+
+def _rect_input_anchor(
+    scene_state: SceneState,
+    tables: list[TableState],
+    presenter: TableState,
+    axis: tuple[float, float],
+    local_positions: tuple[tuple[float, float], ...],
+) -> tuple[float, float] | None:
+    lateral = (-axis[1], axis[0])
+    order = [presenter, *[table for table in tables if table.table_id != presenter.table_id]]
+    provisional = [
+        _rect_input_target(table, (0.0, 0.0), local, lateral, axis, facing=(-axis[0], -axis[1]) if table.table_id == presenter.table_id else axis)
+        for table, local in zip(order, local_positions)
+    ]
+    regions = _rect_input_clearance_regions(provisional, tables, presenter.table_id, axis)
+    footprints = [
+        table_world_footprint(next(table for table in tables if table.table_id == target.table_id), (target.target_x, target.target_y), target.target_rot_deg)
+        for target in provisional
+    ]
+    occupied = [*regions, *footprints]
+    min_x, max_x = min(x for polygon in occupied for x, _ in polygon), max(x for polygon in occupied for x, _ in polygon)
+    min_y, max_y = min(y for polygon in occupied for _, y in polygon), max(y for polygon in occupied for _, y in polygon)
+    x_min, x_max = scene_state.roi.x_min - min_x, scene_state.roi.x_max - max_x
+    y_min, y_max = scene_state.roi.y_min - min_y, scene_state.roi.y_max - max_y
+    if x_min > x_max or y_min > y_max:
+        return None
+    source_center = (mean(table.x for table in tables), mean(table.y for table in tables))
+    return _clamp(source_center[0], x_min, x_max), _clamp(source_center[1], y_min, y_max)
+
+
+def _rect_input_target(table: TableState, anchor: tuple[float, float], local: tuple[float, float], lateral: tuple[float, float], axis: tuple[float, float], *, facing: tuple[float, float]) -> TableTarget:
+    x = anchor[0] + lateral[0] * local[0] + axis[0] * local[1]
+    y = anchor[1] + lateral[1] * local[0] + axis[1] * local[1]
+    return TableTarget(table.table_id, x, y, table.rot_deg, long_axis_rotation_from_facing_vector(facing, table.rot_deg), x + facing[0] * 100.0, y + facing[1] * 100.0)
+
+
+def _rect_input_assignment_key(tables: list[TableState], slots: tuple[tuple[float, float], ...], anchor: tuple[float, float], lateral: tuple[float, float], axis: tuple[float, float]) -> tuple[float, float, tuple[tuple[float, float], ...]]:
+    positions = [(anchor[0] + lateral[0] * slot[0] + axis[0] * slot[1], anchor[1] + lateral[1] * slot[0] + axis[1] * slot[1]) for slot in slots]
+    distances = [math.dist((table.x, table.y), position) for table, position in zip(tables, positions)]
+    return max(distances), sum(distances), slots
 
 
 def _layout_rect_groupwork_templates(
@@ -678,6 +794,56 @@ def _rect_discussion_singleton_clearances_valid(
     return True
 
 
+def _rect_input_clearances_valid(
+    scene_state: SceneState,
+    targets: list[TableTarget],
+    presenter_id: str | None = None,
+    presentation_axis: tuple[float, float] | None = None,
+) -> bool:
+    if presenter_id is None or presentation_axis is None:
+        presenter, presentation_axis = _rect_input_presenter_and_axis(scene_state.tables)
+        presenter_id = presenter.table_id
+    tables_by_id = {table.table_id: table for table in scene_state.tables}
+    footprints = {
+        target.table_id: table_world_footprint(tables_by_id[target.table_id], (target.target_x, target.target_y), target.target_rot_deg)
+        for target in targets
+    }
+    regions = _rect_input_clearance_regions(targets, scene_state.tables, presenter_id, presentation_axis)
+    for footprint in footprints.values():
+        if not polygon_inside_roi(footprint, x_min=scene_state.roi.x_min, y_min=scene_state.roi.y_min, x_max=scene_state.roi.x_max, y_max=scene_state.roi.y_max):
+            return False
+    for target, region in zip(targets, regions):
+        if not polygon_inside_roi(region, x_min=scene_state.roi.x_min, y_min=scene_state.roi.y_min, x_max=scene_state.roi.x_max, y_max=scene_state.roi.y_max):
+            return False
+        if any(convex_polygons_intersect(region, footprint) for table_id, footprint in footprints.items() if table_id != target.table_id):
+            return False
+    return not any(
+        convex_polygons_intersect(region, other)
+        for index, region in enumerate(regions)
+        for other in regions[index + 1 :]
+    )
+
+
+def _rect_input_clearance_regions(
+    targets: list[TableTarget],
+    tables: list[TableState],
+    presenter_id: str,
+    presentation_axis: tuple[float, float],
+) -> list[tuple[tuple[float, float], ...]]:
+    from aisi.analysis.rect_groupwork_adaptive_prototype import single_long_side_clearance_region
+
+    tables_by_id = {table.table_id: table for table in tables}
+    return [
+        single_long_side_clearance_region(
+            target,
+            tables_by_id[target.table_id],
+            seat_direction=presentation_axis if target.table_id == presenter_id else (-presentation_axis[0], -presentation_axis[1]),
+            clearance_depth_cm=INPUT_SEAT_CLEARANCE_DEPTH_CM,
+        )
+        for target in targets
+    ]
+
+
 def _rect_discussion_radius(
     scene_state: SceneState,
     tables: list[TableState],
@@ -795,7 +961,12 @@ def _evaluate_for_learning_format(
     # singleton-strip and pair-ellipse clearances.  The generic evaluator is
     # retained here for the shared footprint/ROI check, but must not reapply
     # its superseded one-sided table clearance.
-    if rect_groupwork:
+    rect_input = (
+        scene_state.learning_format == "input"
+        and 1 <= len(scene_state.tables) <= MAX_LAYOUT_TABLES
+        and all(table.table_type == "rect" for table in scene_state.tables)
+    )
+    if rect_groupwork or rect_input:
         depth_factor = 0.0
     elif scene_state.learning_format == "input":
         depth_factor = 0.65
@@ -821,7 +992,7 @@ def _apply_hard_constraint_repair(
     generation_notes: list[str],
 ) -> tuple[list[TableTarget], list[str]]:
     if scene_state.learning_format == "input":
-        clearance_depth_factor = 0.65
+        clearance_depth_factor = 0.0
     elif scene_state.learning_format == "discussion":
         clearance_depth_factor = 0.80
     else:

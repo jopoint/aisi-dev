@@ -1,6 +1,6 @@
 # AISI Project Context
 
-Last updated: 2026-09-29
+Last updated: 2026-09-30
 
 ## 1. Purpose
 
@@ -189,44 +189,28 @@ Scout-specific seating/pairing semantics are not finalized. The geometry layer s
 
 ## 8. Rect layout generation
 
-### Input — committed baseline
+### Input — quelladaptive Präsentationsformation
 
-Repository-confirmed implementation in commit `5141e77`:
+Die festen Rect-Input-Slots aus Commit `5141e77` sind durch eine
+quelladaptive Präsentation-plus-Zuhörer-Formation ersetzt. Die
+Präsentationsachse folgt der Hauptausdehnung der Source. Der am stärksten vom
+Rest abgesetzte Endtisch wird automatisch zur Präsentation; die übrigen Tische
+werden unabhängig von ihrer `table_id` mit minimaler Bewegung in die kompakte
+Zuhörerformation gebunden. Die Ausgabe bleibt für OSC in der ursprünglichen
+Scene Order.
 
-- explicit Rect Input templates for counts 1–5;
-- all targets have `rotation = 0°` and face `−Y`;
-- table IDs are sorted for deterministic slot binding; output returns in scene order;
-- count 6 is rejected by the central five-table capacity limit.
+Jeder Rect-Tisch hat genau eine semantische Sitzseite: `70 cm` tief, entlang
+der vollständigen Längsseite und an den außenliegenden Ecken abgerundet. Die
+Präsentation blickt zur Zuhörerformation, die Zuhörenden entgegengesetzt zur
+Präsentation. Alle Tische und Sitzflächen müssen bei `100 %` vollständig in
+der ROI liegen und sich nicht überlappen. Für Count 5 weicht die Zielachse nur
+bei ansonsten nicht einpassbarer Diagonalgeometrie auf die nächstliegende
+Raumachse aus.
 
-Exact slots:
-
-```text
-1: (250,250)
-
-2: (140,250), (360,250)
-
-3: (122,150), (250,250), (378,350)
-
-4: (140,155), (360,155),
-   (140,345), (360,345)
-
-5: (110,150), (250,250), (390,150),
-   (110,350), (390,350)
-```
-
-Repository-confirmed verification for this committed block:
-
-- 33 focused tests passed;
-- overlap, clearance, and ROI violations were zero for counts 1–5;
-- directed Input seat-clearance zones were inside the ROI;
-- `git diff --check` passed.
-- freshly generated Input plots for counts 1–5 were visually reviewed;
-- the generated plots were byte-identical to the untracked
-  `final_rect_templates_2026-09-25` copies.
-
-Physical-room validation of Rect Input counts 1–5 has not yet been performed
-and remains open. Repository checks and plot review do not establish physical
-projection, tracking, movement, or furniture-placement quality.
+Repository- und virtuelle Einzelprüfung über Room Editor,
+Learning-Format-Interface, OSC und TouchDesigner sind akzeptiert. Die
+physische Raumprüfung für Aufstellung, Projektion und Bewegungsqualität bleibt
+offen.
 
 ### Groupwork — quelladaptiv produktiv umgesetzt
 

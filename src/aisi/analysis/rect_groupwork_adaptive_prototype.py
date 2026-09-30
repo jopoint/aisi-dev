@@ -467,6 +467,26 @@ def singleton_long_side_clearance_regions(
     )
 
 
+def single_long_side_clearance_region(
+    target: TableTarget,
+    table: TableState,
+    *,
+    seat_direction: tuple[float, float],
+    clearance_depth_cm: float,
+) -> tuple[tuple[float, float], ...]:
+    """Return one rounded, full-width clearance strip on a semantic long side."""
+    geometry = resolve_table_state_geometry(table)
+    short_axis = _rotation_to_short_axis(target.target_rot_deg)
+    direction = 1.0 if short_axis[0] * seat_direction[0] + short_axis[1] * seat_direction[1] >= 0.0 else -1.0
+    offset = table_support_distance(table, target.target_rot_deg, short_axis) + clearance_depth_cm * 0.5
+    return transform_local_footprint(
+        _rounded_outer_singleton_strip(geometry.nominal_width, clearance_depth_cm, outer_direction=direction),
+        target.target_x + direction * short_axis[0] * offset,
+        target.target_y + direction * short_axis[1] * offset,
+        target.target_rot_deg,
+    )
+
+
 # Compatibility alias for existing analysis scripts.  Product code should use
 # the descriptive shared helper above and pass an explicit depth where needed.
 _singleton_long_side_regions = singleton_long_side_clearance_regions

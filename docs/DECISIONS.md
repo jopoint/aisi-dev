@@ -1,6 +1,6 @@
 # AISI Decision Log
 
-Last updated: 2026-09-29
+Last updated: 2026-09-30
 
 Statuses:
 
@@ -60,27 +60,30 @@ Status: **Accepted**
 - The current `500 × 500 cm` layout-generation path supports at most five tables.
 - Six tables must fail before synthesis/repair instead of silently using stale templates.
 
-## D007 — Rect Input templates
+## D007 — Quelladaptiver Rect Input mit Präsentationsrolle
 
-Status: **Accepted**
+Status: **Accepted — physische Raumvalidierung bleibt offen**
 
-Finalized in commit `5141e77` (`Finalize Rect input templates`).
-Acceptance covers repository geometry, tests, and plot review. Physical-room
-validation remains open.
-
-- Counts 1–5 use explicit deterministic slots.
-- All rotations are `0°` and facing is `−Y`.
-- Slots are:
-
-```text
-1: (250,250)
-2: (140,250), (360,250)
-3: (122,150), (250,250), (378,350)
-4: (140,155), (360,155), (140,345), (360,345)
-5: (110,150), (250,250), (390,150), (110,350), (390,350)
-```
-
-- Old global `220 cm` column and `190 cm` row rules are not the new general generator rules.
+- Die festen Input-Slots aus Commit `5141e77` sind fachlich abgelöst.
+- Die Hauptausdehnung der Source bestimmt die Präsentationsachse. Der an einem
+  Endpunkt räumlich am stärksten vom Rest abgesetzte Tisch wird automatisch zur
+  Präsentationsrolle; die übrigen Tische werden ohne ID-basierte Rollen nach
+  minimaler Bewegung als Zuhörerformation zugeordnet.
+- Der Präsentationstisch blickt zu den Zuhörenden, die Zuhörenden blicken zur
+  Präsentation. Die semantische Umkehrung wird bei symmetrischen Rect-Tischen
+  durch Facing und Sitzseite abgebildet.
+- Jeder Tisch besitzt genau eine `70 cm` tiefe Sitz-/Bewegungsfläche an seiner
+  Längsseite, mit abgerundeten außenliegenden Ecken. Footprints und Flächen
+  müssen im vollständigen `100-%`-Ziel innerhalb der ROI und gegenseitig frei
+  sein.
+- Für Count 5 darf eine diagonal nicht vollständig passende Formation auf die
+  nächstliegende Raumachse ausweichen; die präsentierende Source-Seite bleibt
+  erhalten.
+- `strength = 0` behält die exakte Source-Pose. Teilstärken bleiben sichtbare
+  Source/Target-Interpolation mit Tisch-Kollisions- und ROI-Reparatur.
+- Die virtuelle Prüfung über Room Editor, Learning-Format-Interface, OSC und
+  TouchDesigner ist akzeptiert; diese bestätigt keine physische Aufstellung,
+  Projektion oder Bewegungsqualität im Raum.
 
 ## D008 — Rect Groupwork topology
 

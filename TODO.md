@@ -1,6 +1,6 @@
 # AISI TODO / Handoff Checklist
 
-Last updated: 2026-09-29
+Last updated: 2026-09-30
 
 This list separates immediate repository hygiene, current layout work, Study readiness, and deferred research work. Do not execute all items automatically; use it to select a coherent next task.
 
@@ -30,6 +30,17 @@ Completion criteria:
 - tests are current rather than only history-reported;
 - no unrelated/runtime artifacts are staged;
 - Input counts 1–5 are deliberately committed and pushed.
+
+## P0 — Quelladaptiver Rect Input mit Präsentationsrolle
+
+- [x] Feste Slots, globales Facing `−Y` und die frühere `0°`-Vorgabe ablösen.
+- [x] Präsentationsachse und räumlich vordersten Präsentationstisch aus der
+  Source ableiten; Zuhörer ohne ID-basierte Rollen lokal zuordnen.
+- [x] Je eine volle, außen abgerundete `70 cm`-Sitz-/Bewegungsfläche an der
+  semantischen Längsseite pro Tisch als harte Zielbedingung prüfen.
+- [x] Counts 1–5 im Room Editor, Learning-Format-Interface, OSC und
+  TouchDesigner-Simulation bei `100 %` visuell prüfen.
+- [x] Nach der Sichtprüfung einen fokussierten Input-Commit erstellen.
 
 ## Verworfen — starre Rect-Groupwork-Entscheidungsgrundlage
 

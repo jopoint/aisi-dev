@@ -8,10 +8,12 @@ from aisi.core.models import ROI, SceneState, TableState, TargetStructure, choos
 from aisi.analysis.rect_groupwork_adaptive_prototype import singleton_long_side_clearance_regions
 from aisi.core.table_geometry import polygon_inside_roi
 from aisi.analysis.rect_groupwork_adaptive_prototype import solve_rect_groupwork_prototype
-from aisi.generation.layout_constraints import _primary_seat_clearance_zone, evaluate_hard_constraints
+from aisi.generation.layout_constraints import evaluate_hard_constraints
 from aisi.generation.layout_synthesizer import (
+    _layout_rect_input_templates,
     _layout_rect_discussion_templates,
     _layout_rect_groupwork_templates,
+    _rect_input_clearances_valid,
     _rect_discussion_singleton_clearances_valid,
     _uses_rect_template_layout,
     synthesize_layout,
@@ -20,15 +22,6 @@ from aisi.generation.layout_synthesizer import (
 
 SOURCE_IDS = ("table_10", "table_2", "table_7", "table_1", "table_5", "table_3")
 SOURCE_POSITIONS = ((90.0, 140.0), (250.0, 140.0), (410.0, 140.0), (90.0, 360.0), (250.0, 360.0), (410.0, 360.0))
-INPUT_TEMPLATE_POSITIONS = {
-    1: ((250.0, 250.0),),
-    2: ((140.0, 250.0), (360.0, 250.0)),
-    3: ((122.0, 150.0), (250.0, 250.0), (378.0, 350.0)),
-    4: ((140.0, 155.0), (360.0, 155.0), (140.0, 345.0), (360.0, 345.0)),
-    5: ((110.0, 150.0), (250.0, 250.0), (390.0, 150.0), (110.0, 350.0), (390.0, 350.0)),
-}
-
-
 def _rect_scene(table_count: int, learning_format: str) -> SceneState:
     ids = SOURCE_IDS[:table_count]
     positions_by_id = {
@@ -57,42 +50,31 @@ def _proposal(scene: SceneState, strength: float):
 
 
 class RectTemplateLayoutTests(unittest.TestCase):
-    def test_input_templates_use_exact_slots_rotation_and_full_clearance(self) -> None:
-        for count, slots in INPUT_TEMPLATE_POSITIONS.items():
+    def test_input_uses_source_adaptive_presenter_audience_and_full_clearance(self) -> None:
+        for count in range(1, 6):
             with self.subTest(count=count):
                 scene = _rect_scene(count, "input")
                 proposal = _proposal(scene, 1.0)
-                expected_by_id = {
-                    table.table_id: slot
-                    for table, slot in zip(sorted(scene.tables, key=lambda table: table.table_id), slots)
-                }
-                self.assertEqual(
-                    [(target.target_x, target.target_y) for target in proposal.table_targets],
-                    [expected_by_id[table.table_id] for table in scene.tables],
-                )
+                self.assertIn("rect_input_topology=source_adaptive_presenter_audience", proposal.generation_notes)
+                self.assertIn("rect_input_single_side_clearance_depth_cm=70.0", proposal.generation_notes)
+                self.assertTrue(_rect_input_clearances_valid(scene, proposal.table_targets))
 
-                for target in proposal.table_targets:
-                    self.assertEqual(target.target_rot_deg, 0.0)
-                    self.assertEqual(target.facing_target_x, target.target_x)
-                    self.assertEqual(target.facing_target_y, target.target_y - 100.0)
-
-                stats = evaluate_hard_constraints(
-                    scene,
-                    proposal.table_targets,
-                    clearance_depth_factor=0.65,
-                    generation_notes=proposal.generation_notes,
-                )
-                self.assertEqual(stats.overlap_violations, 0)
-                self.assertEqual(stats.roi_violations, 0)
-                self.assertEqual(stats.clearance_violations, 0)
-
-                tables_by_id = {table.table_id: table for table in scene.tables}
-                for target in proposal.table_targets:
-                    zone = _primary_seat_clearance_zone(target, tables_by_id[target.table_id], 0.65)
-                    self.assertGreaterEqual(zone.cx - zone.width * 0.5, scene.roi.x_min)
-                    self.assertGreaterEqual(zone.cy - zone.height * 0.5, scene.roi.y_min)
-                    self.assertLessEqual(zone.cx + zone.width * 0.5, scene.roi.x_max)
-                    self.assertLessEqual(zone.cy + zone.height * 0.5, scene.roi.y_max)
+    def test_input_uses_the_spatially_frontmost_presenter_not_table_id(self) -> None:
+        scene = SceneState(
+            ROI(0.0, 0.0, 500.0, 500.0),
+            [
+                TableState("audience_a", 100.0, 230.0, 0.0, 160.0, 80.0, table_type="rect"),
+                TableState("audience_b", 170.0, 280.0, 0.0, 160.0, 80.0, table_type="rect"),
+                TableState("audience_c", 200.0, 160.0, 0.0, 160.0, 80.0, table_type="rect"),
+                TableState("audience_d", 190.0, 360.0, 0.0, 160.0, 80.0, table_type="rect"),
+                TableState("presenter", 430.0, 250.0, 0.0, 160.0, 80.0, table_type="rect"),
+            ],
+            "input",
+        )
+        targets, notes = _layout_rect_input_templates(scene, sorted(scene.tables, key=lambda table: table.table_id))
+        by_id = {target.table_id: target for target in targets}
+        self.assertIn("rect_input_presenter_id=presenter", notes)
+        self.assertGreater(by_id["presenter"].target_x, max(target.target_x for table_id, target in by_id.items() if table_id != "presenter"))
 
     def test_groupwork_pair_separation_and_metadata_are_geometry_derived(self) -> None:
         scene = _rect_scene(4, "groupwork")
