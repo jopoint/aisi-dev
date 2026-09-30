@@ -270,21 +270,47 @@ Die grafische Room-Editor-Interaktion sowie die TouchDesigner- und physische
 Raumprüfung bleiben offen. Sie sind nicht durch lokale JSON-/OSC-Prüfungen
 abgedeckt.
 
-Die Learning-Format-Simulationsoberfläche steuert ausschließlich das Format
-und die Sichtbarkeit von Personen/Stühlen. Sie verwendet fest den vollständigen
-Layoutvorschlag (`100 %`); eine veränderbare Umbauintensität gehört nicht zur
-Live-Simulationssteuerung.
+Die Learning-Format-Simulationsoberfläche steuert Format, Sichtbarkeit von
+Personen/Stühlen und die Umbauintensität (`0–100 %`). Der gespeicherte Wert
+wird unverändert an die Live-Layoutsynthese übergeben; ältere State-Dateien
+ohne Wert starten kompatibel bei `100 %`.
 
 ### Discussion
 
-Repository/history-confirmed architecture:
+Repository- und virtuell bestätigte Architektur (2026-09-29):
 
-- centered inward-facing ring;
-- polygon/support-derived ROI-safe geometry;
-- deterministic source angular order stabilizes slot binding and partial-strength motion;
-- absolute global ring rotation is not semantically important.
+- zentrierter, nach innen gerichteter Ring;
+- ROI-sichere Geometrie aus Polygonen und Support-Werten;
+- deterministische Winkelreihenfolge der Source stabilisiert Slotbindung und
+  Teilbewegungen;
+- die absolute globale Ringrotation ist semantisch nicht relevant.
 
-No current handoff task proposed changing Discussion.
+Die freie globale Ringrotation wird mit dem lexikographischen Ziel „maximale,
+dann gesamte Bewegung minimieren“ gewählt; bei Count 5 nur innerhalb der
+clearance-zulässigen Phasen. Die Source-Winkelreihenfolge bleibt erhalten;
+dadurch entstehen keine gekreuzten Zuordnungswege.
+
+Jeder Rect-Discussion-Tisch hat zwei abgerundete, ausschließlich entlang der
+Längsseiten liegende Sitz-/Bewegungsflächen mit `50 cm` Tiefe. Diese sind für
+den fertigen `100-%`-Zielzustand als harte ROI- und Tischblockierungsbedingung
+geprüft. Bei einer niedrigeren Umbauintensität bleibt die sichtbare
+Source/Target-Interpolation mit Kollisions-/ROI-Reparatur erhalten. Der
+Fünfer-Ring wird für den Zielzustand ohne die frühere zusätzliche Ringreserve
+gepackt; sein gemeinsamer Mittelpunkt darf sich nur minimal innerhalb des ROI
+verschieben. Die `60 cm`-Groupwork-Flächen bleiben davon unberührt.
+
+Die generierten Counts 1–5 wurden virtuell auf Überlappungsfreiheit,
+ROI-Einhaltung und die gemeinsame, nach innen gerichtete Mitte geprüft.
+Die Plots zeigen insbesondere für Count 3 und Count 5 eine plausible
+regelmäßige Ringanordnung. Eine physische Raum- und TouchDesigner-Prüfung
+steht weiterhin aus; daraus folgt derzeit keine Änderungsanforderung.
+Die aktuelle Fünf-Tisch-Live-Szene wurde außerdem durch den
+Simulationsadapter mit vollständiger Umbauintensität geprüft; sie erzeugt
+einen gültigen Discussion-Ring aus der produktiven Layout-Pipeline, nicht aus
+dem statischen Fallback.
+Die Einzelprüfung in der laufenden TouchDesigner-Simulation ist am 2026-09-30
+fachlich akzeptiert worden. Das bestätigt die virtuelle Pipeline, nicht die
+physische Raumwirkung oder Projektorkalibrierung.
 
 ## 9. Study design and implementation
 

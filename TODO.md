@@ -141,7 +141,9 @@ Do not install optional dependencies merely to expand test scope.
 
 ## P2 — General layout follow-up
 
-- [ ] Visually review Discussion counts 1–5 after the five-table capacity change.
+- [x] Discussion Counts 1–5 nach der Fünf-Tisch-Kapazitätsänderung virtuell
+  und in der TouchDesigner-Simulation prüfen (2026-09-30); die physische
+  Raumprüfung bleibt offen.
 - [ ] Verify mixed Summit/Sprint/Rect layouts after current Rect-specific work is stable.
 - [ ] Design Scout-specific seating and Groupwork semantics as a dedicated task.
 - [ ] Decide which Summit/Sprint sides may pair and how seating zones are derived.

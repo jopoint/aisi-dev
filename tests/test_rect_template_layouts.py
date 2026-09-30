@@ -5,11 +5,14 @@ import unittest
 from unittest import mock
 
 from aisi.core.models import ROI, SceneState, TableState, TargetStructure, choose_facing_normal_toward_target
+from aisi.analysis.rect_groupwork_adaptive_prototype import singleton_long_side_clearance_regions
+from aisi.core.table_geometry import polygon_inside_roi
 from aisi.analysis.rect_groupwork_adaptive_prototype import solve_rect_groupwork_prototype
 from aisi.generation.layout_constraints import _primary_seat_clearance_zone, evaluate_hard_constraints
 from aisi.generation.layout_synthesizer import (
     _layout_rect_discussion_templates,
     _layout_rect_groupwork_templates,
+    _rect_discussion_singleton_clearances_valid,
     _uses_rect_template_layout,
     synthesize_layout,
 )
@@ -112,14 +115,93 @@ class RectTemplateLayoutTests(unittest.TestCase):
             with self.subTest(count=count):
                 scene = _rect_scene(count, "discussion")
                 targets, _ = _layout_rect_discussion_templates(scene, sorted(scene.tables, key=lambda table: table.table_id))
-                radii = [math.hypot(target.target_x - 250.0, target.target_y - 250.0) for target in targets]
+                center = (targets[0].facing_target_x, targets[0].facing_target_y)
+                self.assertIsNotNone(center[0])
+                self.assertIsNotNone(center[1])
+                radii = [math.hypot(target.target_x - center[0], target.target_y - center[1]) for target in targets]
                 self.assertTrue(all(abs(radius - radii[0]) < 1e-6 for radius in radii))
                 for target in targets:
                     facing = choose_facing_normal_toward_target(
-                        (target.target_x, target.target_y), (250.0, 250.0), target.target_rot_deg
+                        (target.target_x, target.target_y), center, target.target_rot_deg
                     )
-                    inward = (250.0 - target.target_x, 250.0 - target.target_y)
+                    inward = (center[0] - target.target_x, center[1] - target.target_y)
                     self.assertGreater(facing[0] * inward[0] + facing[1] * inward[1], 0.0)
+
+    def test_discussion_uses_complete_fifty_cm_singleton_clearance_for_all_counts(self) -> None:
+        for count in range(1, 6):
+            with self.subTest(count=count):
+                scene = _rect_scene(count, "discussion")
+                proposal = _proposal(scene, 1.0)
+                self.assertIn("rect_discussion_singleton_clearance_depth_cm=50.0", proposal.generation_notes)
+                self.assertTrue(_rect_discussion_singleton_clearances_valid(scene, proposal.table_targets))
+                for target in proposal.table_targets:
+                    table = next(table for table in scene.tables if table.table_id == target.table_id)
+                    for region in singleton_long_side_clearance_regions(
+                        target,
+                        table,
+                        clearance_depth_cm=50.0,
+                    ):
+                        self.assertTrue(
+                            polygon_inside_roi(
+                                region,
+                                x_min=scene.roi.x_min,
+                                y_min=scene.roi.y_min,
+                                x_max=scene.roi.x_max,
+                                y_max=scene.roi.y_max,
+                            )
+                        )
+
+    def test_discussion_strength_remains_visibly_interpolated_before_the_final_target(self) -> None:
+        scene = _rect_scene(5, "discussion")
+        partial = _proposal(scene, 0.25)
+        completed = _proposal(scene, 1.0)
+
+        self.assertNotEqual(
+            [(target.target_x, target.target_y, target.target_rot_deg) for target in partial.table_targets],
+            [(target.target_x, target.target_y, target.target_rot_deg) for target in completed.table_targets],
+        )
+        self.assertIn("transformation_strength=0.250", partial.generation_notes)
+        self.assertIn("repair_skipped=rect_discussion_target_clearance_valid", completed.generation_notes)
+
+    def test_discussion_continuously_rotates_the_ring_to_reduce_local_motion(self) -> None:
+        scene = SceneState(
+            ROI(0.0, 0.0, 500.0, 500.0),
+            [
+                TableState("table_0", 374.286, 190.714, 40.0, 160.0, 80.0, table_type="rect"),
+                TableState("table_3", 225.0, 266.429, 125.0, 160.0, 80.0, table_type="rect"),
+                TableState("table_5", 113.571, 165.0, 25.0, 160.0, 80.0, table_type="rect"),
+                TableState("table_6", 338.571, 416.037, 5.0, 160.0, 80.0, table_type="rect"),
+                TableState("table_7", 100.714, 429.286, -15.0, 160.0, 80.0, table_type="rect"),
+            ],
+            "discussion",
+        )
+
+        targets, notes = _layout_rect_discussion_templates(scene, sorted(scene.tables, key=lambda table: table.table_id))
+        source_by_id = {table.table_id: table for table in scene.tables}
+        distances = [
+            math.hypot(source_by_id[target.table_id].x - target.target_x, source_by_id[target.table_id].y - target.target_y)
+            for target in targets
+        ]
+
+        self.assertIn("rect_discussion_ring_phase=clearance_constrained_minimax_motion", notes)
+        self.assertLess(max(distances), 140.0)
+        self.assertLess(sum(distances), 540.0)
+
+        reversed_scene = SceneState(scene.roi, list(reversed(scene.tables)), "discussion")
+        reversed_targets, _ = _layout_rect_discussion_templates(
+            reversed_scene,
+            sorted(reversed_scene.tables, key=lambda table: table.table_id),
+        )
+        self.assertEqual(
+            {
+                target.table_id: (target.target_x, target.target_y, target.target_rot_deg)
+                for target in targets
+            },
+            {
+                target.table_id: (target.target_x, target.target_y, target.target_rot_deg)
+                for target in reversed_targets
+            },
+        )
 
     def test_rect_templates_preserve_ids_scene_order_and_geometry_across_strengths(self) -> None:
         for learning_format in ("input", "groupwork", "discussion"):

@@ -73,9 +73,9 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 ### Learning Format UI
 - Browser öffnen: http://127.0.0.1:8080
 - Input / Groupwork / Discussion wählen
-- Die Simulationspipeline erzeugt stets den vollständigen AISI-Generator-Vorschlag (`100 %`).
-- Eine veränderbare Umbauintensität ist bewusst nicht Teil des Interfaces oder
-  der gespeicherten Simulationssteuerung.
+- Mit „Umbauintensität“ den Anteil zwischen unveränderter Source-Pose (`0 %`)
+  und vollständigem Generator-Vorschlag (`100 %`) wählen.
+- Neue oder ältere State-Dateien ohne gespeicherten Wert starten bei `100 %`.
 
 ### sim_scene_to_osc.py
 - 1=input

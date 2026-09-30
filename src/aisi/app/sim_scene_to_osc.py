@@ -38,7 +38,7 @@ DEFAULT_LAYOUT_MODE = "groupwork"
 LEARNING_FORMAT_POLL_SECONDS = 1.0
 DEFAULT_SHOW_PERSONS = True
 DEFAULT_SHOW_CHAIRS = True
-SIMULATION_TRANSFORMATION_STRENGTH = 1.0
+DEFAULT_TRANSFORMATION_STRENGTH = 1.0
 DEFAULT_TRACKING_TABLE_ID = "table_00"
 VALID_LEARNING_FORMATS = {"input", "groupwork", "discussion"}
 SCENE_READ_RETRY_DELAYS_SECONDS = (0.005, 0.010, 0.020)
@@ -222,13 +222,22 @@ def load_learning_format(path: Path) -> str | None:
     return None
 
 
-def load_learning_settings(path: Path) -> tuple[str | None, bool, bool]:
-    """Load the learning format and visibility flags for the simulation."""
+def clamp_transformation_strength(value: object) -> float:
+    """Clamp the saved UI value to the supported 0.0..1.0 range."""
+
+    try:
+        return max(0.0, min(1.0, float(value)))
+    except (TypeError, ValueError):
+        return DEFAULT_TRANSFORMATION_STRENGTH
+
+
+def load_learning_settings(path: Path) -> tuple[str | None, bool, bool, float]:
+    """Load the learning format, visibility flags, and transformation strength."""
     try:
         with path.open("r", encoding="utf-8") as handle:
             data = json.load(handle)
     except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return None, DEFAULT_SHOW_PERSONS, DEFAULT_SHOW_CHAIRS
+        return None, DEFAULT_SHOW_PERSONS, DEFAULT_SHOW_CHAIRS, DEFAULT_TRANSFORMATION_STRENGTH
 
     learning_format = data.get("learning_format")
     if learning_format not in VALID_LEARNING_FORMATS:
@@ -242,10 +251,15 @@ def load_learning_settings(path: Path) -> tuple[str | None, bool, bool]:
     if not isinstance(show_chairs, bool):
         show_chairs = DEFAULT_SHOW_CHAIRS
 
+    transformation_strength = clamp_transformation_strength(
+        data.get("transformation_strength", DEFAULT_TRANSFORMATION_STRENGTH)
+    )
+
     return (
         str(learning_format) if learning_format is not None else None,
         show_persons,
         show_chairs,
+        transformation_strength,
     )
 
 
@@ -672,7 +686,7 @@ def main() -> None:
                     time.sleep(args.interval)
                     continue
 
-            _, show_persons, show_chairs = load_learning_settings(file_path)
+            _, show_persons, show_chairs, transformation_strength = load_learning_settings(file_path)
 
             with state_lock:
                 layout_mode = current_layout_mode
@@ -686,7 +700,7 @@ def main() -> None:
             tables, persons, chairs, targets, tracking_rejection = prepare_scene_output(
                 scene,
                 layout_mode,
-                SIMULATION_TRANSFORMATION_STRENGTH,
+                transformation_strength,
                 tracking_only=args.tracking_only,
                 tracking_table_id=args.tracking_table_id,
                 study_active_binding_present=binding_present,

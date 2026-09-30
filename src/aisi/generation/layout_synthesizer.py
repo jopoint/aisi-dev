@@ -15,6 +15,8 @@ from aisi.core.models import (
     long_axis_rotation_from_facing_vector,
 )
 from aisi.core.table_geometry import (
+    convex_polygons_intersect,
+    polygon_inside_roi,
     required_table_center_separation,
     resolve_table_state_geometry,
     table_allowed_center_bounds,
@@ -28,6 +30,8 @@ from aisi.generation.target_structure_generator import pair_tables_for_groupwork
 
 GROUPWORK_PAIR_SEAM_GAP_CM = 4.0
 INPUT_TABLE_GAP_CM = 8.0
+DISCUSSION_SEAT_CLEARANCE_DEPTH_CM = 50.0
+_DISCUSSION_CLEARANCE_PHASE_SAMPLES = 1440
 # Layout generation is intentionally limited to at most five tables in the
 # current 500×500 cm AISI ROI.
 MAX_LAYOUT_TABLES = 5
@@ -112,6 +116,11 @@ def synthesize_layout(
         and 2 <= len(tables) <= MAX_LAYOUT_TABLES
         and all(table.table_type == "rect" for table in tables)
     )
+    rect_discussion = (
+        scene_state.learning_format == "discussion"
+        and 1 <= len(tables) <= MAX_LAYOUT_TABLES
+        and all(table.table_type == "rect" for table in tables)
+    )
     if rect_groupwork:
         repaired_targets, repair_notes, repaired_groupwork_notes = _repair_rect_groupwork_after_blend(
             scene_state,
@@ -128,6 +137,12 @@ def synthesize_layout(
                 )
             ]
             notes.extend(repaired_groupwork_notes)
+    elif rect_discussion and strength >= 1.0 - 1e-9:
+        repaired_targets, repair_notes = _repair_rect_discussion_after_blend(
+            scene_state,
+            targets,
+            strength,
+        )
     else:
         repaired_targets, repair_notes = _apply_hard_constraint_repair(scene_state, targets, notes)
     notes = [*notes, *repair_notes]
@@ -213,6 +228,20 @@ def _repair_rect_groupwork_after_blend(
         f"repair_strength={strength:.3f}",
         f"repair_zone_overlap_cm2={result.objective.clearance_overlap_area_cm2:.3f}",
     ], groupwork_notes
+
+
+def _repair_rect_discussion_after_blend(
+    scene_state: SceneState,
+    blended_targets: list[TableTarget],
+    strength: float,
+) -> tuple[list[TableTarget], list[str]]:
+    """Validate full Discussion singleton zones at the completed target only."""
+
+    if strength < 1.0 - 1e-9:
+        raise AssertionError("Die vollständige Discussion-Clearance gilt nur für den 100-%-Endzustand.")
+    if not _rect_discussion_singleton_clearances_valid(scene_state, blended_targets):
+        raise ValueError("Rect-Discussion-Ziel verletzt die bestätigten Sitz-/Bewegungsflächen.")
+    return blended_targets, ["repair_skipped=rect_discussion_target_clearance_valid"]
 
 
 def _uses_rect_template_layout(tables: list[TableState]) -> bool:
@@ -312,19 +341,54 @@ def _layout_rect_discussion_templates(
                 source_rot_deg=table.rot_deg,
                 target_rot_deg=0.0,
             )
-        ], ["rect_template=discussion", "rect_discussion_centered_singleton=true"]
+        ], [
+            "rect_template=discussion",
+            "rect_discussion_centered_singleton=true",
+            f"rect_discussion_singleton_clearance_depth_cm={DISCUSSION_SEAT_CLEARANCE_DEPTH_CM:.1f}",
+        ]
 
     # Bind the regular ring in source angular order. This remains a
     # format-specific ID binding (not a slot-permutation optimization), while
     # avoiding avoidable crossing paths during strength blending.
     ordered_tables = _tables_in_source_angular_order(tables, center)
-    start_angle = _source_angle_or_default(ordered_tables[0], center, len(tables))
+    # Derive the radius first, then rotate the whole ring freely.  The global
+    # rotation has no Discussion semantics, while using the first source angle
+    # as a fixed anchor can make a nearby table travel past a nearer slot.
+    provisional_start_angle = _source_angle_or_default(ordered_tables[0], center, len(tables))
+    provisional_angles = tuple(
+        provisional_start_angle + (2.0 * math.pi * index) / len(ordered_tables)
+        for index in range(len(ordered_tables))
+    )
+    provisional_rotations = tuple(
+        long_axis_rotation_from_facing_vector((-math.cos(angle), -math.sin(angle)), reference_rot_deg=0.0)
+        for angle in provisional_angles
+    )
+    radius = _rect_discussion_radius(scene_state, ordered_tables, provisional_angles, provisional_rotations)
+    if len(ordered_tables) == 5:
+        phase_strategy = "rect_discussion_ring_phase=clearance_constrained_minimax_motion"
+        center, start_angle = _rect_discussion_clearance_constrained_center_and_phase(
+            scene_state,
+            ordered_tables,
+            radius,
+        )
+    else:
+        phase_strategy = "rect_discussion_ring_phase=continuous_minimax_motion"
+        radius = _rect_discussion_minimum_clearance_radius(
+            scene_state,
+            ordered_tables,
+            radius,
+            provisional_start_angle,
+        )
+        start_angle = _rect_discussion_movement_optimal_phase(center, ordered_tables, radius)
     angles = tuple(start_angle + (2.0 * math.pi * index) / len(ordered_tables) for index in range(len(ordered_tables)))
     rotations = tuple(
         long_axis_rotation_from_facing_vector((-math.cos(angle), -math.sin(angle)), reference_rot_deg=0.0)
         for angle in angles
     )
-    radius = _rect_discussion_radius(scene_state, ordered_tables, angles, rotations)
+    # Validate the selected continuous phase against the full footprint/ROI
+    # geometry.  For Rect tables the required radius is phase-invariant, but
+    # the validation remains explicit rather than relying on that fact.
+    radius = max(radius, _rect_discussion_radius(scene_state, ordered_tables, angles, rotations))
 
     targets = []
     for table, angle, rotation_deg in zip(ordered_tables, angles, rotations):
@@ -346,6 +410,9 @@ def _layout_rect_discussion_templates(
         "rect_template=discussion",
         f"rect_discussion_center=({center[0]:.1f},{center[1]:.1f})",
         f"rect_discussion_radius_cm={radius:.3f}",
+        f"rect_discussion_ring_phase_deg={math.degrees(start_angle):.3f}",
+        phase_strategy,
+        f"rect_discussion_singleton_clearance_depth_cm={DISCUSSION_SEAT_CLEARANCE_DEPTH_CM:.1f}",
     ]
 
 
@@ -374,6 +441,243 @@ def _source_angle_or_default(
     return math.atan2(dy, dx)
 
 
+def _rect_discussion_movement_optimal_phase(
+    center: tuple[float, float],
+    tables: list[TableState],
+    radius: float,
+) -> float:
+    """Choose the free ring phase that minimizes movement without crossings.
+
+    Tables retain their circular source order and therefore map to successive
+    ring slots; this is the non-crossing correspondence.  For that fixed
+    correspondence, each squared movement distance is a sinusoid of the free
+    global phase.  The minimax optimum can only occur at an individual
+    stationary point or where two such curves meet, so the finite candidate
+    set below is continuous rather than an angular raster.
+    """
+
+    count = len(tables)
+    if count <= 1:
+        return 0.0
+
+    terms: list[tuple[float, float, float]] = []
+    candidate_phases: set[float] = set()
+    for index, table in enumerate(tables):
+        dx = table.x - center[0]
+        dy = table.y - center[1]
+        source_radius = math.hypot(dx, dy)
+        source_angle = math.atan2(dy, dx) if source_radius > 1e-9 else 0.0
+        slot_angle = (2.0 * math.pi * index) / count
+        phase_offset = source_angle - slot_angle
+        constant = source_radius * source_radius + radius * radius
+        amplitude = 2.0 * radius * source_radius
+        # distance_squared = constant + u*cos(phase) + v*sin(phase)
+        u = -amplitude * math.cos(phase_offset)
+        v = -amplitude * math.sin(phase_offset)
+        terms.append((constant, u, v))
+        candidate_phases.add(_normalize_phase_rad(phase_offset))
+        candidate_phases.add(_normalize_phase_rad(phase_offset + math.pi))
+
+    for first_index, (first_constant, first_u, first_v) in enumerate(terms):
+        for second_constant, second_u, second_v in terms[first_index + 1 :]:
+            delta_constant = first_constant - second_constant
+            delta_u = first_u - second_u
+            delta_v = first_v - second_v
+            magnitude = math.hypot(delta_u, delta_v)
+            if magnitude <= 1e-9:
+                continue
+            cosine = -delta_constant / magnitude
+            if cosine < -1.0 - 1e-9 or cosine > 1.0 + 1e-9:
+                continue
+            offset = math.atan2(delta_v, delta_u)
+            crossing = math.acos(_clamp(cosine, -1.0, 1.0))
+            candidate_phases.add(_normalize_phase_rad(offset + crossing))
+            candidate_phases.add(_normalize_phase_rad(offset - crossing))
+
+    def phase_objective(phase: float) -> tuple[float, float, float, float]:
+        distances = [
+            math.sqrt(max(0.0, constant + u * math.cos(phase) + v * math.sin(phase)))
+            for constant, u, v in terms
+        ]
+        rotations = [
+            long_axis_rotation_from_facing_vector(
+                (-math.cos(phase + (2.0 * math.pi * index) / count),
+                -math.sin(phase + (2.0 * math.pi * index) / count)),
+                reference_rot_deg=0.0,
+            )
+            for index in range(count)
+        ]
+        rotation_change = sum(
+            abs(_normalize_angle_deg(rotation - table.rot_deg))
+            for table, rotation in zip(tables, rotations)
+        )
+        return max(distances), sum(distances), rotation_change, phase
+
+    return min(phase_objective(phase) for phase in candidate_phases)[3]
+
+
+def _normalize_phase_rad(value: float) -> float:
+    """Normalize a phase to a deterministic half-open turn."""
+
+    return value % (2.0 * math.pi)
+
+
+def _rect_discussion_minimum_clearance_radius(
+    scene_state: SceneState,
+    tables: list[TableState],
+    base_radius: float,
+    phase: float,
+) -> float:
+    """Increase a regular small-count ring only until singleton zones are clear."""
+
+    start = math.ceil(base_radius - 1e-9)
+    for radius_cm in range(start, int(math.floor(min(scene_state.roi.width, scene_state.roi.height) * 0.5)) + 1):
+        targets = _rect_discussion_ring_targets(tables, scene_state.roi.center, float(radius_cm), phase)
+        if _rect_discussion_singleton_clearances_valid(scene_state, targets):
+            return float(radius_cm)
+    raise ValueError("Der Rect-Discussion-Ring kann die 50-cm-Sitzflächen nicht im ROI halten.")
+
+
+def _rect_discussion_clearance_constrained_center_and_phase(
+    scene_state: SceneState,
+    tables: list[TableState],
+    radius: float,
+) -> tuple[tuple[float, float], float]:
+    """Fit five inward-facing singleton zones while retaining one common center.
+
+    Five 60-cm singleton zones cannot fit around a five-table ring in the
+    current ROI.  Discussion therefore uses its accepted 50-cm depth and
+    searches the free global phase together with the smallest center shift
+    needed to keep every complete zone in the room.  Table order stays angular
+    and no table is assigned across another table's path.
+    """
+
+    from aisi.analysis.rect_groupwork_adaptive_prototype import singleton_long_side_clearance_regions
+
+    nominal_center = scene_state.roi.center
+    best: tuple[tuple[float, float, float, float, float], tuple[float, float], float] | None = None
+    for sample in range(_DISCUSSION_CLEARANCE_PHASE_SAMPLES):
+        phase = math.tau * sample / _DISCUSSION_CLEARANCE_PHASE_SAMPLES
+        relative_targets = _rect_discussion_ring_targets(tables, (0.0, 0.0), radius, phase)
+        regions = [
+            region
+            for table, target in zip(tables, relative_targets)
+            for region in singleton_long_side_clearance_regions(
+                target,
+                table,
+                clearance_depth_cm=DISCUSSION_SEAT_CLEARANCE_DEPTH_CM,
+            )
+        ]
+        min_x = min(x for region in regions for x, _ in region)
+        max_x = max(x for region in regions for x, _ in region)
+        min_y = min(y for region in regions for _, y in region)
+        max_y = max(y for region in regions for _, y in region)
+        center_x_min = scene_state.roi.x_min - min_x
+        center_x_max = scene_state.roi.x_max - max_x
+        center_y_min = scene_state.roi.y_min - min_y
+        center_y_max = scene_state.roi.y_max - max_y
+        if center_x_min > center_x_max or center_y_min > center_y_max:
+            continue
+        center = (
+            _clamp(nominal_center[0], center_x_min, center_x_max),
+            _clamp(nominal_center[1], center_y_min, center_y_max),
+        )
+        targets = _rect_discussion_ring_targets(tables, center, radius, phase)
+        if not _rect_discussion_singleton_clearances_valid(scene_state, targets):
+            continue
+        distances = [
+            math.hypot(table.x - target.target_x, table.y - target.target_y)
+            for table, target in zip(tables, targets)
+        ]
+        rotations = sum(
+            abs(_normalize_angle_deg(target.target_rot_deg - table.rot_deg))
+            for table, target in zip(tables, targets)
+        )
+        objective = (
+            max(distances),
+            sum(distances),
+            rotations,
+            math.hypot(center[0] - nominal_center[0], center[1] - nominal_center[1]),
+            phase,
+        )
+        if best is None or objective < best[0]:
+            best = (objective, center, phase)
+
+    if best is None:
+        raise ValueError("Der zentrische Rect-Discussion-Ring kann die 50-cm-Sitzflächen nicht im ROI halten.")
+    return best[1], best[2]
+
+
+def _rect_discussion_ring_targets(
+    tables: list[TableState],
+    center: tuple[float, float],
+    radius: float,
+    phase: float,
+) -> list[TableTarget]:
+    """Materialize source-angular tables on one inward-facing common-center ring."""
+
+    targets: list[TableTarget] = []
+    for index, table in enumerate(tables):
+        angle = phase + math.tau * index / len(tables)
+        rotation = long_axis_rotation_from_facing_vector(
+            (-math.cos(angle), -math.sin(angle)),
+            reference_rot_deg=0.0,
+        )
+        targets.append(
+            TableTarget(
+                table_id=table.table_id,
+                target_x=center[0] + math.cos(angle) * radius,
+                target_y=center[1] + math.sin(angle) * radius,
+                source_rot_deg=table.rot_deg,
+                target_rot_deg=rotation,
+                facing_target_x=center[0],
+                facing_target_y=center[1],
+            )
+        )
+    return targets
+
+
+def _rect_discussion_singleton_clearances_valid(
+    scene_state: SceneState,
+    targets: list[TableTarget],
+) -> bool:
+    """Require complete Discussion zones in the ROI and clear of other tables."""
+
+    from aisi.analysis.rect_groupwork_adaptive_prototype import singleton_long_side_clearance_regions
+
+    tables_by_id = {table.table_id: table for table in scene_state.tables}
+    footprints = {
+        target.table_id: table_world_footprint(
+            tables_by_id[target.table_id],
+            (target.target_x, target.target_y),
+            target.target_rot_deg,
+        )
+        for target in targets
+    }
+    for target in targets:
+        regions = singleton_long_side_clearance_regions(
+            target,
+            tables_by_id[target.table_id],
+            clearance_depth_cm=DISCUSSION_SEAT_CLEARANCE_DEPTH_CM,
+        )
+        for region in regions:
+            if not polygon_inside_roi(
+                region,
+                x_min=scene_state.roi.x_min,
+                y_min=scene_state.roi.y_min,
+                x_max=scene_state.roi.x_max,
+                y_max=scene_state.roi.y_max,
+            ):
+                return False
+            if any(
+                convex_polygons_intersect(region, footprint)
+                for table_id, footprint in footprints.items()
+                if table_id != target.table_id
+            ):
+                return False
+    return True
+
+
 def _rect_discussion_radius(
     scene_state: SceneState,
     tables: list[TableState],
@@ -399,7 +703,6 @@ def _rect_discussion_radius(
         chord_factor = 2.0 * math.sin(math.pi / count)
         radius = max(radius, required / max(1e-6, chord_factor))
 
-    radius += INPUT_TABLE_GAP_CM
     max_radius = math.inf
     for table, angle, rotation_deg in zip(tables, angles, rotations):
         x_min, y_min, x_max, y_max = table_allowed_center_bounds(

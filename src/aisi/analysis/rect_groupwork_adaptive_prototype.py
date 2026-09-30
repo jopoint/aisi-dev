@@ -438,23 +438,25 @@ def _clearance_regions_for_group(
 ) -> tuple[tuple[tuple[float, float], ...], ...]:
     """Return singleton long-side strips or a rounded pair ellipse."""
     if len(targets) == 1:
-        return _singleton_long_side_regions(targets[0], tables_by_id[targets[0].table_id])
+        return singleton_long_side_clearance_regions(targets[0], tables_by_id[targets[0].table_id])
     return (_pair_clearance_ellipse(targets, tables_by_id),)
 
 
-def _singleton_long_side_regions(
+def singleton_long_side_clearance_regions(
     target: TableTarget,
     table: TableState,
+    *,
+    clearance_depth_cm: float = SEAT_CLEARANCE_DEPTH_CM,
 ) -> tuple[tuple[tuple[float, float], ...], tuple[tuple[float, float], ...]]:
     """Return two full-width strips with rounded table-distant corners."""
     geometry = resolve_table_state_geometry(table)
     short_axis = _rotation_to_short_axis(target.target_rot_deg)
-    offset = table_support_distance(table, target.target_rot_deg, short_axis) + SEAT_CLEARANCE_DEPTH_CM * 0.5
+    offset = table_support_distance(table, target.target_rot_deg, short_axis) + clearance_depth_cm * 0.5
     return tuple(
         transform_local_footprint(
             _rounded_outer_singleton_strip(
                 geometry.nominal_width,
-                SEAT_CLEARANCE_DEPTH_CM,
+                clearance_depth_cm,
                 outer_direction=direction,
             ),
             target.target_x + direction * short_axis[0] * offset,
@@ -463,6 +465,11 @@ def _singleton_long_side_regions(
         )
         for direction in (-1.0, 1.0)
     )
+
+
+# Compatibility alias for existing analysis scripts.  Product code should use
+# the descriptive shared helper above and pass an explicit depth where needed.
+_singleton_long_side_regions = singleton_long_side_clearance_regions
 
 
 def _rounded_outer_singleton_strip(

@@ -136,9 +136,9 @@ Status: **Accepted**
   Simulationsadapter und lokalen OSC-Ausgang geprüft. Der Room Editor konnte
   in der vorliegenden Automationsumgebung nicht offen gehalten werden und
   bleibt als manuelle GUI-Prüfung offen.
-- Die Simulationspipeline verwendet fest `100 %` Transformationsstärke. Der
-  frühere Strength-Regler ist weder Teil des Learning-Format-Interfaces noch
-  der gespeicherten Simulationssteuerung.
+- Das Learning-Format-Interface speichert wieder eine Umbauintensität von
+  `0–100 %`; der OSC-Sender übergibt sie unverändert an die Layoutsynthese.
+  Neue oder ältere State-Dateien ohne Wert starten kompatibel bei `100 %`.
 - Erst nach diesen Einzelprüfungen folgt ein kurzer gemeinsamer Durchlauf für
   Formatwechsel, Scene Order, vollständige Layoutvorschläge und gemeinsame
   OSC-Schnittstellen.
@@ -147,9 +147,28 @@ Status: **Accepted**
 
 Status: **Accepted**
 
-- Discussion uses a centered inward-facing ring.
-- Global ring rotation is semantically unimportant.
-- Deterministic source angular order stabilizes binding and partial-strength paths.
+- Discussion verwendet einen zentrierten, nach innen gerichteten Ring.
+- Die absolute globale Ringrotation ist semantisch nicht relevant.
+- Die deterministische Winkelreihenfolge der Source stabilisiert die
+  Slotbindung und Teilbewegungspfade.
+- Die freie globale Ringrotation wird für Counts 2–4 kontinuierlich so gewählt,
+  dass die größte, dann die gesamte Tischbewegung minimal wird. Für Count 5
+  gilt dieselbe Reihenfolge innerhalb der clearance-zulässigen Phasen. Die
+  kreuzungsfreie Winkelreihenfolge der Source bleibt dabei erhalten.
+- Jeder Rect-Discussion-Tisch erhält die beidseitigen, an den Außenkanten
+  abgerundeten Längsseiten-Sitz-/Bewegungsflächen aus Groupwork, jedoch mit
+  einer Tiefe von `50 cm` (Groupwork bleibt bei `60 cm`). Diese Flächen müssen
+  im fertigen `100-%`-Ziel vollständig im ROI liegen und dürfen dort keinen
+  anderen Tisch blockieren. Zwischenstände der Umbauintensität bleiben die
+  sichtbare Source/Target-Interpolation mit Kollisions-/ROI-Reparatur.
+- Für Count 5 darf der gemeinsame Mittelpunkt geringfügig von der ROI-Mitte
+  abweichen, damit der zentrische Ring samt vollständigen Flächen passt.
+- Die virtuelle Prüfung der Counts 1–5 am 2026-09-29 bestätigt
+  Überlappungsfreiheit, ROI-Einhaltung und die gemeinsame Mitte. Die physische
+  Raumprüfung bleibt offen.
+- Die Einzelprüfung über Room Editor, Learning-Format-Interface, OSC-Sender
+  und TouchDesigner-Simulation wurde am 2026-09-30 akzeptiert. Eine physische
+  Raumprüfung ist damit ausdrücklich noch nicht ersetzt.
 
 ## D010 — Scout Groupwork semantics
 
