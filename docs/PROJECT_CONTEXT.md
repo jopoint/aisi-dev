@@ -124,6 +124,20 @@ Key files:
 - `src/aisi/app/study_logging.py`
 - `src/aisi/analysis/study_metrics.py`
 
+Die aktive Definition `pilot_v7` übernimmt T1–T4 unverändert aus `pilot_v6`
+und ergänzt davor eine nicht-experimentelle Familiarization. Sie verwendet
+einen Rect-Tisch von `(160, 250, 0°)` nach `(260, 250, 25°)` und einen neutralen
+Teilnehmerstart bei `(250, 440)`. Der Controller-Ablauf lautet
+`HOME → FAMILIARIZATION → READY_FOR_STUDY → EXPERIMENTAL`. Familiarization ist
+direkt als TASK auswählbar und besitzt keine separate Workflow-Zeile oder
+eigene Reset-/Finish-Schaltflächen. Während der Übung kann die Versuchsleitung
+bei identischer Geometrie zwischen `FLOOR_ONLY` und `DUAL_SURFACE` wechseln.
+Die Auswahl von T1–T4 beendet die Übung und lädt den gewählten Trial, startet
+ihn aber nicht. Erst danach kann der Trial separat gestartet werden.
+Practice-Ereignisse erhöhen weder Run- noch Attempt-Zähler und sind durch
+`is_practice=true`, `trial_role=PRACTICE` sowie
+`task_id=FAMILIARIZATION` automatisch aus `study_metrics` ausgeschlossen.
+
 ### Vision/tracking path
 
 Current code is primarily under `src/vision/`; earlier sensing/replay infrastructure remains under `src/aisi_sensing/`.
@@ -302,9 +316,11 @@ physische Raumwirkung oder Projektorkalibrierung.
 
 Repository-confirmed:
 
-- `trials.json` version: `pilot_v6`;
+- `trials.json` version: `pilot_v7`;
 - status: `frozen_for_study`;
-- `trials_pilot_v6.json` is the matching frozen snapshot;
+- `trials_pilot_v7.json` is the matching frozen snapshot;
+- T1–T4 geometry is unchanged from `pilot_v6`; `pilot_v7` adds only the
+  non-experimental Familiarization;
 - eight trials: T1–T4 × A/B;
 - T1/T2 use one active table and no distractors;
 - T3/T4 use one active table and two static distractor tables;

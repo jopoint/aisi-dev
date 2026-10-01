@@ -15,9 +15,11 @@ from aisi.app.study_control import (
     StudyState,
     StudyStateController,
     StudyStatePublisher,
+    StudyWorkflow,
     apply_selected_trial,
 )
 from aisi.app.study_trials import (
+    FamiliarizationSpec,
     ParticipantStartSpec,
     PoseSpec,
     StudyTask,
@@ -245,6 +247,72 @@ class StudyControlTests(unittest.TestCase):
         self.assertTrue(self.controller.ready())
         self.assertEqual(self.controller.state.phase, StudyPhase.READY)
         self.assertNotIn('("Ready",', inspect.getsource(StudyControlUi))
+
+    def test_familiarization_is_a_task_choice_without_separate_workflow_controls(self) -> None:
+        source = inspect.getsource(StudyControlUi)
+        self.assertIn('("Familiarization", "FAMILIARIZATION")', source)
+        self.assertNotIn("Enter Familiarization", source)
+        self.assertNotIn("Reset Practice", source)
+        self.assertNotIn("Finish Familiarization", source)
+
+    def test_familiarization_reuses_geometry_while_condition_switches(self) -> None:
+        logger = _RecordingLogger()
+        familiarization = FamiliarizationSpec(
+            source_pose=PoseSpec(160.0, 250.0, 0.0),
+            target_pose=PoseSpec(260.0, 250.0, 25.0),
+            participant_start=ParticipantStartSpec("P1", 250.0, 440.0),
+        )
+        controller = StudyStateController(
+            StudyStatePublisher(self.client), event_logger=logger, familiarization=familiarization
+        )
+        controller.set_participant_id("P001")
+        self.assertTrue(controller.enter_familiarization())
+        geometry = (
+            controller.state.source_x, controller.state.source_y, controller.state.source_rot,
+            controller.state.target_x, controller.state.target_y, controller.state.target_rot,
+        )
+        self.assertEqual(controller.workflow, StudyWorkflow.FAMILIARIZATION)
+        self.assertEqual((controller.state.mode, controller.state.phase), (StudyMode.STUDY, StudyPhase.ACTIVE))
+        self.assertEqual(controller.state.condition, StudyCondition.FLOOR_ONLY)
+        self.assertTrue(controller.set_condition(StudyCondition.DUAL_SURFACE))
+        self.assertTrue(controller.set_condition(StudyCondition.FLOOR_ONLY))
+        self.assertEqual(geometry, (
+            controller.state.source_x, controller.state.source_y, controller.state.source_rot,
+            controller.state.target_x, controller.state.target_y, controller.state.target_rot,
+        ))
+        self.assertEqual((controller.run_index, controller.attempt), (0, 0))
+        practice_events = [event for event in logger.events if event.get("is_practice")]
+        self.assertTrue(practice_events)
+        self.assertTrue(all(event["task_id"] == "FAMILIARIZATION" for event in practice_events))
+        self.assertTrue(all(event["trial_role"] == "PRACTICE" for event in practice_events))
+
+    def test_finishing_familiarization_stops_at_ready_for_study_without_counting(self) -> None:
+        logger = _RecordingLogger()
+        familiarization = FamiliarizationSpec(
+            source_pose=PoseSpec(160.0, 250.0, 0.0),
+            target_pose=PoseSpec(260.0, 250.0, 25.0),
+            participant_start=ParticipantStartSpec("P1", 250.0, 440.0),
+        )
+        controller = StudyStateController(
+            StudyStatePublisher(self.client), event_logger=logger, familiarization=familiarization
+        )
+        controller.set_participant_id("P001")
+        self.assertFalse(controller.start_trial())
+        controller.enter_familiarization()
+        self.assertTrue(controller.finish_familiarization())
+        self.assertEqual(controller.workflow, StudyWorkflow.READY_FOR_STUDY)
+        self.assertEqual(controller.state.phase, StudyPhase.READY)
+        self.assertEqual((controller.run_index, controller.attempt), (0, 0))
+        finished = next(event for event in logger.events if event["event_type"] == "familiarization_finished")
+        self.assertEqual((finished["task_id"], finished["trial_role"], finished["is_practice"]), ("FAMILIARIZATION", "PRACTICE", True))
+        self.assertFalse(controller.start_trial())
+        controller.apply_trial(TrialSpec(
+            StudyTask.T1, StudyVariant.A, 427.0, 283.0, 95.0,
+            source_pose=PoseSpec(73.0, 204.0, -100.0),
+        ))
+        self.assertTrue(controller.start_trial())
+        self.assertEqual(controller.workflow, StudyWorkflow.EXPERIMENTAL)
+        self.assertEqual((controller.run_index, controller.attempt), (1, 1))
 
     def test_trial_transitions_record_timestamps_and_active_pose(self) -> None:
         logger = _RecordingLogger()

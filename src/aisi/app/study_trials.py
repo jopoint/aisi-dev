@@ -71,6 +71,19 @@ class TrialSpec:
     notes: str | None = None
 
 
+@dataclass(frozen=True)
+class FamiliarizationSpec:
+    """One non-experimental Rect transformation shown before Block 1."""
+
+    source_pose: PoseSpec
+    target_pose: PoseSpec
+    participant_start: ParticipantStartSpec
+    table_type: str = "rect"
+    table_length_cm: float = 160.0
+    table_width_cm: float = 80.0
+    notes: str | None = None
+
+
 def _finite_number(value: object, field: str) -> float:
     if isinstance(value, bool):
         raise ValueError(f"{field} must be numeric")
@@ -216,6 +229,60 @@ def load_trial_definitions(path: str | Path) -> dict[tuple[StudyTask, StudyVaria
             notes=notes,
         )
     return result
+
+
+def load_familiarization_definition(path: str | Path) -> FamiliarizationSpec:
+    """Load the explicit non-experimental familiarization configuration."""
+
+    source = Path(path)
+    try:
+        with source.open("r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError(f"Unable to load familiarization definition {source}: {error}") from error
+    if not isinstance(payload, dict) or payload.get("schema_version") != 1:
+        raise ValueError("Familiarization definition requires schema_version=1")
+    record = payload.get("familiarization")
+    if not isinstance(record, dict):
+        raise ValueError("Trial definitions must contain a familiarization object")
+    table_type = record.get("table_type")
+    if table_type != "rect":
+        raise ValueError("familiarization.table_type must be rect")
+    table_size = record.get("table_size_cm")
+    if not isinstance(table_size, dict):
+        raise ValueError("familiarization.table_size_cm must be an object")
+    length_cm = _finite_number(table_size.get("length"), "familiarization.table_size_cm.length")
+    width_cm = _finite_number(table_size.get("width"), "familiarization.table_size_cm.width")
+    if (length_cm, width_cm) != (160.0, 80.0):
+        raise ValueError("familiarization Rect size must be exactly 160 x 80 cm")
+    participant = record.get("participant_start")
+    if not isinstance(participant, dict):
+        raise ValueError("familiarization.participant_start must be an object")
+    participant_id = participant.get("id")
+    if not isinstance(participant_id, str) or not participant_id:
+        raise ValueError("familiarization.participant_start.id must be a non-empty string")
+    radius_cm = _finite_number(
+        participant.get("radius_cm", 40.0), "familiarization.participant_start.radius_cm"
+    )
+    if radius_cm <= 0:
+        raise ValueError("familiarization.participant_start.radius_cm must be positive")
+    notes = record.get("notes")
+    if notes is not None and not isinstance(notes, str):
+        raise ValueError("familiarization.notes must be a string when present")
+    return FamiliarizationSpec(
+        source_pose=_pose(record.get("source_pose"), "familiarization.source_pose"),
+        target_pose=_pose(record.get("target_pose"), "familiarization.target_pose"),
+        participant_start=ParticipantStartSpec(
+            participant_id=participant_id,
+            x_cm=_finite_number(participant.get("x_cm"), "familiarization.participant_start.x_cm"),
+            y_cm=_finite_number(participant.get("y_cm"), "familiarization.participant_start.y_cm"),
+            radius_cm=radius_cm,
+        ),
+        table_type=table_type,
+        table_length_cm=length_cm,
+        table_width_cm=width_cm,
+        notes=notes,
+    )
 
 
 def trial_definition_metadata(path: str | Path) -> dict[str, str]:

@@ -231,8 +231,10 @@ Status: **Frozen for current pilot**
 
 Status: **Frozen**
 
-- Active trial definition: `pilot_v6`.
-- Matching snapshot: `trials_pilot_v6.json`.
+- Active trial definition: `pilot_v7`.
+- Matching snapshot: `trials_pilot_v7.json`.
+- T1–T4 einschließlich A/B-Geometrie sind byte-inhaltlich aus `pilot_v6`
+  übernommen; `pilot_v7` ergänzt nur die Familiarization-Konfiguration.
 - Any geometry change creates a new named snapshot before replacing `trials.json`.
 - Session metadata records the active definition SHA-256.
 
@@ -262,6 +264,26 @@ Status: **Frozen for current implementation**
 - rotation error threshold: `≤ 5°`;
 - confirmation requires `0.5 s` continuously inside tolerance;
 - objective arrival and participant-declared completion are distinct events.
+
+## D019a — Familiarization vor der Study
+
+Status: **Frozen for current pilot**
+
+- Vor Block 1 liegt eine zeitlich offene Familiarization mit genau einem
+  Rect-Tisch.
+- Source ist `(160, 250, 0°)`, Target ist `(260, 250, 25°)`, der neutrale
+  Teilnehmerstart ist `(250, 440)` mit `40 cm` Radius.
+- `FLOOR_ONLY` und `DUAL_SURFACE` verwenden exakt dieselbe Geometrie und die
+  vorhandenen Study-Visualisierungsregeln; ein Live-Wechsel in beide Richtungen
+  ist erlaubt.
+- Practice zählt nicht als T1–T4, erhöht `run_index` und `attempt` nicht und
+  erscheint nicht in `study_metrics`.
+- Rohdiagnostik bleibt zulässig, ist aber mit `study_workflow=FAMILIARIZATION`,
+  `trial_role=PRACTICE`, `is_practice=true` und
+  `task_id=FAMILIARIZATION` markiert.
+- Familiarization ist eine TASK-Auswahl ohne eigene Workflow-, Reset- oder
+  Finish-Schaltflächen. Die Auswahl von T1–T4 führt zu `READY_FOR_STUDY`, lädt
+  den Trial und startet ihn nicht; der Start bleibt separat.
 
 ## D020 — Study outcome hierarchy
 

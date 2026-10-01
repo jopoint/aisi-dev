@@ -95,7 +95,16 @@ Ausgangsgeometrie. Ihre Plots bleiben nur als negative Regression-Cases erhalten
 
 ## P0 — Pilot/Study readiness review
 
-- [ ] Physically run all eight `pilot_v6` trials in both conditions.
+- [x] Eine nicht-experimentelle Familiarization vor Block 1 ergänzen: ein
+  Rect-Tisch, identische Geometrie für Floor-only und Dual-surface, direkte
+  Auswahl in der TASK-Zeile ohne eigene Practice-Schaltflächen, keine
+  Trial-Zählung und automatischer Ausschluss aus
+  `study_metrics` (`pilot_v7`; T1–T4 unverändert aus `pilot_v6`).
+- [ ] Familiarization im autoritativen TouchDesigner-Projekt und im physischen
+  Raum prüfen, einschließlich Live-Wechsel beider Visualisierungsmodi.
+
+- [ ] Physically run all eight `pilot_v7` trials in both conditions (T1–T4
+  geometry unchanged from `pilot_v6`).
 - [ ] Verify HOME, READY, ACTIVE, and COMPLETE transitions in the authoritative TouchDesigner project.
 - [ ] Verify floor-only and dual-surface visuals match the written method description.
 - [ ] Verify active-table binding and distractor binding for T3/T4 under real tracking.
@@ -180,6 +189,7 @@ Do not install optional dependencies merely to expand test scope.
 - [x] Rect-Singletons erhalten zwei volle, ausschließlich an den Längsseiten
   liegende `60 cm`-Sitz-/Bewegungsstreifen; Pairs erhalten eine elliptische
   `60 cm`-Clearance um die gemeinsame Gruppe. Alle Flächen liegen in der ROI.
-- [ ] Is `pilot_v6` ready for data collection, or still a pre-pilot geometry?
+- [ ] Is `pilot_v7` ready for data collection, or still a pre-pilot
+  configuration? (T1–T4 geometry remains `pilot_v6`.)
 - [ ] Which measures are formally primary versus exploratory?
 - [x] Commit the finalized Rect Input block before Groupwork implementation starts (`5141e77`).
