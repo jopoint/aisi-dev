@@ -1,12 +1,35 @@
 # Study trial versions
 
-`trials.json` is the active Study geometry. `trials_pilot_v1.json` and
-`trials_pilot_v2.json`, `trials_pilot_v3.json`, `trials_pilot_v4.json`, and
-`trials_pilot_v5.json` preserve earlier frozen layouts; `trials_pilot_v6.json`
-is the current frozen T1-T4 Study snapshot with task-specific A/B
-counterbalancing. Any later geometry change must first create a new named
-snapshot before replacing the active definition. Study session-start metadata
-records the SHA-256 of the active trial-definition file.
+`trials.json` enthält die aktive Study-Konfiguration. Die Dateien
+`trials_pilot_v1.json` bis `trials_pilot_v6.json` bewahren frühere eingefrorene
+Stände. `trials_pilot_v7.json` ist der aktuelle Snapshot: Die T1–T4-Geometrie
+ist unverändert aus `pilot_v6` übernommen, ergänzt wurde ausschließlich die
+nicht-experimentelle Familiarization. Jede spätere Geometrieänderung erhält
+vor dem Austausch der aktiven Definition einen neuen benannten Snapshot. Die
+Session-Metadaten protokollieren den SHA-256 der aktiven Definition.
+
+## Familiarization vor Block 1
+
+Der Ablauf lautet `HOME → FAMILIARIZATION → READY FOR STUDY → Study`. Die
+Familiarization verwendet genau einen Rect-Tisch (`160 × 80 cm`) ohne
+Stör-/Statiktische:
+
+- Source: `(160, 250) cm`, Rotation `0°`;
+- Target: `(260, 250) cm`, Rotation `25°`;
+- neutraler Teilnehmerstart: `(250, 440) cm`, Radius `40 cm`.
+
+Die Verschiebung beträgt exakt `100 cm`. `Familiarization` steht als eigene
+Auswahl in der TASK-Zeile und zeigt dieselbe Geometrie zunächst in
+`FLOOR_ONLY`; anschließend kann die Versuchsleitung beliebig zwischen
+`FLOOR_ONLY` und `DUAL_SURFACE` wechseln. Weitere eigene Practice-Schaltflächen
+gibt es nicht. Die Person darf den Tisch bewegen und Fragen stellen; es gibt
+kein Zeitlimit und keinen Fragebogen. Die Auswahl von T1–T4 beendet die Übung,
+lädt den gewählten Trial, startet ihn aber nicht automatisch.
+
+Alle Rohereignisse der Übung tragen `study_workflow=FAMILIARIZATION`,
+`trial_role=PRACTICE`, `is_practice=true` und
+`task_id=FAMILIARIZATION`. Sie erhöhen weder `run_index` noch `attempt` und
+werden von `study_metrics` automatisch ausgeschlossen.
 
 ## A/B viewpoint transformation
 

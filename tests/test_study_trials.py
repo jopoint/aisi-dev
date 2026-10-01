@@ -6,7 +6,13 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from aisi.app.study_trials import StudyTask, StudyVariant, load_trial_definitions, trial_definition_metadata
+from aisi.app.study_trials import (
+    StudyTask,
+    StudyVariant,
+    load_familiarization_definition,
+    load_trial_definitions,
+    trial_definition_metadata,
+)
 from aisi.core.table_geometry import convex_polygons_intersect, polygon_inside_roi, world_footprint
 
 
@@ -44,6 +50,23 @@ class StudyTrialTests(unittest.TestCase):
         self.assertEqual([int(task) for task in StudyTask], [1, 2, 3, 4])
         self.assertEqual((int(StudyVariant.A), int(StudyVariant.B)), (0, 1))
 
+    def test_familiarization_config_loads_one_rect_with_explicit_geometry(self) -> None:
+        path = Path(__file__).resolve().parents[1] / "data" / "aisi" / "study" / "trials.json"
+        familiarization = load_familiarization_definition(path)
+        self.assertEqual((familiarization.table_type, familiarization.table_length_cm, familiarization.table_width_cm), ("rect", 160.0, 80.0))
+        self.assertEqual((familiarization.source_pose.x_cm, familiarization.source_pose.y_cm, familiarization.source_pose.rotation_deg), (160.0, 250.0, 0.0))
+        self.assertEqual((familiarization.target_pose.x_cm, familiarization.target_pose.y_cm, familiarization.target_pose.rotation_deg), (260.0, 250.0, 25.0))
+        self.assertEqual((familiarization.participant_start.x_cm, familiarization.participant_start.y_cm), (250.0, 440.0))
+        self.assertAlmostEqual(
+            math.hypot(
+                familiarization.target_pose.x_cm - familiarization.source_pose.x_cm,
+                familiarization.target_pose.y_cm - familiarization.source_pose.y_cm,
+            ),
+            100.0,
+        )
+        for pose in (familiarization.source_pose, familiarization.target_pose):
+            self.assertTrue(polygon_inside_roi(world_footprint("rect", pose.x_cm, pose.y_cm, pose.rotation_deg)))
+
     def test_confirmed_layouts_include_every_t1_to_t4_variant(self) -> None:
         path = Path(__file__).resolve().parents[1] / "data" / "aisi" / "study" / "trials.json"
         trials = load_trial_definitions(path)
@@ -60,7 +83,7 @@ class StudyTrialTests(unittest.TestCase):
             (234.84473024735843, 404.1752983481141, -91.7400727688127),
         )
 
-    def test_pilot_v1_through_v6_snapshots_preserve_their_respective_frozen_layouts(self) -> None:
+    def test_pilot_v1_through_v7_snapshots_preserve_their_respective_frozen_layouts(self) -> None:
         study_directory = Path(__file__).resolve().parents[1] / "data" / "aisi" / "study"
         active_path = study_directory / "trials.json"
         prior_snapshot_path = study_directory / "trials_pilot_v1.json"
@@ -68,12 +91,14 @@ class StudyTrialTests(unittest.TestCase):
         current_snapshot_path = study_directory / "trials_pilot_v3.json"
         final_snapshot_path = study_directory / "trials_pilot_v4.json"
         prior_final_snapshot_path = study_directory / "trials_pilot_v5.json"
-        newest_snapshot_path = study_directory / "trials_pilot_v6.json"
+        prior_newest_snapshot_path = study_directory / "trials_pilot_v6.json"
+        newest_snapshot_path = study_directory / "trials_pilot_v7.json"
         self.assertTrue(prior_snapshot_path.is_file())
         self.assertTrue(snapshot_path.is_file())
         self.assertTrue(current_snapshot_path.is_file())
         self.assertTrue(final_snapshot_path.is_file())
         self.assertTrue(prior_final_snapshot_path.is_file())
+        self.assertTrue(prior_newest_snapshot_path.is_file())
         self.assertTrue(newest_snapshot_path.is_file())
         active_payload = json.loads(active_path.read_text(encoding="utf-8"))
         prior_snapshot_payload = json.loads(prior_snapshot_path.read_text(encoding="utf-8"))
@@ -83,12 +108,13 @@ class StudyTrialTests(unittest.TestCase):
         prior_final_snapshot_payload = json.loads(prior_final_snapshot_path.read_text(encoding="utf-8"))
         newest_snapshot_payload = json.loads(newest_snapshot_path.read_text(encoding="utf-8"))
         expected_active_metadata = {
-            "version": "pilot_v6",
+            "version": "pilot_v7",
             "status": "frozen_for_study",
-            "description": "Frozen final T1-T4 geometry with task-specific A/B counterbalancing",
+            "description": "Frozen pilot_v6 T1-T4 geometry plus non-experimental familiarization",
         }
         self.assertEqual({key: active_payload.get(key) for key in expected_active_metadata}, expected_active_metadata)
         self.assertEqual({key: newest_snapshot_payload.get(key) for key in expected_active_metadata}, expected_active_metadata)
+        self.assertEqual(json.loads(prior_newest_snapshot_path.read_text(encoding="utf-8"))["version"], "pilot_v6")
         self.assertEqual(prior_final_snapshot_payload["version"], "pilot_v5")
         self.assertEqual(final_snapshot_payload["version"], "pilot_v4")
         self.assertEqual(current_snapshot_payload["version"], "pilot_v3")

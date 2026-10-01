@@ -104,6 +104,21 @@ class StudyMetricTests(unittest.TestCase):
         path.write_text(json.dumps(_event("trial_started", 0)) + "\n" + json.dumps(_event("active_pose_sample", 1, pose=(20, 0, 0))), encoding="utf-8")
         self.assertEqual(analyze_log(path), [])
 
+    def test_familiarization_is_excluded_even_if_raw_events_resemble_a_trial(self) -> None:
+        directory = tempfile.TemporaryDirectory(); self.addCleanup(directory.cleanup)
+        path = Path(directory.name) / "practice_then_study.jsonl"
+        events = [
+            _event("trial_started", 0, task_id="FAMILIARIZATION", trial_role="PRACTICE", is_practice=True),
+            _event("active_pose_sample", 1, pose=(50, 0, 10), task_id="FAMILIARIZATION", trial_role="PRACTICE", is_practice=True),
+            _event("trial_completed", 2, pose=(100, 0, 25), task_id="FAMILIARIZATION", trial_role="PRACTICE", is_practice=True),
+            _event("trial_started", 3, run_index=1, attempt=1),
+            _event("trial_completed", 4, pose=(100, 0, 0), run_index=1, attempt=1),
+        ]
+        path.write_text("\n".join(json.dumps(event) for event in events), encoding="utf-8")
+        rows = analyze_log(path)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual((rows[0]["task_id"], rows[0]["run_index"], rows[0]["attempt"]), ("T1", 1, 1))
+
     def test_success_threshold_boundaries_and_csv_columns(self) -> None:
         row = self._analyze([_event("trial_started", 0, target=(0, 0, 0)), _event("trial_completed", 1, pose=(8, 0, 5), target=(0, 0, 0))])
         self.assertTrue(row["success"])

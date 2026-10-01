@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass, replace
-from enum import IntEnum
+from enum import Enum, IntEnum
 from pathlib import Path
 import time
 from typing import Any, Callable, Protocol
@@ -17,11 +17,13 @@ from aisi.app.study_tracking import (
     rect_rotation_difference_deg,
 )
 from aisi.app.study_trials import (
+    FamiliarizationSpec,
     ParticipantStartSpec,
     PoseSpec,
     StudyTask,
     StudyVariant,
     TrialSpec,
+    load_familiarization_definition,
     load_trial_definitions,
     trial_definition_metadata,
 )
@@ -70,6 +72,15 @@ class StudyPhase(IntEnum):
     READY = 1
     ACTIVE = 2
     COMPLETE = 3
+
+
+class StudyWorkflow(str, Enum):
+    """Operator workflow around the unchanged Study phase OSC contract."""
+
+    HOME = "HOME"
+    FAMILIARIZATION = "FAMILIARIZATION"
+    READY_FOR_STUDY = "READY_FOR_STUDY"
+    EXPERIMENTAL = "EXPERIMENTAL"
 
 
 @dataclass(frozen=True)
@@ -158,12 +169,25 @@ def apply_selected_trial(
 class StudyStateController:
     """Own Study state, trial transitions, and non-blocking event logging."""
 
-    def __init__(self, publisher: StudyStatePublisher, state: StudyState | None = None, *, event_logger: EventLogger | None = None, session_logger_factory: Callable[[], StudySessionLogger] | None = None, source_pose_provider: SourcePoseProvider | None = None, active_track_selector: StudyTableTrackSelector | None = None) -> None:
+    def __init__(
+        self,
+        publisher: StudyStatePublisher,
+        state: StudyState | None = None,
+        *,
+        event_logger: EventLogger | None = None,
+        session_logger_factory: Callable[[], StudySessionLogger] | None = None,
+        source_pose_provider: SourcePoseProvider | None = None,
+        active_track_selector: StudyTableTrackSelector | None = None,
+        familiarization: FamiliarizationSpec | None = None,
+    ) -> None:
         self._publisher = publisher
         self._event_logger = event_logger
         self._session_logger_factory = session_logger_factory
         self._active_track_selector = active_track_selector
         self._source_pose_provider = active_track_selector or source_pose_provider
+        self.familiarization = familiarization
+        self.workflow = StudyWorkflow.HOME if familiarization is not None else StudyWorkflow.EXPERIMENTAL
+        self._experimental_trial_loaded = familiarization is None
         self.state = state or StudyState()
         self.trial_started_at_iso: str | None = None
         self.trial_completed_at_iso: str | None = None
@@ -250,6 +274,8 @@ class StudyStateController:
         self._aborted_attempts = []
         self._conditions_run = set()
         self._variants_run = set()
+        self.workflow = StudyWorkflow.HOME if self.familiarization is not None else StudyWorkflow.EXPERIMENTAL
+        self._experimental_trial_loaded = self.familiarization is None
         if self._active_track_selector is not None:
             self._active_track_selector.clear(f"{self.state.task.name}{self.state.variant.name}")
         self.state = replace(self.state, phase=StudyPhase.HOME, active_track_id=None)
@@ -262,6 +288,12 @@ class StudyStateController:
             return False, "Study mode is not selected"
         if self.state.phase == StudyPhase.ACTIVE:
             return False, "trial is already ACTIVE"
+        if self.familiarization is not None and self.workflow == StudyWorkflow.HOME:
+            return False, "finish familiarization before starting the study"
+        if self.workflow == StudyWorkflow.FAMILIARIZATION:
+            return False, "finish familiarization before starting an experimental trial"
+        if self.familiarization is not None and not self._experimental_trial_loaded:
+            return False, "load the first experimental trial"
         if self._active_track_selector is not None:
             expected = len(self.state.setup_table_poses)
             actual = len(self._active_track_selector.bindings)
@@ -286,11 +318,88 @@ class StudyStateController:
     def set_condition(self, condition: StudyCondition) -> bool:
         return self._update(replace(self.state, condition=StudyCondition(condition)), "condition_changed")
 
+    def enter_familiarization(self) -> bool:
+        """Show the configured practice geometry through the normal Study visuals."""
+
+        if self.familiarization is None or self.workflow not in {
+            StudyWorkflow.HOME,
+            StudyWorkflow.FAMILIARIZATION,
+        }:
+            return False
+        if not self.participant_id:
+            self.start_block_reason = "participant ID missing"
+            return False
+        first_entry = self.workflow == StudyWorkflow.HOME
+        spec = self.familiarization
+        active_track_match = None
+        if self._active_track_selector is not None:
+            self._active_track_selector.clear(StudyWorkflow.FAMILIARIZATION.value)
+            active_track_match = self._active_track_selector.resolve_setup(
+                StudyWorkflow.FAMILIARIZATION.value, (spec.source_pose,)
+            ).get(0)
+        self.workflow = StudyWorkflow.FAMILIARIZATION
+        self._clear_trial_local_state()
+        updated = replace(
+            self.state,
+            mode=StudyMode.STUDY,
+            condition=(StudyCondition.FLOOR_ONLY if first_entry else self.state.condition),
+            phase=StudyPhase.ACTIVE,
+            source_x=spec.source_pose.x_cm,
+            source_y=spec.source_pose.y_cm,
+            source_rot=spec.source_pose.rotation_deg,
+            target_x=spec.target_pose.x_cm,
+            target_y=spec.target_pose.y_cm,
+            target_rot=spec.target_pose.rotation_deg,
+            setup_table_poses=(spec.source_pose,),
+            participant_start_positions=(spec.participant_start,),
+            active_track_id=(active_track_match.track.track_id if active_track_match is not None else None),
+        )
+        event_type = "familiarization_started" if first_entry else "familiarization_resumed"
+        changed = self._update(
+            updated,
+            event_type,
+            {
+                "practice_source_pose": _pose_spec_event(spec.source_pose),
+                "practice_target_pose": _pose_spec_event(spec.target_pose),
+                "practice_notes": spec.notes,
+                **_active_track_match_event_fields(active_track_match),
+            },
+        )
+        self.start_block_reason = "familiarization in progress"
+        return changed
+
+    def finish_familiarization(self) -> bool:
+        """End practice when an experimental task is selected."""
+
+        if self.workflow != StudyWorkflow.FAMILIARIZATION:
+            return False
+        self._close_open_tracking_loss("familiarization_finished")
+        changed = self._update(
+            replace(self.state, phase=StudyPhase.READY),
+            "familiarization_finished",
+            {"familiarization_finished_at_iso": _utc_iso_now()},
+        )
+        if not changed:
+            self._log_event(
+                "familiarization_finished",
+                {"familiarization_finished_at_iso": _utc_iso_now()},
+            )
+        self.workflow = StudyWorkflow.READY_FOR_STUDY
+        self._clear_trial_local_state()
+        self.start_block_reason = "ready for first experimental trial"
+        self._update_manifest({
+            "familiarization_status": "completed",
+            "familiarization_completed_at_iso": _utc_iso_now(),
+        })
+        return True
+
     def set_phase(self, phase: StudyPhase) -> bool:
         phase = StudyPhase(phase)
         return self._update(replace(self.state, phase=phase), {StudyPhase.HOME: "phase_home", StudyPhase.READY: "phase_ready", StudyPhase.ACTIVE: "trial_started", StudyPhase.COMPLETE: "trial_completed"}[phase])
 
     def home(self) -> bool:
+        if self.workflow == StudyWorkflow.FAMILIARIZATION:
+            return False
         phase_changed = self.set_phase(StudyPhase.HOME)
         # HOME is the physical setup phase. A trial may have been loaded
         # before the tables reached their nominal start poses, so resolve only
@@ -302,6 +411,9 @@ class StudyStateController:
 
     def reset_to_home(self) -> bool:
         """Return the current attempt to physical setup without discarding data."""
+
+        if self.workflow == StudyWorkflow.FAMILIARIZATION:
+            return False
 
         if self.state.phase == StudyPhase.ACTIVE:
             self.start_block_reason = "ABORT the ACTIVE attempt before resetting setup"
@@ -315,7 +427,7 @@ class StudyStateController:
         return changed
 
     def abort_trial(self, reason: str = "other") -> bool:
-        if self.state.phase != StudyPhase.ACTIVE:
+        if self.workflow == StudyWorkflow.FAMILIARIZATION or self.state.phase != StudyPhase.ACTIVE:
             return False
         source_pose = self._read_source_pose()
         self._close_open_tracking_loss("aborted")
@@ -329,6 +441,8 @@ class StudyStateController:
         return changed
 
     def ready(self) -> bool:
+        if self.workflow == StudyWorkflow.FAMILIARIZATION:
+            return False
         return self.set_phase(StudyPhase.READY)
 
     def start_trial(self) -> bool:
@@ -350,12 +464,14 @@ class StudyStateController:
         self._attempts_by_trial_identity[identity] = self.attempt
         self._clear_trial_local_state()
         self.trial_started_at_iso, self.trial_completed_at_iso = _utc_iso_now(), None
+        if self.familiarization is not None:
+            self.workflow = StudyWorkflow.EXPERIMENTAL
         return self._update(replace(self.state, phase=StudyPhase.ACTIVE), "trial_started", {"trial_started_at_iso": self.trial_started_at_iso})
 
     def complete_trial(self) -> bool:
         """Record participant-declared completion without requiring arrival."""
 
-        if self.state.phase != StudyPhase.ACTIVE:
+        if self.workflow == StudyWorkflow.FAMILIARIZATION or self.state.phase != StudyPhase.ACTIVE:
             return False
         self.trial_completed_at_iso = _utc_iso_now()
         source_pose = self._read_source_pose()
@@ -381,10 +497,14 @@ class StudyStateController:
         return self._update(replace(self.state, target_overlap=bool(target_overlap)))
 
     def set_target_pose(self, target_x: float, target_y: float, target_rot: float) -> bool:
+        if self.workflow == StudyWorkflow.FAMILIARIZATION:
+            return False
         return self._update(replace(self.state, target_x=float(target_x), target_y=float(target_y), target_rot=float(target_rot)), "target_changed")
 
     def set_source_pose(self, source_x: float, source_y: float, source_rot: float) -> bool:
         """Set the fixed, trial-owned HOME/READY reference pose only."""
+        if self.workflow == StudyWorkflow.FAMILIARIZATION:
+            return False
         return self._update(
             replace(self.state, source_x=float(source_x), source_y=float(source_y), source_rot=float(source_rot)),
             "start_pose_changed",
@@ -392,6 +512,9 @@ class StudyStateController:
 
     def apply_trial(self, trial: TrialSpec) -> bool:
         """Apply a selected fixed target without changing phase or timing."""
+        if self.workflow == StudyWorkflow.FAMILIARIZATION:
+            return False
+        self._experimental_trial_loaded = True
         updates: dict[str, Any] = {
             "task": trial.task,
             "variant": trial.variant,
@@ -440,7 +563,11 @@ class StudyStateController:
             return self._update(replace(self.state, active_track_id=None))
         if self.state.phase == StudyPhase.ACTIVE:
             return False
-        trial_id = f"{self.state.task.name}{self.state.variant.name}"
+        trial_id = (
+            StudyWorkflow.FAMILIARIZATION.value
+            if self.workflow == StudyWorkflow.FAMILIARIZATION
+            else f"{self.state.task.name}{self.state.variant.name}"
+        )
         matches = self._active_track_selector.resolve_setup(trial_id, self.state.setup_table_poses)
         live = self._active_track_selector.current_poses()
         updated = replace(self.state,
@@ -605,7 +732,18 @@ class StudyStateController:
         if source_pose is _UNSET:
             source_pose = self._read_source_pose()
         state = self.state
+        is_practice = self.workflow == StudyWorkflow.FAMILIARIZATION
         event: dict[str, Any] = {"event_type": event_type, "participant_id": self.participant_id, "session_id": self.session_id, "run_index": self.run_index, "attempt": self.attempt, "mode": int(state.mode), "condition": int(state.condition), "phase": int(state.phase), "task_id": state.task.name, "task": int(state.task), "variant": state.variant.name, "variant_id": int(state.variant), "active_track_id": state.active_track_id, "target_x_cm": state.target_x, "target_y_cm": state.target_y, "target_rotation_deg": state.target_rot, "source_pose": source_pose}
+        if is_practice:
+            event.update({
+                "study_workflow": StudyWorkflow.FAMILIARIZATION.value,
+                "trial_role": "PRACTICE",
+                "is_practice": True,
+                "task_id": "FAMILIARIZATION",
+                "task": None,
+                "variant": None,
+                "variant_id": None,
+            })
         if extra:
             event.update(extra)
         self._event_logger.log(event)
@@ -651,6 +789,14 @@ def _active_track_match_event_fields(match: Any) -> dict[str, Any]:
     }
 
 
+def _pose_spec_event(pose: PoseSpec) -> dict[str, float]:
+    return {
+        "x_cm": pose.x_cm,
+        "y_cm": pose.y_cm,
+        "rotation_deg": pose.rotation_deg,
+    }
+
+
 def _utc_iso_now() -> str:
     from datetime import datetime, timezone
     return datetime.now(timezone.utc).isoformat()
@@ -665,7 +811,12 @@ class StudyControlUi:
         self._controller, self._trials, self._tk = controller, trials, tk
         self.root = tk.Tk(); self.root.title("AISI Study Control"); self.root.resizable(False, False)
         self._mode = tk.IntVar(value=int(controller.state.mode)); self._condition = tk.IntVar(value=int(controller.state.condition))
-        self._task = tk.IntVar(value=int(controller.state.task)); self._variant = tk.IntVar(value=int(controller.state.variant))
+        initial_task = (
+            StudyWorkflow.FAMILIARIZATION.value
+            if controller.familiarization is not None and controller.workflow == StudyWorkflow.HOME
+            else controller.state.task.name
+        )
+        self._task = tk.StringVar(value=initial_task); self._variant = tk.IntVar(value=int(controller.state.variant))
         self._participant_id = tk.StringVar(value=controller.participant_id)
         self._target_x = tk.StringVar(value=str(controller.state.target_x)); self._target_y = tk.StringVar(value=str(controller.state.target_y)); self._target_rot = tk.StringVar(value=str(controller.state.target_rot)); self._summary = tk.StringVar()
         container = ttk.Frame(self.root, padding=12); container.grid(sticky="nsew")
@@ -673,10 +824,10 @@ class StudyControlUi:
         ttk.Entry(container, textvariable=self._participant_id, width=20).grid(row=0, column=1, sticky="w", pady=3)
         ttk.Button(container, text="Set", command=self._on_participant).grid(row=0, column=2, sticky="w", padx=4)
         self._add_radio_group(container, "MODE", self._mode, (("Tracking", StudyMode.TRACKING), ("Study", StudyMode.STUDY), ("AISI", StudyMode.AISI)), self._on_mode, 1)
-        self._add_radio_group(container, "TASK", self._task, (("T1", StudyTask.T1), ("T2", StudyTask.T2), ("T3", StudyTask.T3), ("T4", StudyTask.T4)), self._on_trial_selection, 2)
+        self._add_radio_group(container, "TASK", self._task, (("Familiarization", "FAMILIARIZATION"), ("T1", "T1"), ("T2", "T2"), ("T3", "T3"), ("T4", "T4")), self._on_task_selection, 2)
         self._add_radio_group(container, "VARIANT", self._variant, (("A", StudyVariant.A), ("B", StudyVariant.B)), self._on_trial_selection, 3)
         self._add_radio_group(container, "STUDY CONDITION", self._condition, (("Floor Only", StudyCondition.FLOOR_ONLY), ("Dual Surface", StudyCondition.DUAL_SURFACE)), self._on_condition, 4)
-        ttk.Label(container, text="PHASE").grid(row=5, column=0, sticky="w", padx=(0, 8), pady=3)
+        ttk.Label(container, text="TRIAL PHASE").grid(row=5, column=0, sticky="w", padx=(0, 8), pady=3)
         for column, (label, callback) in enumerate((("Home", self._on_home), ("Start", self._on_start), ("Complete", self._on_complete), ("Reset", self._on_reset), ("Abort", self._on_abort)), start=1):
             ttk.Button(container, text=label, command=callback).grid(row=5, column=column, sticky="w", padx=(0, 6), pady=3)
         ttk.Label(container, text="STUDY TARGET (cm / deg)").grid(row=6, column=0, sticky="w", padx=(0, 8), pady=3)
@@ -685,13 +836,18 @@ class StudyControlUi:
         ttk.Button(container, text="Set Target", command=self._on_target_pose).grid(row=8, column=0, sticky="w", pady=2)
         ttk.Separator(container, orient="horizontal").grid(row=9, column=0, columnspan=7, sticky="ew", pady=8); ttk.Label(container, textvariable=self._summary, justify="left").grid(row=10, column=0, columnspan=7, sticky="w")
         self._status = ""
-        self._on_trial_selection(); self._sample_active_pose()
+        if controller.familiarization is None:
+            self._on_trial_selection()
+        else:
+            self._on_task_selection()
+        self._sample_active_pose()
 
     def _add_radio_group(self, parent, title, variable, choices, command, row: int) -> None:
         from tkinter import ttk
         ttk.Label(parent, text=title).grid(row=row, column=0, sticky="w", padx=(0, 8), pady=3)
         for column, (label, value) in enumerate(choices, start=1):
-            ttk.Radiobutton(parent, text=label, variable=variable, value=int(value), command=command).grid(row=row, column=column, sticky="w", padx=(0, 8), pady=3)
+            radio_value = int(value) if isinstance(value, IntEnum) else value
+            ttk.Radiobutton(parent, text=label, variable=variable, value=radio_value, command=command).grid(row=row, column=column, sticky="w", padx=(0, 8), pady=3)
 
     def _on_mode(self) -> None: self._controller.set_mode(StudyMode(self._mode.get())); self._refresh_summary()
     def _on_participant(self) -> None:
@@ -709,8 +865,30 @@ class StudyControlUi:
             self._status = "Participant ID is required; unchanged IDs keep the current session."
         else:
             self._status = f"Participant {self._controller.participant_id} session started."
+            if self._task.get() == StudyWorkflow.FAMILIARIZATION.value:
+                self._on_task_selection()
+                return
         self._refresh_summary()
     def _on_condition(self) -> None: self._controller.set_condition(StudyCondition(self._condition.get())); self._refresh_summary()
+    def _on_task_selection(self) -> None:
+        if self._task.get() == StudyWorkflow.FAMILIARIZATION.value:
+            if self._controller.enter_familiarization():
+                self._mode.set(int(self._controller.state.mode))
+                self._condition.set(int(self._controller.state.condition))
+                self._target_x.set(str(self._controller.state.target_x))
+                self._target_y.set(str(self._controller.state.target_y))
+                self._target_rot.set(str(self._controller.state.target_rot))
+                self._status = "Familiarization loaded; switch Floor Only / Dual Surface as needed."
+            elif not self._controller.participant_id:
+                self._status = "Set the participant ID before selecting Familiarization."
+            else:
+                self._task.set(self._controller.state.task.name)
+                self._status = "Familiarization is only available before the first experimental trial."
+            self._refresh_summary()
+            return
+        if self._controller.workflow == StudyWorkflow.FAMILIARIZATION:
+            self._controller.finish_familiarization()
+        self._on_trial_selection()
     def _on_home(self) -> None: self._controller.home(); self._refresh_summary()
     def _on_start(self) -> None: self._controller.start_trial(); self._refresh_summary()
     def _on_complete(self) -> None: self._controller.complete_trial(); self._refresh_summary()
@@ -718,7 +896,14 @@ class StudyControlUi:
     def _on_abort(self) -> None: self._controller.abort_trial(); self._refresh_summary()
 
     def _on_trial_selection(self) -> None:
-        task, variant = StudyTask(self._task.get()), StudyVariant(self._variant.get())
+        if self._task.get() == StudyWorkflow.FAMILIARIZATION.value:
+            self._refresh_summary(); return
+        if self._controller.familiarization is not None and self._controller.workflow in {
+            StudyWorkflow.HOME, StudyWorkflow.FAMILIARIZATION,
+        }:
+            self._status = "Finish familiarization before loading an experimental trial."
+            self._refresh_summary(); return
+        task, variant = StudyTask[self._task.get()], StudyVariant(self._variant.get())
         trial = apply_selected_trial(self._controller, self._trials, task, variant)
         if trial is None:
             self._status = f"No definition for {task.name}/{variant.name}; current trial is unchanged."
@@ -739,7 +924,12 @@ class StudyControlUi:
         bindings = getattr(self._controller._active_track_selector, "bindings", {})
         arrival = "confirmed" if self._controller._arrival_confirmed else ("inside" if self._controller._arrival_entered_monotonic_s is not None else "outside/unavailable")
         allowed, reason = self._controller.can_start()
-        self._summary.set("Current values\n" + f"participant: {self._controller.participant_id or 'MISSING'}\n" + f"session: {self._controller.session_id or 'not started'}\n" + f"task: {state.task.name}, variant: {state.variant.name}, condition: {state.condition.name}\n" + f"phase: {state.phase.name}, attempt: {self._controller.attempt or 1}\n" + f"setup bindings: {len(bindings)}/{len(state.setup_table_poses)}; active: {state.active_track_id or 'unresolved'}\n" + f"tracking: {'lost' if self._controller._tracking_lost_monotonic_s is not None else 'available'}; objective arrival: {arrival}\n" + f"START: {'available' if allowed else reason}\n" + f"target: x={state.target_x:g} cm, y={state.target_y:g} cm, rot={state.target_rot:g} deg" + (f"\n{self._status}" if self._status else ""))
+        task_summary = (
+            f"task: FAMILIARIZATION, condition: {state.condition.name}"
+            if self._task.get() == StudyWorkflow.FAMILIARIZATION.value
+            else f"task: {state.task.name}, variant: {state.variant.name}, condition: {state.condition.name}"
+        )
+        self._summary.set("Current values\n" + f"participant: {self._controller.participant_id or 'MISSING'}\n" + f"session: {self._controller.session_id or 'not started'}\n" + task_summary + "\n" + f"phase: {state.phase.name}, attempt: {self._controller.attempt or '-'}\n" + f"setup bindings: {len(bindings)}/{len(state.setup_table_poses)}; active: {state.active_track_id or 'unresolved'}\n" + f"tracking: {'lost' if self._controller._tracking_lost_monotonic_s is not None else 'available'}; objective arrival: {arrival}\n" + f"START: {'available' if allowed else reason}\n" + f"target: x={state.target_x:g} cm, y={state.target_y:g} cm, rot={state.target_rot:g} deg" + (f"\n{self._status}" if self._status else ""))
 
     def run(self) -> None: self.root.mainloop()
 
@@ -758,6 +948,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     state = StudyState(mode=StudyMode(args.mode), condition=StudyCondition(args.condition), phase=StudyPhase(args.phase), task=StudyTask(args.task), variant=StudyVariant(args.variant), target_overlap=bool(args.target_overlap), target_x=args.target_x, target_y=args.target_y, target_rot=args.target_rot)
+    familiarization = load_familiarization_definition(args.trials)
     active_track_selector = StudyTableTrackSelector(
         args.source_scene,
         StudyTableTrackBindingStore(args.table_tracks_binding, StudyActiveTrackBindingStore(args.active_track_binding)),
@@ -767,7 +958,7 @@ def main() -> None:
         nonlocal requested_session_name
         session_name, requested_session_name = requested_session_name, None
         return StudySessionLogger(args.log_dir, session_id=session_name)
-    controller = StudyStateController(StudyStatePublisher(SimpleUDPClient(args.host, args.port)), state, session_logger_factory=create_session_logger, source_pose_provider=LiveSceneSourcePoseProvider(args.source_scene, args.source_table_id), active_track_selector=active_track_selector)
+    controller = StudyStateController(StudyStatePublisher(SimpleUDPClient(args.host, args.port)), state, session_logger_factory=create_session_logger, source_pose_provider=LiveSceneSourcePoseProvider(args.source_scene, args.source_table_id), active_track_selector=active_track_selector, familiarization=familiarization)
     try:
         controller.start_session(trial_definition_metadata(args.trials)); controller.set_participant_id(args.participant_id); controller.publish_current(); print(f"Study Control OSC target: {args.host}:{args.port}; task={state.task.name}/{state.variant.name}; log={args.log_dir}")
         if not args.no_ui: StudyControlUi(controller, load_trial_definitions(args.trials)).run()

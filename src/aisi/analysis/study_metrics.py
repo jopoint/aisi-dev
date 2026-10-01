@@ -71,6 +71,8 @@ def analyze_log(path: str | Path) -> list[dict[str, Any]]:
     legacy_run_index = 0
     legacy_attempts: dict[tuple[object, object, object], int] = {}
     for event in read_jsonl_events(source):
+        if _is_practice_event(event):
+            continue
         event_type = event.get("event_type")
         if event_type == "trial_started":
             legacy_run_index += 1
@@ -87,6 +89,17 @@ def analyze_log(path: str | Path) -> list[dict[str, Any]]:
                 records.append(_trial_metrics(source, active_trial, event, active_events, "completed" if event_type == "trial_completed" else "aborted"))
                 active_trial, active_events = None, []
     return records
+
+
+def _is_practice_event(event: dict[str, Any]) -> bool:
+    """Keep instructional activity out of experimental metrics by default."""
+
+    return (
+        event.get("is_practice") is True
+        or event.get("trial_role") in {"PRACTICE", "FAMILIARIZATION"}
+        or event.get("task_id") in {"PRACTICE", "FAMILIARIZATION"}
+        or event.get("study_workflow") == "FAMILIARIZATION"
+    )
 
 
 def analyze_logs(paths: Iterable[str | Path]) -> list[dict[str, Any]]:

@@ -1,8 +1,17 @@
 {
   "schema_version": 1,
-  "version": "pilot_v6",
+  "version": "pilot_v7",
   "status": "frozen_for_study",
-  "description": "Frozen final T1-T4 geometry with task-specific A/B counterbalancing",
+  "description": "Frozen pilot_v6 T1-T4 geometry plus non-experimental familiarization",
+  "familiarization": {
+    "label": "FAMILIARIZATION",
+    "table_type": "rect",
+    "table_size_cm": {"length": 160, "width": 80},
+    "source_pose": {"x_cm": 160, "y_cm": 250, "rotation_deg": 0},
+    "target_pose": {"x_cm": 260, "y_cm": 250, "rotation_deg": 25},
+    "participant_start": {"id": "P1", "x_cm": 250, "y_cm": 440, "radius_cm": 40},
+    "notes": "Instructional one-table practice only; no questionnaire, counterbalancing, or experimental analysis."
+  },
   "trials": [
     {
       "task_id": "T1", "variant": "A",
