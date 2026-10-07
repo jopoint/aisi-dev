@@ -6,6 +6,11 @@ Use this file to choose the next coherent task. Do not execute all items automat
 
 ## NOW — Participant-based Input / TouchDesigner integration
 
+**Einstieg für morgen — Source-Rotation im Rect Input (Johannes, 2026-10-07):**
+- [ ] Beobachtung aus der manuellen Stichprobe reproduzieren: Alle fünf Source-Tische stehen horizontal, die Zielkonturen dagegen vertikal. Die Source-Rotation wird aus Sicht von Johannes nicht ausreichend berücksichtigt.
+- [ ] Zunächst prüfen, ob die 90°-Drehung aus der Synthese oder der Darstellung kommt; Source-/Target-Winkel pro Tisch-ID durch Python → OSC → TD verfolgen. Anschließend untersuchen, wie die vorhandene Source-Orientierung bei geometrisch und semantisch gültigen Alternativen stärker erhalten werden kann.
+- [ ] ROI, Kapazität, Chairs und gerichtete Sitz-/Bewegungsflächen weiter gemeinsam absichern. Die bestandene Kollisionsprüfung belegt noch keine sinnvolle Rotationswahl. Heute keine Änderung der Layout-Logik; keine neue Orientierungsregel beschlossen.
+
 Neuer expliziter Auftrag: AISI-Zieltischkonturen müssen auf dem Floor
 erscheinen; AISI-Elemente sollen gestalterisch dem bestehenden Study-Modus
 entsprechen. Vorhandene AISI-Geometrien erweitern, keine parallele
