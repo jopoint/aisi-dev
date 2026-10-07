@@ -203,7 +203,7 @@ class TableGeometryTests(unittest.TestCase):
 
         new_type = cycle_table_type(table)
 
-        self.assertEqual(new_type, "sprint")
+        self.assertEqual(new_type, "summit")
         self.assertEqual(table["id"], "table_0")
         self.assertEqual(table["rotation_deg"], 37.0)
         self.assertEqual((table["x_cm"], table["y_cm"]), (250.0, 250.0))

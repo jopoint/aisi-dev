@@ -5,8 +5,15 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
 
-from aisi.app.learning_format_server import build_html, clamp_transformation_strength, default_state
-from aisi.app.sim_scene_to_osc import DEFAULT_TRANSFORMATION_STRENGTH, load_learning_settings
+from aisi.app.learning_format_server import (
+    build_html,
+    clamp_transformation_strength,
+    default_state,
+)
+from aisi.app.sim_scene_to_osc import (
+    DEFAULT_TRANSFORMATION_STRENGTH,
+    load_learning_settings,
+)
 
 
 class LearningFormatServerTests(unittest.TestCase):
@@ -36,3 +43,15 @@ class LearningFormatServerTests(unittest.TestCase):
                 encoding="utf-8",
             )
             self.assertEqual(load_learning_settings(path), ("groupwork", False, True, 0.0))
+
+    def test_activity_parameters_are_persisted_and_only_relevant_controls_are_rendered(self) -> None:
+        state = default_state()
+        self.assertEqual(state["participants"], 4)
+        self.assertEqual(state["number_of_groups"], 2)
+        self.assertFalse(state["adaptive_layout_preview"])
+        html = build_html("input", True, True, 1.0, participants=7, number_of_groups=3, presentation_side="north")
+        self.assertIn('name="participants"', html)
+        self.assertIn('name="number_of_groups"', html)
+        self.assertIn('name="presentation_side"', html)
+        self.assertIn('value="north" selected', html)
+        self.assertIn('name="adaptive_layout_preview"', html)

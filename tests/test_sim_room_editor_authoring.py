@@ -18,6 +18,13 @@ from aisi.core.table_geometry import get_table_geometry, polygon_inside_roi, wor
 
 
 class SimRoomEditorAuthoringTests(unittest.TestCase):
+    def test_default_editor_scene_has_five_rect_tables(self):
+        tables = make_default_tables()
+        self.assertEqual([table["id"] for table in tables], [f"table_{index}" for index in range(5)])
+        self.assertTrue(all(table["type"] == "rect" for table in tables))
+        for table in tables:
+            self.assertTrue(polygon_inside_roi(world_footprint("rect", table["x_cm"], table["y_cm"], table["rotation_deg"])))
+
     def test_coordinate_export_uses_editor_world_state_and_preserves_order(self):
         tables = [
             {"id": "table_00", "x_cm": 120.0, "y_cm": 450.0, "rotation_deg": 0.0},
@@ -56,7 +63,7 @@ class SimRoomEditorAuthoringTests(unittest.TestCase):
         table = make_added_table(tables)
 
         geometry = get_table_geometry("rect")
-        self.assertEqual(table["id"], "table_4")
+        self.assertEqual(table["id"], "table_5")
         self.assertEqual(table["type"], "rect")
         self.assertEqual(table["width_cm"], geometry.nominal_width)
         self.assertEqual(table["height_cm"], geometry.nominal_depth)
@@ -70,7 +77,7 @@ class SimRoomEditorAuthoringTests(unittest.TestCase):
         del chairs[1]
         del persons[1]
 
-        self.assertEqual(make_added_table(tables)["id"], "table_4")
+        self.assertEqual(make_added_table(tables)["id"], "table_5")
         self.assertEqual(make_added_circle_item(chairs, "chair", CHAIR_RADIUS_CM)["id"], "chair_4")
         self.assertEqual(make_added_circle_item(persons, "person", PERSON_RADIUS_CM)["id"], "person_4")
 
@@ -87,7 +94,7 @@ class SimRoomEditorAuthoringTests(unittest.TestCase):
 
         payload = scene_payload(tables, chairs, persons)
 
-        self.assertEqual([item["id"] for item in payload["tables"]], ["table_0", "table_2", "table_3", "table_4"])
+        self.assertEqual([item["id"] for item in payload["tables"]], ["table_0", "table_2", "table_3", "table_4", "table_5"])
         self.assertEqual([item["id"] for item in payload["chairs"]], ["chair_0", "chair_2", "chair_3", "chair_4"])
         self.assertEqual([item["id"] for item in payload["persons"]], ["person_0", "person_2", "person_3", "person_4"])
 
@@ -106,7 +113,8 @@ class SimRoomEditorAuthoringTests(unittest.TestCase):
 
                 editor.remove_selected()
 
-                expected_ids = [f"{kind}_{index}" for index in (0, 2, 3)]
+                expected_indices = (0, 2, 3, 4) if kind == "table" else (0, 2, 3)
+                expected_ids = [f"{kind}_{index}" for index in expected_indices]
                 items = getattr(editor, f"{kind}s" if kind != "person" else "persons")
                 self.assertEqual([item["id"] for item in items], expected_ids)
                 self.assertIsNone(editor.selected_kind)

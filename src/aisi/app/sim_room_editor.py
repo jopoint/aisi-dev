@@ -11,15 +11,9 @@ from __future__ import annotations
 import copy
 import json
 import os
-import platform
 import random
 import time
 from pathlib import Path
-
-if platform.system() == "Darwin":
-    import matplotlib
-
-    matplotlib.use("TkAgg")
 
 from aisi.core.table_geometry import (
     TABLE_TYPE_NAMES,
@@ -100,12 +94,13 @@ def make_default_table(table_id: str, x_cm: float, y_cm: float, index: int) -> d
 
 
 def make_default_tables() -> list[dict]:
-    """Create the initial table layout."""
+    """Create the five-Rect default layout for synthetic layout validation."""
     return [
-        make_default_table("table_0", 100, 100, 0),
-        make_default_table("table_1", 290, 100, 1),
-        make_default_table("table_2", 100, 320, 2),
-        make_default_table("table_3", 290, 320, 3),
+        make_default_table("table_0", 90, 120, 2),
+        make_default_table("table_1", 250, 120, 2),
+        make_default_table("table_2", 410, 120, 2),
+        make_default_table("table_3", 170, 340, 2),
+        make_default_table("table_4", 330, 340, 2),
     ]
 
 

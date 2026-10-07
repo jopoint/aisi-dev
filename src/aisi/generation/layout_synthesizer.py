@@ -44,6 +44,8 @@ def synthesize_layout(
     target_profile: TargetProfile,
     target_structure: TargetStructure,
     transformation_strength: float = 0.5,
+    *,
+    input_presentation_side: str | None = None,
 ) -> LayoutProposal:
     """Synthesize adaptive table-only layouts from target structure + current scene."""
     table_count = len(scene_state.tables)
@@ -69,7 +71,7 @@ def synthesize_layout(
         )
 
     if _uses_rect_template_layout(tables):
-        targets, notes = _layout_rect_templates(scene_state, tables)
+        targets, notes = _layout_rect_templates(scene_state, tables, input_presentation_side=input_presentation_side)
     elif scene_state.learning_format == "input":
         targets, notes = _layout_input_adaptive(
             scene_state,
@@ -118,7 +120,7 @@ def synthesize_layout(
         and all(table.table_type == "rect" for table in tables)
     )
     if rect_input and strength >= 1.0 - 1e-9:
-        repaired_targets, repair_notes = _repair_rect_input_after_blend(scene_state, targets, strength)
+        repaired_targets, repair_notes = _repair_rect_input_after_blend(scene_state, targets, strength, input_presentation_side=input_presentation_side)
     elif rect_groupwork:
         repaired_targets, repair_notes, repaired_groupwork_notes = _repair_rect_groupwork_after_blend(
             scene_state,
@@ -232,11 +234,14 @@ def _repair_rect_input_after_blend(
     scene_state: SceneState,
     blended_targets: list[TableTarget],
     strength: float,
+    *,
+    input_presentation_side: str | None = None,
 ) -> tuple[list[TableTarget], list[str]]:
     """Validate complete one-sided Input seating zones at the full target."""
     if strength < 1.0 - 1e-9:
         raise AssertionError("Die vollständige Input-Clearance gilt nur für den 100-%-Endzustand.")
-    if not _rect_input_clearances_valid(scene_state, blended_targets):
+    presenter, axis = _rect_input_presenter_and_axis(scene_state.tables, input_presentation_side)
+    if not _rect_input_clearances_valid(scene_state, blended_targets, presenter.table_id, axis):
         raise ValueError("Rect-Input-Ziel verletzt die 70-cm-Sitz-/Bewegungsflächen.")
     return blended_targets, ["repair_skipped=rect_input_target_clearance_valid"]
 
@@ -265,10 +270,12 @@ def _uses_rect_template_layout(tables: list[TableState]) -> bool:
 def _layout_rect_templates(
     scene_state: SceneState,
     tables: list[TableState],
+    *,
+    input_presentation_side: str | None = None,
 ) -> tuple[list[TableTarget], list[str]]:
     """Build deterministic, ID-bound layouts for the historical rect workflow."""
     if scene_state.learning_format == "input":
-        return _layout_rect_input_templates(scene_state, tables)
+        return _layout_rect_input_templates(scene_state, tables, input_presentation_side=input_presentation_side)
     if scene_state.learning_format == "groupwork":
         return _layout_rect_groupwork_templates(scene_state, tables)
     return _layout_rect_discussion_templates(scene_state, tables)
@@ -277,9 +284,11 @@ def _layout_rect_templates(
 def _layout_rect_input_templates(
     scene_state: SceneState,
     tables: list[TableState],
+    *,
+    input_presentation_side: str | None = None,
 ) -> tuple[list[TableTarget], list[str]]:
     """Build a source-adaptive Input presentation and audience formation."""
-    presenter, source_axis = _rect_input_presenter_and_axis(tables)
+    presenter, source_axis = _rect_input_presenter_and_axis(tables, input_presentation_side)
     local_positions = _rect_input_local_positions(len(tables))
     axis, anchor, axis_strategy = _rect_input_fitted_axis_and_anchor(
         scene_state, tables, presenter, source_axis, local_positions
@@ -310,7 +319,14 @@ def _layout_rect_input_templates(
     ]
 
 
-def _rect_input_presenter_and_axis(tables: list[TableState]) -> tuple[TableState, tuple[float, float]]:
+def _rect_input_presenter_and_axis(tables: list[TableState], presentation_side: str | None = None) -> tuple[TableState, tuple[float, float]]:
+    if presentation_side is not None:
+        directions = {"north": (0.0, -1.0), "east": (1.0, 0.0), "south": (0.0, 1.0), "west": (-1.0, 0.0)}
+        if presentation_side not in directions:
+            raise ValueError(f"Ungültige Präsentationsseite: {presentation_side!r}.")
+        axis = directions[presentation_side]
+        presenter = max(tables, key=lambda table: (_dot((table.x, table.y), axis), table.table_id))
+        return presenter, axis
     if len(tables) == 1:
         table = tables[0]
         return table, _normalize_vector((math.cos(math.radians(table.rot_deg + 90.0)), math.sin(math.radians(table.rot_deg + 90.0))))

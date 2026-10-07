@@ -1,58 +1,30 @@
 # AISI Project Context
 
-Last updated: 2026-09-30
+Stand: 2026-10-07
 
-## 1. Purpose
+## 1. Purpose and workstreams
 
 AISI is a research prototype for adaptive, spatially augmented learning environments. It senses and tracks room objects, represents the room in a shared metric coordinate system, generates or loads target configurations, and communicates spatial transformations through projections on the floor and on tabletops.
 
-The current repository contains three related but distinct lines of work:
+The repository contains three related but distinct workstreams:
 
 1. general AISI layout generation (`input`, `groupwork`, `discussion`);
 2. the controlled dual-surface Study pipeline;
 3. live computer vision/tracking and TouchDesigner integration.
 
-Do not assume that a change in one line should alter the others.
+Do not assume that a change in one workstream should alter the others.
 
-## 2. Evidence and confidence
+## 2. Evidence levels
 
-This handoff distinguishes three evidence levels:
+Use these labels when reporting status:
 
-- **Repository-confirmed:** directly inspected in the local checkout on 2026-09-28.
-- **History-reported:** reported in prior project chats or agent completion notes, but not re-run during handoff creation.
-- **Physical-room-reported:** reported as tested in the physical setup; cannot be established from repository checks alone.
+- **Repository-confirmed:** inspected or tested in the local checkout.
+- **History-reported:** reported in prior project work but not re-run in the current task.
+- **Physical-room-reported:** tested in the physical setup; cannot be established from repository checks alone.
 
-## 3. Repository state at handoff
+The current worktree is the source of truth for code state. Branch, HEAD, and dirty-file status must be checked live with Git rather than stored here.
 
-Repository-confirmed:
-
-- macOS checkout: `/Users/Johannes/dev/Promotion_Prototypen/AISI`
-- branch: `vision/wip-dark-proposals`
-- HEAD: `5141e77` — `Finalize Rect input templates`
-- remote branch matched after the Rect Input checkpoint was pushed.
-
-Dirty tracked files:
-
-- `AGENTS.md`
-- `NOTES.md`
-- `TODO.md`
-- `docs/DECISIONS.md`
-- `docs/PROJECT_CONTEXT.md`
-
-Untracked analysis code and generated directories:
-
-- `docs/RECT_GROUPWORK_DECISION_SESSION.md`
-- `scripts/analyze_rect_groupwork_decision_basis.py`
-- `data/aisi/debug/rect_layout_templates/final_rect_templates_2026-09-25/`
-- `data/aisi/debug/rect_layout_templates/groupwork_templates_analysis_2026-09-25/`
-- `data/aisi/debug/rect_layout_templates/input_5_table_3plus2_analysis_2026-09-25/`
-- `data/aisi/debug/rect_layout_templates/input_layout_audit_2026-09-25/`
-- `data/aisi/debug/rect_layout_templates/staggered_input_analysis_2026-09-25/`
-- `data/aisi/debug/rect_layout_templates/groupwork_decision_basis_2026-09-28/`
-
-These changes belong to the user. Do not clean, reset, overwrite, or bulk-stage them.
-
-## 4. Coordinate system and physical setup
+## 3. Coordinate system and physical setup
 
 Repository-confirmed:
 
@@ -73,7 +45,7 @@ Physical-room-reported:
 
 The calibration pipeline must not be changed as collateral work.
 
-## 5. Main runtime paths
+## 4. Main runtime paths
 
 ### General simulation/layout path
 
@@ -93,15 +65,12 @@ Main entry points:
 - `aisi.app.learning_format_server`
 - `aisi.app.sim_scene_to_osc`
 
-Validierungsreihenfolge: Nach jeder produktiven Format-Umsetzung wird das
-Format einzeln über die Simulationspipeline mit Room Editor,
-Learning-Format-Interface und OSC geprüft. Ein kurzer gemeinsamer Durchlauf
-folgt erst danach und prüft Formatwechsel sowie gemeinsame Schnittstellen.
-
 State files:
 
 - `data/aisi/scenes/simulated/live_scene.json`
 - `data/aisi/state/learning_format.json`
+
+Validate each format individually through Room Editor, Learning-Format-Interface, and OSC before a short cross-format pass.
 
 ### Study path
 
@@ -124,41 +93,50 @@ Key files:
 - `src/aisi/app/study_logging.py`
 - `src/aisi/analysis/study_metrics.py`
 
-Die aktive Definition `pilot_v7` übernimmt T1–T4 unverändert aus `pilot_v6`
-und ergänzt davor eine nicht-experimentelle Familiarization. Sie verwendet
-einen Rect-Tisch von `(160, 250, 0°)` nach `(260, 250, 25°)` und einen neutralen
-Teilnehmerstart bei `(250, 440)`. Der Controller-Ablauf lautet
-`HOME → FAMILIARIZATION → READY_FOR_STUDY → EXPERIMENTAL`. Familiarization ist
-direkt als TASK auswählbar und besitzt keine separate Workflow-Zeile oder
-eigene Reset-/Finish-Schaltflächen. Während der Übung kann die Versuchsleitung
-bei identischer Geometrie zwischen `FLOOR_ONLY` und `DUAL_SURFACE` wechseln.
-Die Auswahl von T1–T4 beendet die Übung und lädt den gewählten Trial, startet
-ihn aber nicht. Erst danach kann der Trial separat gestartet werden.
-Practice-Ereignisse erhöhen weder Run- noch Attempt-Zähler und sind durch
-`is_practice=true`, `trial_role=PRACTICE` sowie
-`task_id=FAMILIARIZATION` automatisch aus `study_metrics` ausgeschlossen.
+The active Study definition is `pilot_v7`. T1–T4 are unchanged from `pilot_v6`; `pilot_v7` adds a non-experimental Familiarization before the experimental tasks. Practice remains excluded from trial counters and `study_metrics`.
 
 ### Vision/tracking path
 
 Current code is primarily under `src/vision/`; earlier sensing/replay infrastructure remains under `src/aisi_sensing/`.
 
-History- and physical-room-reported baseline:
+Current baseline:
 
-- Rect tables are detected with OBB geometry and transformed to world coordinates;
+- Rect tables use OBB geometry transformed to world coordinates;
 - multi-table association, occlusion handling, and reacquisition were stabilized;
-- the physical test later showed no new track “rebirths” during the referenced run;
-- a tracking-only projection mode renders an inner tabletop contour and outer floor contour;
+- tracking-only projection renders an inner tabletop contour and outer floor contour;
 - adaptive smoothing is lighter during motion and stronger at rest.
 
-Treat this as a frozen baseline unless a task explicitly concerns tracking.
+Treat tracking as frozen unless a task explicitly concerns tracking.
 
-## 6. TouchDesigner architecture
+## 5. TouchDesigner architecture
 
 The authoritative manually maintained project is external to the repository:
 
 `C:\Users\johan\OneDrive\Dokumente\AISI_DEV\touchdesigner\AISI_v2.toe`
 
-Repository builders and snapshots are references, not guaranteed representations of the current physical graph.
+Repository builders and `.toe` snapshots are references, not guaranteed representations of the active physical graph.
+
+Aktueller Chair-Stand am 2026-10-07:
+
+- Aktueller manuell gespeicherter Stand am 2026-10-07: `AISI_v2.141_coherent_chairs_validated.toe`, von Johannes nach erfolgreicher Radius-Reparatur bestätigt und dateisystemseitig verifiziert. In einer temporär expandierten Kopie sind Radius-Bindung und Callback für Template + 15 Instanzen nachgewiesen. Der frühere bereinigte Stand 137 wurde erneut geöffnet und geprüft; ein erneuter Öffnungscheck von 141 wird nicht behauptet. Speichern bleibt ausschließlich manuell durch Johannes.
+- Der optionale Floor-Zweig unter `comp_layout_proposal` erreicht beide bestehenden Projektorpfade.
+- Der bestehende `chairs`-Zweig ist auf 15 Slots erweitert. Bei Count 7 sind sieben Radien positiv und acht Null; die Positionen werden laufend gebunden.
+- Debug und regulärer Floor verwenden dieselbe zentrale Chair-Geometrie. Der Floor verwendet `cam1`, 2000×2000 und addiert Chairs über den zentralen Composite.
+- Der manuell ausgeführte Bildvergleich besteht: optionaler Floor Off bitgleich, beide Projektorausgänge reagieren auf On, Tabletop/Table-Mask bitgleich und Debug-/Preview-Schalter unabhängig vom regulären Zusatz.
+- Die Viewer sind im laufenden Projekt nach `comp_layout_proposal/chair_debug` und `comp_layout_proposal/tables_chairs_virtual_preview` (jeweils Container COMP) kopiert. Johannes bestätigt den Migrationscheck: alle vier Viewerbilder und die sechs geprüften Floor-/Tabletop-/Masken-/Projektorbilder bitgleich. Die anschließende Bereinigung ist ebenfalls bestätigt: keine externen Referenzen, alte Top-Level-Komponenten, doppelte Debug-Geometrien und alter Chair-Zweig in `comp_output` entfernt; alle zehn geprüften Bilder bitgleich. Der bereinigte Stand ist in Version 137 gespeichert und nach erneutem Öffnen geprüft.
+- Count 15 liefert vollständige OSC-Daten und 15 gültige Instanzen; Johannes bestätigt nach dem Diagnosecheck 15 sichtbare Kreise und danach reagierende Count-Wechsel. Der zunächst beobachtete Stillstand bei sieben Kreisen ist noch nicht abschließend erklärt. Johannes bestätigt auch den direkten Wechsel 3 → 15 → 3 nach erneutem Öffnen ohne Diagnose-/Force-Cook.
+- Der isolierte TD-Radius-null-Test besteht: bei 15 gültigen Chairs verschwindet nur Chair 0, die anderen 14 Radien bleiben unverändert und beide Chair-Render reagieren. Callback und Chair 0 sind wiederhergestellt; keine neue Datei gespeichert. Ein Radius-null-Test über echte OSC-Nachrichten ist damit noch nicht bestätigt.
+- Modussperren nach Wiederholung mit nachweislich regulären Chairs On durch Johannes bestätigt: Tracking, Study und Calibration liefern jeweils Switch-Index 0, AISI liefert 1. Der erste Durchlauf war wegen Chairs Off nicht aussagekräftig. Vollständige bildliche Modusvergleiche stehen noch aus.
+- Johannes bestätigt 8 → 3 sowie die Counts 6, 9, 10, 11 und 15. Count 0 lässt sich in der bestehenden UI nicht eingeben; der vorher pauschal bestätigte Wechsel 1 → 0 wird deshalb nicht als gesicherter Count-null-Nachweis gewertet. Der Übergang 15 → 0 bleibt ungeprüft; die UI wird dafür nicht erweitert.
+- Änderungen im Room Editor werden laut Johannes live in TD übernommen. Damit ist die Reaktion über die OSC-Brücke beobachtet; ein einzelner ungültiger Chair über echte OSC-Nachrichten und physische Projektionskorrektheit sind damit nicht bestätigt.
+- Neue Stichprobe am 2026-10-07: neun sichtbare Kreise bei Count 9 und ebenfalls neun bei Count 10, zusätzlich auffällige Platzverteilung und links angeschnittene Kreise. Die Python-Ausgabe für dieselbe aktuelle Source enthält korrekt 9/10 Chairs; Version 140 enthält offline 15 korrekt zeilengebundene Chair-Instanzen. Der Livefehler ist damit erneut offen, ohne die bestandene Offline-Geometrieprüfung zu widerlegen. Ein manueller lesender Check ohne Force-Cook liegt in `td_builders/inspect_shared_chair_live_state.py`; Live-Ausgabe steht aus. Geschützte Kamera-/Projektionsparameter wurden nicht angepasst.
+- Die anschließende manuelle Live-Ausgabe bestätigt Count 10, zehn positive DAT-Radien und vollständige Übereinstimmung OSC → DAT → Instanzparameter. Die empfangenen Positionen reproduzieren jedoch exakt den alten Python-Code (bis Float32-Rundung); der Sender lief seit 15:53 vor den Korrekturen. Gezielter Neustart um 17:48 mit aktuellem Code, genau ein Sender nachgewiesen, laufend zehn Chairs gemeldet; Study-Control unverändert. Die angeschnittenen Kreise sind durch die alten ROI-verletzenden Positionen erklärbar. Sichtbare Vollständigkeit nach Neustart ist noch von Johannes zu bestätigen; gegebenenfalls tatsächliche Ring-SOP-Geometrie prüfen.
+- Nach Neustart bestätigt Johannes weiterhin neun sichtbare Kreise bei Count 10; die linken Kreise liegen jetzt vollständig innerhalb der Ansicht. Der verbleibende Fehler betrifft vermutlich die tatsächliche Ring-Geometrie, noch nicht bewiesen. Gezielter manueller Punkte-/Radius-Abgleich in `td_builders/inspect_shared_chair_ring_geometry.py` vorbereitet; keine Cook- oder Parameterreparatur vorgenommen, Live-Ausgabe offen.
+- Ringpunkte-Bericht bestätigt die Ursache: nur Index 9 besitzt trotz Instanzradius 0,13 TD noch Nullradius-Geometrie mit Außenradius 0,001 TD. Manuelle Reparatur `td_builders/repair_shared_chair_radius_dependency.py` vorbereitet: explizite SOP-Radius-Bindung über den vorhandenen Custom-Parameter Valuea, gleicher Ring-Callback mit geänderter Radius-Lesezeile, Template + 15 Instanzen, rücknehmbar. Offline geprüft; Live-Ausführung, wiederholte Count-Wechsel und anschließendes manuelles Speichern noch offen. Kein Force-Cook und keine geschützten Änderungen vorgesehen.
+- Johannes hat die Radius-Reparatur in Version 140 manuell ausgeführt: 16 Ringe einschließlich Template gebunden, kein Force-Cook und keine Speicherung. Danach sind bei Count 10 zehn Kreise sichtbar. Wiederholte Übergänge 9 → 10 → 9 → 10 und 3 → 15 → 3 sowie ein neuer manuell gespeicherter Stand bleiben noch zu bestätigen.
+- Johannes bestätigt anschließend den Fehler als behoben und zeigt die manuell gespeicherte Version 141. Die Datei enthält nach Offline-Expansion tatsächlich die explizite Radius-Bindung und aktualisierte Callback-Lesezeile für Template + 15 Instanzen. Fehlender-Chair-Fehler abgeschlossen; erneutes Öffnen, echte OSC-Radius-null-Prüfung und aufgeschobene physische Raumprüfung bleiben getrennte Nachweise.
+
+Detailed TD debug-node history belongs in `docs/TOUCHDESIGNER_SYNTH_CHAIR_DEBUG.md`, not here.
 
 Physical-room-reported structure:
 
@@ -168,20 +146,15 @@ Physical-room-reported structure:
 - floor/tabletop/mask ordering is physically consequential;
 - Calibration + Floor requires a black table-mask input so the inverted mask becomes white and leaves the floor image unchanged.
 
-Bekannte Plot-Backend-Regel:
+Rendering/backend rules:
 
-- Der interaktive Room Editor verwendet `tkinter` direkt und initialisiert kein
-  Matplotlib-Backend. Dadurch bleibt sein Import in nicht-grafischen Tests frei
-  von macOS-Tk-Initialisierung.
-- Headless PNG-/Debug-Generierung wählt `Agg`, bevor `pyplot` importiert wird.
+- the interactive Room Editor uses `tkinter` directly and avoids forcing a Matplotlib backend at import time;
+- headless PNG/debug generation selects `Agg` before importing `pyplot`;
+- shared plotting modules remain backend-neutral.
 
-- Room Editor uses `TkAgg` on macOS;
-- `scripts/generate_rect_layout_debug_plots.py` selects `Agg` before importing plotting code;
-- shared `debug_plotter.py` remains backend-neutral.
+## 6. Canonical geometry
 
-## 7. Table geometry
-
-Repository-confirmed canonical types:
+Repository-confirmed table types:
 
 | Type | Physical reference | Shape |
 | --- | --- | --- |
@@ -189,227 +162,167 @@ Repository-confirmed canonical types:
 | `sprint` | approximately `82 × 60 × 74 cm` | trapezoidal |
 | `rect` | `160 × 80 × 74 cm` | rectangular |
 
-The polygon-aware geometry migration is committed. Relevant logic includes canonical footprints, directional supports, polygon collision/ROI checks, and polygon-aware debug rendering.
+The polygon-aware geometry migration is complete. Canonical footprints/supports are used for collision, ROI, clearance, repair, and debug rendering.
 
-Important decisions:
+Important implementation invariants:
 
-- layout roles are format-bound to table IDs;
-- target output is restored to original scene order;
+- format roles remain bound to `table_id`;
+- target output returns to original scene order;
 - `strength = 0` yields exact source poses without repair;
 - `strength > 0` blends before one final hard-constraint repair;
-- the current overall capacity is five tables.
+- overall layout-generation capacity is five tables.
 
-Scout-specific seating/pairing semantics are not finalized. The geometry layer should support later choices without hard-coding one Scout layout grammar now.
+For binding design rules, seating/clearance semantics, and format-specific constraints, see the relevant entries in `docs/DECISIONS.md`.
 
-## 8. Rect layout generation
+## 7. Current Rect layout-generation state
 
-### Input — quelladaptive Präsentationsformation
+### Input
 
-Die festen Rect-Input-Slots aus Commit `5141e77` sind durch eine
-quelladaptive Präsentation-plus-Zuhörer-Formation ersetzt. Die
-Präsentationsachse folgt der Hauptausdehnung der Source. Der am stärksten vom
-Rest abgesetzte Endtisch wird automatisch zur Präsentation; die übrigen Tische
-werden unabhängig von ihrer `table_id` mit minimaler Bewegung in die kompakte
-Zuhörerformation gebunden. Die Ausgabe bleibt für OSC in der ursprünglichen
-Scene Order.
+The fixed Rect Input slots have been replaced by a source-adaptive presentation-plus-audience formation.
 
-Jeder Rect-Tisch hat genau eine semantische Sitzseite: `70 cm` tief, entlang
-der vollständigen Längsseite und an den außenliegenden Ecken abgerundet. Die
-Präsentation blickt zur Zuhörerformation, die Zuhörenden entgegengesetzt zur
-Präsentation. Alle Tische und Sitzflächen müssen bei `100 %` vollständig in
-der ROI liegen und sich nicht überlappen. Für Count 5 weicht die Zielachse nur
-bei ansonsten nicht einpassbarer Diagonalgeometrie auf die nächstliegende
-Raumachse aus.
+Current state:
 
-Repository- und virtuelle Einzelprüfung über Room Editor,
-Learning-Format-Interface, OSC und TouchDesigner sind akzeptiert. Die
-physische Raumprüfung für Aufstellung, Projektion und Bewegungsqualität bleibt
-offen.
+- presentation axis is derived from the source geometry;
+- presentation role is inferred spatially rather than from `table_id`;
+- active Rect tables use one semantic long-side seating/movement surface;
+- the normal productive Input path remains unchanged unless the participant-based preview is explicitly enabled;
+- virtual Room Editor / Learning-Format / OSC / TouchDesigner checks have been accepted;
+- physical room validation remains open.
 
-### Groupwork — quelladaptiv produktiv umgesetzt
+### Participant-based Input preview
 
-Für Rect-Groupwork zählen `2–5` werden alle Pair-/Singleton-Partitionen aus
-der Ausgangsszene abgeleitet. Starre Zielslots, orthogonale Winkelraster und
-eine ID-basierte Paarbildung sind verworfen. `table_id` bewahrt ausschließlich
-Identität und ursprüngliche Scene Order.
+Der explizit aktivierte Simulationspfad plant aktive und geparkte Rect-Tische
+nach Teilnehmendenzahl und leitet Chair-Marker aus ihren gerichteten Sitzflächen ab.
 
-Der Pair-Seam beträgt `8 cm`. Ein Singleton besitzt zwei volle, je `60 cm`
-tiefe Sitz-/Bewegungsstreifen ausschließlich an den Längsseiten; ein Pair
-besitzt eine elliptische, mindestens `60 cm` auskragende Clearance. Sämtliche
-Zonen müssen vollständig in der ROI liegen. Die beiden äußeren Ecken jedes
-Singleton-Streifens sind mit `30 cm` Radius abgerundet, während die Sitzkante
-am Tisch über die volle Länge gerade bleibt. Das aggressive Profil minimiert
-zuerst Zonenüberlappung, dann maximale und gesamte Bewegung, Rotation,
-Kreuzungen und schließlich den Inselabstand.
+- Zielverhältnis: zwei Teilnehmende pro aktivem Tisch; erst mit allen verfügbaren Tischen bis zu drei pro Tisch, damit `1–15` bei fünf Rect-Tischen.
+- Überkapazität scheitert ausdrücklich mit `LayoutConstraintError` vor Ausgabe; kein stilles Ersatzlayout.
+- Parktische bleiben sichtbar, Ziele folgen der Source Scene Order; interne Auswahl und Chair-Reihenfolge sind ID-stabil.
+- Chair-Kreise haben `25 cm` Radius und liegen vollständig in den kanonischen gerichteten `70 cm` Sitzflächen. Ihre Richtung folgt der Zielnormalen auch nach Raumachsen-Ausweichlösung.
+- Die optionale Präsentationsseite wird in der bestehenden Rect-Synthese berücksichtigt; ohne Vorgabe bleibt die Source maßgeblich.
+- Transformationsstärke 0 erhält auch geparkte Tischposen exakt, ohne Reparatur. Die vollständige gemeinsame Sitzflächenprüfung gilt für 100 %.
+- Offline am 2026-10-07: 300/300 Fälle bestanden (vier Quellen × fünf Ausrichtungen × Counts 1–15), 300 deterministische Wiederholungen, 140 Scene-Order-Prüfungen, 60 Überkapazitätsablehnungen und 59 fokussierte Tests. Nachweise und Grenzen: [Prüfbericht](INPUT_GEOMETRY_VALIDATION.md).
+- Zentrale TD-Struktur mit 15 Slots, OSC-Live-Reaktion und Modussperren sind laut Handoff geprüft. Count 0 ist ausgenommen; echte OSC-Radius-null-Prüfung und physische Raumvalidierung bleiben offen.
+- Ohne Vorschau bleiben normale Chair-Daten und andere Formate unverändert.
 
-Die produktive Synthese nutzt denselben Suchkern wie die bestätigten
-Count-3-/Count-5-Plots. Bei Teilstärken wird der geblendete Zwischenstand mit
-dieser vollständigen Inselgeometrie repariert, nicht mit der generischen
-einseitigen Clearance-Reparatur. Für unveränderte Live-Szenen werden Ergebnisse
-kurz zwischengespeichert. Die Kandidatensuche prüft nur kanonische Tisch-
-Footprints und die beschlossenen Inselzonen; dadurch entfällt die zusätzliche,
-fachlich überholte einseitige Standard-Clearance-Prüfung.
-Die axiale mittlere Orientierung der beiden Source-Tische ist außerdem eine
-starke Präferenz für die Zielrotation eines Pairs; die reine
-Source-Verbindungsachse darf sie nicht überschreiben.
-Die begrenzte Kandidatenauswahl erhält dafür pro Richtung eine
-orientierungstreue Außenvariante, damit eine überlappungsfreie globale
-Partition nicht bereits lokal verloren geht.
+Bei späteren Live-Prüfungen darf genau eine `sim_scene_to_osc`-Instanz auf
+Port `9000` senden. Diese Validierung hat keinen Sender gestartet.
 
-Repository-validiert am 2026-09-29:
+### Groupwork
 
-- fokussierte Rect-, Footprint- und Geometrietests: `44` erfolgreich;
-- Regressionen für Rotation, Translation, ID-Unabhängigkeit, Determinismus,
-  bessere Zuordnung und vollständige Zonenprüfung erfolgreich;
-- Learning-Format-Interface, Simulationsadapter und lokaler OSC-Ausgang für
-  die Count-5-Regression mit fünf Zieltabellen erfolgreich geprüft.
+Source-adaptive Rect Groupwork for counts `2–5` is productively implemented.
 
-Die grafische Room-Editor-Interaktion sowie die TouchDesigner- und physische
-Raumprüfung bleiben offen. Sie sind nicht durch lokale JSON-/OSC-Prüfungen
-abgedeckt.
+Current state:
 
-Die Learning-Format-Simulationsoberfläche steuert Format, Sichtbarkeit von
-Personen/Stühlen und die Umbauintensität (`0–100 %`). Der gespeicherte Wert
-wird unverändert an die Live-Layoutsynthese übergeben; ältere State-Dateien
-ohne Wert starten kompatibel bei `100 %`.
+- all Pair/Singleton partitions are derived from source geometry;
+- fixed slots, ID-based pairing, and orthogonal target-angle grids are obsolete;
+- Pair seam is `8 cm`;
+- Singleton and Pair clearance geometry follows the accepted rules in `D008`;
+- source orientation strongly influences Pair target orientation;
+- focused repository and OSC/simulation checks have passed;
+- interactive Room Editor, TouchDesigner, and physical room validation remain open.
 
 ### Discussion
 
-Repository- und virtuell bestätigte Architektur (2026-09-29):
+Discussion uses a centered inward-facing ring with source-order-preserving assignment and movement-aware global ring rotation.
 
-- zentrierter, nach innen gerichteter Ring;
-- ROI-sichere Geometrie aus Polygonen und Support-Werten;
-- deterministische Winkelreihenfolge der Source stabilisiert Slotbindung und
-  Teilbewegungen;
-- die absolute globale Ringrotation ist semantisch nicht relevant.
+Current state:
 
-Die freie globale Ringrotation wird mit dem lexikographischen Ziel „maximale,
-dann gesamte Bewegung minimieren“ gewählt; bei Count 5 nur innerhalb der
-clearance-zulässigen Phasen. Die Source-Winkelreihenfolge bleibt erhalten;
-dadurch entstehen keine gekreuzten Zuordnungswege.
+- Rect Discussion seating/movement surfaces are applied at full target state;
+- counts `1–5` have been virtually checked for ROI and collision safety;
+- the productive pipeline and TouchDesigner simulation have been accepted;
+- physical room validation remains open.
 
-Jeder Rect-Discussion-Tisch hat zwei abgerundete, ausschließlich entlang der
-Längsseiten liegende Sitz-/Bewegungsflächen mit `50 cm` Tiefe. Diese sind für
-den fertigen `100-%`-Zielzustand als harte ROI- und Tischblockierungsbedingung
-geprüft. Bei einer niedrigeren Umbauintensität bleibt die sichtbare
-Source/Target-Interpolation mit Kollisions-/ROI-Reparatur erhalten. Der
-Fünfer-Ring wird für den Zielzustand ohne die frühere zusätzliche Ringreserve
-gepackt; sein gemeinsamer Mittelpunkt darf sich nur minimal innerhalb des ROI
-verschieben. Die `60 cm`-Groupwork-Flächen bleiben davon unberührt.
-
-Die generierten Counts 1–5 wurden virtuell auf Überlappungsfreiheit,
-ROI-Einhaltung und die gemeinsame, nach innen gerichtete Mitte geprüft.
-Die Plots zeigen insbesondere für Count 3 und Count 5 eine plausible
-regelmäßige Ringanordnung. Eine physische Raum- und TouchDesigner-Prüfung
-steht weiterhin aus; daraus folgt derzeit keine Änderungsanforderung.
-Die aktuelle Fünf-Tisch-Live-Szene wurde außerdem durch den
-Simulationsadapter mit vollständiger Umbauintensität geprüft; sie erzeugt
-einen gültigen Discussion-Ring aus der produktiven Layout-Pipeline, nicht aus
-dem statischen Fallback.
-Die Einzelprüfung in der laufenden TouchDesigner-Simulation ist am 2026-09-30
-fachlich akzeptiert worden. Das bestätigt die virtuelle Pipeline, nicht die
-physische Raumwirkung oder Projektorkalibrierung.
-
-## 9. Study design and implementation
+## 8. Study state
 
 ### Active trials
 
 Repository-confirmed:
 
-- `trials.json` version: `pilot_v7`;
-- status: `frozen_for_study`;
-- `trials_pilot_v7.json` is the matching frozen snapshot;
-- T1–T4 geometry is unchanged from `pilot_v6`; `pilot_v7` adds only the
-  non-experimental Familiarization;
-- eight trials: T1–T4 × A/B;
+- `trials.json`: `pilot_v7`, `frozen_for_study`;
+- matching frozen snapshot: `trials_pilot_v7.json`;
+- eight experimental trials: T1–T4 × A/B;
 - T1/T2 use one active table and no distractors;
-- T3/T4 use one active table and two static distractor tables;
-- A/B variants are task-specific geometric counterparts;
-- tests assert exact coordinates, A/B transforms, participant positions, ROI safety, and snapshot metadata.
+- T3/T4 use one active table and two static distractors;
+- exact coordinates, A/B transforms, participant positions, ROI safety, and snapshot metadata are covered by tests.
 
-The Study README states:
-
-- T1/T3 use viewing axis `x = 250`;
-- T2/T4 use viewing axis `y = 250`;
-- B is formed by rotating the complete A layout 180° around the workspace center and then mirroring across the participant viewing axis.
-
-### Study task logic
-
-Design intent from project history:
+Task logic:
 
 | | low/limited occlusion | increased occlusion |
 | --- | --- | --- |
 | simpler layout | T1 | T2 |
 | denser layout | T3 | T4 |
 
-This is a deliberate 2×2 task-creation logic, but the physical factors may not be perfectly orthogonal. Statistical claims about isolated density or occlusion effects therefore require methodological justification.
+This is a deliberate 2×2 task-creation logic; physical factors may not be perfectly orthogonal, so factorial claims require methodological justification.
 
-T3/T4 matching history:
-
-- T3 reference path: approximately `435 cm`, cumulative rotation `195°`;
-- T4 reference path: approximately `427 cm`, cumulative rotation `180°`;
-- intended distinction: T3 dense/low-occlusion, T4 dense/high-occlusion.
-
-### Conditions and phases
-
-Repository-confirmed integer mappings:
+### Conditions and mappings
 
 - modes: Tracking `0`, Study `1`, AISI `2`;
 - conditions: Floor-only `0`, Dual-surface `1`;
 - phases: Home `0`, Ready `1`, Active `2`, Complete `3`.
 
-The two experimental conditions compare floor-only guidance with dual-surface guidance. Describe the visual-information difference exactly as implemented: Dual-surface may redistribute guidance spatially, not merely add tabletop graphics to an otherwise identical floor rendering.
+Dual-surface may spatially redistribute guidance rather than merely add tabletop graphics to otherwise identical floor guidance.
 
 ### Arrival and logging
 
-Repository-confirmed:
-
-- objective translation tolerance: `8 cm`;
-- objective rotation tolerance: `5°`;
+- translation tolerance: `8 cm`;
+- rotation tolerance: `5°`;
 - confirmation duration: `0.5 s` continuously inside tolerance;
-- participant-declared completion is recorded separately;
+- objective arrival and participant-declared completion are distinct;
 - arrival entered/confirmed/exited events are logged;
 - tracking loss and post-arrival behavior are represented in analysis metrics;
 - session metadata includes the active trial-definition SHA-256;
 - logs are append-only and participant/session/attempt aware.
 
-The distinction between objective arrival and declared completion is secondary/exploratory unless the analysis plan promotes it explicitly.
+## 9. Documentation risks
 
-## 10. Known documentation drift and risks
+Known drift outside these handoff files:
 
-Repository-confirmed documentation drift:
+- the root `README.md` still describes older prototype status and layout/vision assumptions;
+- `docs/PROJECT_STATE_2026-05.md` is historical;
+- some human-readable notes in `trials.json` may not literally match the numeric poses and should be reviewed before the next pilot.
 
-- the root `README.md` still describes simulation as the primary workflow and vision as not actively driving the prototype; this no longer captures the committed Study/tracking work;
-- the README still describes old rectangular serialization and older layout priorities that have been superseded by polygon geometry and later Study work;
-- `docs/PROJECT_STATE_2026-05.md` is a historical snapshot, not current state;
-- Rect Input counts 1–5 are now committed and represented in the current handoff documents.
+Do not change frozen trial geometry merely to resolve prose drift; determine first whether only the notes are wrong.
 
-Potential Study-definition inconsistency to review before the next pilot:
+## 10. Validation principle
 
-- some human-readable `notes` in `trials.json` do not literally match the numeric poses (for example “no rotation” can be misleading for rectangular 180°-equivalent orientations, and a note about one trial target equaling another source should be checked against the actual coordinates).
+Keep repository-confirmed, history-reported, and physical-room-reported claims separate. A local test or virtual TouchDesigner check does not establish physical projection correctness.
 
-Do not change frozen geometry casually; first decide whether only the prose notes are wrong or the trial data itself needs a new version.
+### Floor-Renderer in Chair-Arbeitsdatei 137
 
-## 11. Validation status
+Die gespeicherte Version 137 wurde am 2026-10-07 in einer temporären Kopie
+mit `toeexpand` untersucht. `comp_layout_proposal/render_floor` (Render TOP)
+hat eine aktive Geometry-Expression: Im Tracking-Modus werden Tracking-
+Floor-Geometrien gewählt, ansonsten phasenabhängige Study-Geometrien.
+Der als konstanter Parameterwert gespeicherte ältere Pfad zu
+`item*/table_target_floor_geo` ist bei dieser Expression nicht maßgeblich.
+Study-Geometrien sind zusätzlich nach Modus/Phase auf Sichtbarkeit begrenzt.
+Ein leerer ursprünglicher Floor im AISI-Modus ist deshalb erklärbar und
+belegt keinen Fehler der Chair-Integration: Chairs werden erst im zentralen
+Composite hinzugefügt. Eine dauerhaft leere Darstellung auch im passenden
+Tracking-/Study-Zustand wäre separat im laufenden Projekt zu untersuchen.
+Johannes nimmt Count 0 aus dem aktuellen Prüfumfang; die physische
+Raumprüfung ist derzeit nicht möglich und bleibt aufgeschoben.
 
-Repository-confirmed at handoff:
+### AISI-Floor und Study-Gestaltung — Live-Zwischenstand
 
-- current branch and dirty diff were inspected;
-- current trial definitions and exact-geometry tests were inspected;
-- Rect Input and geometry verification passed 33 focused tests after commit `5141e77`;
-- Rect Input plots for counts 1–5 were regenerated and visually reviewed;
-- `git diff --check` passed before and after the Rect Input commit.
+Auf Basis von `AISI_v2.138_coherent_chairs_validated.toe` hat Johannes
+`apply_aisi_study_visual_style.py` ausgeführt und die Darstellung bestätigt.
+AISI rendert nun vorhandene Zieltischkonturen und Bodenpfeile in
+`render_floor` (Render TOP); Tracking/Study behalten ihre bisherigen Zweige.
+Rect-Ziele verwenden die weißen gestrichelten Study-Konturen (Floor
+170 × 90 cm, Tabletop 150 × 70 cm, Strichstärke 2,5 cm), Rect-Source
+die blaue durchgehende Tabletop-Kontur. Zentraler gemeinsamer Style-Code
+liegt in `comp_layout_proposal/aisi_table_visual_style` (Text DAT);
+vorhandene Item-Geometrien und Template werden weiterverwendet.
+Chairs und Scout-Fallback bleiben unverändert.
 
-History-reported:
-
-- committed Study/tracking milestones were tested before their commits;
-- Groupwork audit reported 7 passing Rect template tests and no production-code changes for that audit;
-- headless Rect debug plotting completed after the `Agg` fix.
-
-Physical-room-reported:
-
-- calibration is sufficiently accurate for the current prototype;
-- tracking-only projection followed table position and rotation sufficiently well;
-- recent reacquisition testing showed no new rebirths in the referenced run.
-
-Future reports must keep these evidence levels separate.
+Der Livebericht meldet `passed: true`: geschützte Einstellungen unverändert,
+Chair- und Table-Mask-Bilder bitgleich, sichtbare Floor-Pixel, fünf Rect-Items
+mit je vier Source- und zwölf Zielprimitiven je Oberfläche. Der Stand
+ist laut Johannes manuell gespeichert. Die Dateien
+`AISI_v2.139_aisi_floor_study_style.toe` und
+`AISI_v2.140_coherent_chairs_validated.toe` sind am 2026-10-07 im
+Projektordner verifiziert; Version 140 stimmt per SHA-256 mit der
+unnumerierten Datei `AISI_v2_coherent_chairs_validated.toe` überein.
+Kein TD-Zugriff, automatisches Speichern oder erneutes Öffnen während der
+Offline-Validierung. Die physische Raumprüfung bleibt aufgeschoben.

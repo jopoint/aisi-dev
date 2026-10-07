@@ -1,195 +1,151 @@
-# AISI TODO / Handoff Checklist
+# AISI TODO
 
-Last updated: 2026-09-30
+Stand: 2026-10-07
 
-This list separates immediate repository hygiene, current layout work, Study readiness, and deferred research work. Do not execute all items automatically; use it to select a coherent next task.
+Use this file to choose the next coherent task. Do not execute all items automatically. Completed implementation history belongs in Git and the handoff documents, not in this checklist.
 
-## Completed — Rect Input checkpoint
+## NOW — Participant-based Input / TouchDesigner integration
 
-- [x] Inspect `git status` and the complete diff before editing.
-- [x] Review the Rect Input implementation in:
-  - `src/aisi/generation/layout_synthesizer.py`
-  - `tests/test_rect_template_layouts.py`
-  - `scripts/generate_rect_layout_debug_plots.py`
-  - `NOTES.md`
-- [x] Re-run the focused Rect layout tests in the actual repository environment.
-- [x] Re-run `git diff --check`.
-- [x] Inspect the final count-1–5 Input plots, especially counts 3 and 5.
-- [x] Keep the generated debug directories untracked for this checkpoint.
-- [x] Commit and push the Rect Input block after explicit user approval.
-- [ ] Validate Rect Input counts 1–5 in the physical room.
+Neuer expliziter Auftrag: AISI-Zieltischkonturen müssen auf dem Floor
+erscheinen; AISI-Elemente sollen gestalterisch dem bestehenden Study-Modus
+entsprechen. Vorhandene AISI-Geometrien erweitern, keine parallele
+Tischpipeline. Chairs bleiben vorerst unverändert, da ihre Study-Gestaltung
+noch nicht spezifiziert ist. Aktuellen Livegraph gezielt lesen, danach
+AISI-Auswahl des Floor-Renderers und betroffene Darstellung anpassen;
+Study/Tracking, Masken und physische Projektion bleiben geschützt.
+Umgesetzt im laufenden Projekt auf Basis von Version 138:
+`apply_aisi_study_visual_style.py` meldet `passed: true`; Johannes bestätigt
+Floor-/Tabletop-Ansicht. Geschützte Einstellungen, Chair-Bild und Table-Mask
+unverändert; fünf Rect-Instanzen haben korrekte Konturprimitive. Drei
+fokussierte Tests und Erhalt der Tracking-/Study-Floor-Pfade offline geprüft.
+Aktueller manuell gespeicherter und dateisystemseitig verifizierter Stand:
+`AISI_v2.141_coherent_chairs_validated.toe`. Johannes bestätigt den
+fehlenden-Chair-Fehler nach expliziter Ring-Radius-Bindung als behoben;
+Template + 15 Instanzen enthalten die Reparatur nachweislich in der Datei.
+Ein erneuter Öffnungscheck von Version 141 bleibt ein separater Nachweis.
 
-Completed in `5141e77` (`Finalize Rect input templates`). `NOTES.md` remains a
-separate uncommitted documentation change, and the generated debug directories
-remain untracked. Repository and plot verification is complete; physical-room
-validation remains open.
 
-Completion criteria:
+Geprüfter TD-Zwischenstand: `AISI_v2.137_coherent_chairs.toe` ist manuell
+gespeichert und erneut geöffnet; der Ausgabecheck besteht. Gemeinsame
+Chair-Geometrie mit 15 Slots und Count 7 ist geprüft. Die zentralen Viewer
+unter `comp_layout_proposal` bleiben erhalten; alte externe Komponenten,
+doppelte Debug-Geometrien und der alte Chair-Zweig in `comp_output` sind
+entfernt. Referenzprüfung ohne Treffer und zehn Bilder bitgleich bei der
+Bereinigung. Nach erneutem Öffnen: Floor Off bitgleich, beide Projektorpfade
+reagieren auf On, Tabletop/Table-Mask bitgleich, regulärer Zusatz unabhängig
+von Debug/Preview. Speichern erfolgt künftig ausschließlich manuell durch
+Johannes. Count 15 und danach reagierende Count-Wechsel sind durch Johannes
+beobachtet; der direkte Wechsel 3 → 15 → 3 nach erneutem Öffnen ohne Force-Cook
+ist ebenfalls durch Johannes bestätigt. Der isolierte TD-Radius-null-Test
+besteht (15 → 14 gültige Chairs, nur Chair 0 ausgeblendet, danach restauriert);
+der entsprechende echte OSC-Test bleibt offen. Der Moduscheck wurde mit nachweislich regulären Chairs On wiederholt:
+Tracking/Study/Calibration liefern Index 0, AISI liefert 1. Vollständige
+bildliche Modusvergleiche bleiben offen. Verbleibende Livetests und die
+aufgeschobene Raumprüfung sind getrennt von der bestandenen Offline-Prüfung.
 
-- the dirty diff is understood;
-- tests are current rather than only history-reported;
-- no unrelated/runtime artifacts are staged;
-- Input counts 1–5 are deliberately committed and pushed.
+1. [x] Zentrale gemeinsame 15-Chair-Struktur laut aktuellem Handoff geprüft; die frühere Acht-Slot-Grenze ist aufgehoben. Source, Target, Parktische und Chairs werden gemeinsam offline geprüft; keine zusätzliche TD-Bearbeitung in diesem Block.
+2. [x] Wiederkehrenden Chair-Aktualisierungsfehler behoben und von Johannes nach den angefragten Count-Wechseln bestätigt.
+   - Veralteten Python-Sender neu gestartet; veraltete Nullradius-Geometrie an Index 9 durch explizite SOP-Radius-Bindung für Template + 15 Instanzen korrigiert. Count 10 zeigt zehn Kreise; Stand manuell als Version 141 gespeichert und offline auf gespeicherte Bindungen geprüft.
+   - Bisherige Counts 6, 9, 10, 11, 15 und Room-Editor-/OSC-Live-Reaktion sind bestätigt. Diagnose und Reparatur im [Chair-Debug-Handoff](docs/TOUCHDESIGNER_SYNTH_CHAIR_DEBUG.md).
+   - Count 0 ist ausgenommen. Echte OSC-Radius-null-Prüfung und erneutes Öffnen von Version 141 bleiben getrennte Live-Aufgaben.
+3. [x] Input-Kapazitäts-/Fehlervertrag offline geprüft: über `15` explizite Ablehnung vor Ausgabe, kein Ersatzlayout; bestehende `/chair/0…14/{x,y,radius}`-Float-Nachrichten mit lokalem Recorder geprüft. Echte OSC-Radius-null-Prüfung bleibt offen.
+4. [x] Gemeinsame Table–Chair–Park-Geometrie offline validiert.
+   - 300/300 Fälle: fünf Rect-Tische, Counts 1–15, vier Quellen und automatische/vier vorgegebene Präsentationsseiten, 100 %.
+   - ROI, Tisch-/Chair-Kollisionen, Chair-Abstände und freie gerichtete Sitz-/Bewegungsflächen bestanden.
+   - 300 deterministische Wiederholungen, 140 Scene-Order-Prüfungen und 60 explizite Überkapazitätsablehnungen bestanden; 59 fokussierte Tests bestanden.
+   - Drei Plotübersichten und reproduzierbare Quellen im [Prüfbericht](docs/INPUT_GEOMETRY_VALIDATION.md). Count 0 ausgenommen, physische Raumprüfung aufgeschoben.
+5. [ ] Check Chair redistribution when participant count changes for stable, comprehensible behavior.
+6. [ ] Physically validate the optional regular Floor-Chair output for visibility, position, size, masking, and projection behavior.
+7. [x] Livezustand am 2026-10-07, 17:48: genau ein aktueller `sim_scene_to_osc`-Sender auf Zielport 9000, Input-Vorschau mit Count 10, 100 %, Chairs On. Neustartbefehl und Befunde im [Chair-Debug-Handoff](docs/TOUCHDESIGNER_SYNTH_CHAIR_DEBUG.md); Sender nach weiteren Python-Änderungen erneut laden.
 
-## P0 — Quelladaptiver Rect Input mit Präsentationsrolle
+## NEXT — Extend participant-based planning to other formats
 
-- [x] Feste Slots, globales Facing `−Y` und die frühere `0°`-Vorgabe ablösen.
-- [x] Präsentationsachse und räumlich vordersten Präsentationstisch aus der
-  Source ableiten; Zuhörer ohne ID-basierte Rollen lokal zuordnen.
-- [x] Je eine volle, außen abgerundete `70 cm`-Sitz-/Bewegungsfläche an der
-  semantischen Längsseite pro Tisch als harte Zielbedingung prüfen.
-- [x] Counts 1–5 im Room Editor, Learning-Format-Interface, OSC und
-  TouchDesigner-Simulation bei `100 %` visuell prüfen.
-- [x] Nach der Sichtprüfung einen fokussierten Input-Commit erstellen.
+### Groupwork
 
-## Verworfen — starre Rect-Groupwork-Entscheidungsgrundlage
+- [ ] Distribute participants across accepted Pair/Singleton islands.
+- [ ] Derive Chairs from the accepted island seating surfaces.
+- [ ] Jointly validate capacity, clearance, island spacing, Chair geometry, and parking.
 
-- [x] Treat full seat/movement clearance inside the ROI as a hard requirement.
-- [x] Analyze pair seams of `4`, `6`, `8`, `10`, and `12 cm`.
-- [x] Maximize the minimum footprint gap between separate islands.
-- [x] Compare an independent singleton with a singleton attached to an open group.
-- [x] Validate candidate geometry with the canonical table footprints and directed clearance zones.
-- [x] Generate and inspect only the count-3 and count-5 comparison plots.
-- [x] Record a recommendation without changing production Groupwork logic.
+### Discussion
 
-Diese Auswertung darf nicht weiterverwendet werden: Die globalen Zielpositionen,
-die orthogonalen Zielwinkel und die ID-basierte Slotbindung ignorieren die
-Ausgangsgeometrie. Ihre Plots bleiben nur als negative Regression-Cases erhalten.
+- [ ] Derive Chairs from the outward seating sides of the inward-facing ring tables.
+- [ ] Define presentation/audience roles only if required by the format.
+- [ ] Determine Discussion capacity from its geometry rather than copying the Input limit of `15`.
 
-## P0 — Quelladaptiver Rect-Groupwork-Prototyp
+## NEXT — Manual layout validation
 
-- [x] Alle Pair-/Singleton-Partitionen für Counts 2–5 enumerieren.
-- [x] Lokale, frei gedrehte Gruppen aus den beteiligten Ausgangstischen ableiten.
-- [x] Beide Mitgliederzuordnungen je Pair prüfen.
-- [x] Harte Kollisions-, ROI- und vollständige Clearance-Prüfungen integrieren:
-  Singletons mit zwei vollen `60 cm`-Streifen nur an Längsseiten, Pairs mit
-  einer elliptischen `60 cm`-Clearance.
-- [x] Im aggressiven Clearance-Profil Zonenüberlappungen ohne Bewegungsbudget
-  minimieren; erst danach Bewegungsaufwand und Inselabstand optimieren.
-- [x] Rotations-/Translationsäquivarianz, ID-Unabhängigkeit, Determinismus und
-  bessere Zuordnung gegenüber dem verworfenen ID-Referenzmodell testen.
-- [x] Aussagekräftige Count-3- und Count-5-Plots mit Zuordnung und Metriken erzeugen.
-- [x] Die Prototyp-Plots fachlich bestätigen: aggressive Clearance-Auswahl mit
-  `0 cm²` Zonenüberlappung für Count 5 ist akzeptiert.
-- [x] Die produktive, quelladaptive Rect-Groupwork-Implementierung beauftragen
-  und für Counts 2–5 umsetzen.
-- [x] Rect Groupwork einzeln über Learning-Format-Interface,
-  Simulationsadapter und lokalen OSC-Ausgang prüfen.
-- [x] Die Simulationspipeline auf vollständige Layoutvorschläge (`100 %`)
-  festlegen und die veränderbare Umbauintensität aus Interface und Zustand
-  entfernen.
-- [x] Die Count-5-Kandidatensuche auf die beschlossenen Inselzonen begrenzen;
-  die lokale Vorauswahl behält dabei auch orientierungstreue, nach außen
-  versetzte Kandidaten für eine überlappungsfreie Gesamtkomposition.
-- [x] Rect-Paarrotationen an der axialen mittleren Source-Ausrichtung stark
-  priorisieren; eine räumliche Verbindungsachse allein darf die Tischrotation
-  nicht mehr bestimmen.
-- [x] Die zwei Singleton-Sitzstreifen an ihren vom Tisch abgewandten Ecken mit
-  `30 cm` Radius abrunden; die vollständige gerade Sitzbreite am Tisch bleibt
-  erhalten.
-- [ ] Die interaktive Rect-Groupwork-Prüfung im Room Editor sowie in
-  TouchDesigner manuell durchführen.
-- [ ] Nach den Einzelprüfungen einen kurzen formatübergreifenden Pipeline-
-  Durchlauf für Formatwechsel, Scene Order, vollständige Layoutvorschläge und
-  OSC-Kopplung machen.
+- [ ] Rect Groupwork: complete interactive Room Editor and TouchDesigner validation.
+- [ ] Run one short cross-format pass for Input / Groupwork / Discussion covering format changes, Scene Order, full `100 %` targets, and OSC coupling.
+- [ ] Perform remaining physical room validation for Input, Groupwork, and Discussion after virtual checks are stable.
 
-## P0 — Pilot/Study readiness review
+## NEXT — Pilot / Study readiness
 
-- [x] Eine nicht-experimentelle Familiarization vor Block 1 ergänzen: ein
-  Rect-Tisch, identische Geometrie für Floor-only und Dual-surface, direkte
-  Auswahl in der TASK-Zeile ohne eigene Practice-Schaltflächen, keine
-  Trial-Zählung und automatischer Ausschluss aus
-  `study_metrics` (`pilot_v7`; T1–T4 unverändert aus `pilot_v6`).
-- [ ] Familiarization im autoritativen TouchDesigner-Projekt und im physischen
-  Raum prüfen, einschließlich Live-Wechsel beider Visualisierungsmodi.
-
-- [ ] Physically run all eight `pilot_v7` trials in both conditions (T1–T4
-  geometry unchanged from `pilot_v6`).
+- [ ] Validate Familiarization in the authoritative TouchDesigner project and physical room, including live switching between Floor-only and Dual-surface.
+- [ ] Physically run all eight `pilot_v7` experimental trials in both conditions.
 - [ ] Verify HOME, READY, ACTIVE, and COMPLETE transitions in the authoritative TouchDesigner project.
-- [ ] Verify floor-only and dual-surface visuals match the written method description.
-- [ ] Verify active-table binding and distractor binding for T3/T4 under real tracking.
-- [ ] Verify objective arrival (`8 cm`, `5°`, `0.5 s`) behaves acceptably with real tracking jitter.
+- [ ] Verify Floor-only and Dual-surface visuals match the written method description.
+- [ ] Verify active-table and distractor binding for T3/T4 under real tracking.
+- [ ] Verify objective arrival (`8 cm`, `5°`, `0.5 s`) under real tracking jitter.
 - [ ] Verify participant-declared completion remains independent from objective arrival.
 - [ ] Verify logs, session manifest, attempt/run indices, tracking-loss intervals, and trial-definition hash.
-- [ ] Review `trials.json` human-readable notes for consistency with numeric poses.
-- [ ] If geometry changes are required, create `trials_pilot_v7.json` before updating the active file.
+- [ ] Review human-readable `trials.json` notes against numeric poses without changing frozen geometry casually.
 
-Done when:
+Done when a participant-like session runs without manual data repair and visuals, tracking, controller state, and logs stay synchronized.
 
-- a complete participant-like session can be run without manual data repair;
-- visuals, tracking, controller state, and logs stay synchronized;
-- every physical deviation is either fixed or documented.
-
-## P1 — Freeze the analysis plan before data collection
+## NEXT — Freeze analysis plan before data collection
 
 - [ ] State one primary research question comparing Floor-only and Dual-surface.
 - [ ] State a secondary/exploratory question about task-specific differences.
 - [ ] Describe T1–T4 as a 2×2 design structure without claiming unverified orthogonality.
 - [ ] Define exactly what information appears on each surface in each condition.
 - [ ] Choose primary, secondary, and exploratory outcomes.
-- [ ] Decide whether the small sample is framed as pilot/exploratory.
+- [ ] Decide whether the sample is framed as pilot/exploratory.
 - [ ] Predefine treatment of aborted trials, tracking loss, missing objective arrival, and repeated attempts.
 - [ ] Document apparatus accuracy, tracking frequency/latency, projection, and calibration sufficiently for the paper.
 
-Done when:
+## OPEN DECISIONS — Johannes
 
-- implementation, Study protocol, and paper language use the same definitions;
-- metrics are prioritized before inspecting participant outcomes.
+- [ ] Is `pilot_v7` ready for data collection, or still a pre-pilot configuration?
+- [ ] Which Study measures are formally primary versus secondary/exploratory?
 
-## P1 — Documentation sync
+## DEFERRED — Documentation
 
-- [ ] Update the root `README.md`; its current prototype-status, vision, geometry, and priority sections are outdated.
+- [ ] Update the root `README.md`; current prototype-status, vision, geometry, and priority sections are outdated.
 - [ ] Mark `docs/PROJECT_STATE_2026-05.md` clearly as historical or replace it with a dated current state.
 - [ ] Link `docs/PROJECT_CONTEXT.md`, `docs/DECISIONS.md`, and `TODO.md` from the README.
 - [ ] Ensure macOS and Windows launch instructions reflect actual supported workflows.
-- [ ] Document the current Study controller, active trial version, logging, and metrics commands.
+- [ ] Document current Study controller, active trial version, logging, and metrics commands.
 - [ ] Keep physically confirmed facts separate from repository-only verification.
 
-## P1 — Focused regression commands to establish
+## DEFERRED — Focused regression commands
 
 There is no canonical repository-wide command. Confirm and document the narrowest working commands for:
 
-- [ ] Rect template layouts and geometry;
-- [ ] Study trial definitions;
-- [ ] Study control/state transitions;
-- [ ] Study tracking/binding;
-- [ ] Study logging and metrics;
-- [ ] TouchDesigner builder structure tests;
-- [ ] vision table association and tracking-only OSC.
+- Rect layout/geometry;
+- Study trial definitions;
+- Study control/state transitions;
+- Study tracking/binding;
+- Study logging/metrics;
+- TouchDesigner builder structure tests;
+- vision table association and tracking-only OSC.
 
 Do not install optional dependencies merely to expand test scope.
 
-## P2 — General layout follow-up
+## DEFERRED — General layout follow-up
 
-- [x] Discussion Counts 1–5 nach der Fünf-Tisch-Kapazitätsänderung virtuell
-  und in der TouchDesigner-Simulation prüfen (2026-09-30); die physische
-  Raumprüfung bleibt offen.
 - [ ] Verify mixed Summit/Sprint/Rect layouts after current Rect-specific work is stable.
 - [ ] Design Scout-specific seating and Groupwork semantics as a dedicated task.
 - [ ] Decide which Summit/Sprint sides may pair and how seating zones are derived.
 - [ ] Preserve generic polygon support so the decision does not require a geometry rewrite.
 
-## P2 — Tracking follow-up
+## DEFERRED — Tracking
 
 - [ ] Keep the current tracking baseline frozen until a reproducible failure is recorded.
 - [ ] If tuning resumes, capture the failing scene/log first and compare against the successful reacquisition baseline.
-- [ ] Separate table detection, association, smoothing, projection alignment, and Study binding when diagnosing failures.
+- [ ] Separate detection, association, smoothing, projection alignment, and Study binding when diagnosing failures.
 
-## P2 — Repository hygiene
+## DEFERRED — Repository hygiene
 
 - [ ] Decide whether `.gitignore` should cover recurring debug/runtime folders.
-- [ ] Never blanket-ignore data that is intentionally versioned, such as frozen trial definitions.
+- [ ] Never blanket-ignore intentionally versioned data such as frozen trial definitions.
 - [ ] Keep model files, calibration captures, run logs, and generated plots under explicit policy rather than ad hoc staging.
-
-## Open decisions requiring Johannes
-
-- [x] Der Rect-Groupwork Pair-Seam beträgt `8 cm`.
-- [x] Every Groupwork seat/movement zone must lie completely inside the `500 × 500 cm` ROI.
-- [x] Groupwork-Singletons sind eigenständige Arbeitsstationen.
-- [x] Rect-Singletons erhalten zwei volle, ausschließlich an den Längsseiten
-  liegende `60 cm`-Sitz-/Bewegungsstreifen; Pairs erhalten eine elliptische
-  `60 cm`-Clearance um die gemeinsame Gruppe. Alle Flächen liegen in der ROI.
-- [ ] Is `pilot_v7` ready for data collection, or still a pre-pilot
-  configuration? (T1–T4 geometry remains `pilot_v6`.)
-- [ ] Which measures are formally primary versus exploratory?
-- [x] Commit the finalized Rect Input block before Groupwork implementation starts (`5141e77`).
