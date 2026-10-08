@@ -330,11 +330,21 @@ def _rect_input_presenter_and_axis(tables: list[TableState], presentation_side: 
     if len(tables) == 1:
         table = tables[0]
         return table, _normalize_vector((math.cos(math.radians(table.rot_deg + 90.0)), math.sin(math.radians(table.rot_deg + 90.0))))
+    # Rect orientations are axial: 0 and 180 degrees describe the same
+    # footprint. Average doubled angles before choosing a seating normal.
+    # Positions still select the presentation end; explicit sides above win.
+    tables = sorted(tables, key=lambda table: table.table_id)
     center = (mean(table.x for table in tables), mean(table.y for table in tables))
     sxx = mean((table.x - center[0]) ** 2 for table in tables)
     syy = mean((table.y - center[1]) ** 2 for table in tables)
     sxy = mean((table.x - center[0]) * (table.y - center[1]) for table in tables)
     angle = 0.0 if abs(sxy) <= 1e-9 and abs(sxx - syy) <= 1e-9 else 0.5 * math.atan2(2.0 * sxy, sxx - syy)
+    orientation_x = math.fsum(math.cos(math.radians(2.0 * table.rot_deg)) for table in tables)
+    orientation_y = math.fsum(math.sin(math.radians(2.0 * table.rot_deg)) for table in tables)
+    if math.hypot(orientation_x, orientation_y) > 1e-9 * len(tables):
+        angle = 0.5 * math.atan2(orientation_y, orientation_x) + math.pi / 2.0
+    # Conflicting axial orientations with no resultant keep the positional
+    # principal axis instead of inventing an ID-dependent orientation.
     axis = (math.cos(angle), math.sin(angle))
     endpoints = (
         min(tables, key=lambda table: (_dot((table.x - center[0], table.y - center[1]), axis), table.table_id)),
@@ -343,7 +353,7 @@ def _rect_input_presenter_and_axis(tables: list[TableState], presentation_side: 
     presenter = max(
         endpoints,
         key=lambda table: (
-            sum(math.dist((table.x, table.y), (other.x, other.y)) for other in tables if other is not table),
+            math.fsum(math.dist((table.x, table.y), (other.x, other.y)) for other in tables if other is not table),
             abs(_dot((table.x - center[0], table.y - center[1]), axis)),
             table.table_id,
         ),

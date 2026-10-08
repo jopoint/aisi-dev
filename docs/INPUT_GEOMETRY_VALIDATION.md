@@ -4,6 +4,42 @@ Stand: 2026-10-07. Branch `vision/wip-dark-proposals`, geprüfte Ausgangsbasis
 `9f822ce6919419cf38c21e9ce8a953045f64f713`. Die parallele Input-Bearbeitung wurde übernommen
 und unabhängig nachgeprüft; bestehende Änderungen bleiben erhalten.
 
+## Ergänzung 2026-10-08 — Source-Orientierung bevorzugen
+
+Johannes hat den Vorrang der gemeinsamen Source-Orientierung bei automatischer
+Präsentationsausrichtung bestätigt (D007). Die bestehende Rect-Input-Synthese
+nutzt jetzt das axiale Mittel der Source-Winkel; 0° und 180° beschreiben
+dieselbe Tischlängsachse. Positionen bestimmen das Präsentationsende und
+die Rollenzuordnung. Bei Orientierungen ohne eindeutige Resultierende gilt
+weiterhin die räumliche Hauptausdehnung; explizite Präsentationsseiten sowie
+die bestehende ROI-Ausweichlösung bleiben verbindlich. Die Änderung gilt
+für normale Rect-Input-Ziele und die opt-in Vorschau; Parkregeln unverändert.
+
+Die konkrete manuelle Stichprobe wurde mit ihren gespeicherten Source-Posen
+reproduziert: zuvor fünf vertikale Ziele bei horizontalen Quellen, insgesamt
+450° axiale Rotation. Jetzt bleiben alle fünf Ziele horizontal; gesamte
+axiale Rotation 0°, maximale Verschiebung rund 83 statt 109 cm.
+Der lokale OSC-Recorder übernimmt die Source-/Target-Winkel korrekt.
+18 Source-/Target-Geo-Bindungen aus der gespeicherten TD-Version 141 wurden
+offline gelesen; kein zusätzlicher 90°-Versatz in diesen Bindungen.
+Dies ist kein Nachweis des derzeit laufenden TD-Projekts.
+
+**Erneut 300/300 Geometriefälle bestanden**, mit exakt den im Bericht vom
+2026-10-07 gespeicherten Quellen, einschließlich 300 deterministischer
+Wiederholungen, 140 Scene-Order-Prüfungen und 60 Überkapazitätsablehnungen.
+Neue lokale Berichte und Plotübersichten:
+`data/aisi/debug/input_source_rotation_2026-10-08/`.
+**57 fokussierte Tests bestanden:** Polygon-Pipeline (10), synthetische
+Input-Geometrie (10), unabhängige Offline-Prüfung (2), Tracking-/OSC (24),
+Rect-Templates (11). Neue Regressionen sichern horizontale/vertikale Quellen,
+180°-Äquivalenz, feste Präsentationsseiten und widersprüchliche Orientierungen.
+Der bisherige Test der östlichen Präsentationsrolle verwendet dafür jetzt
+vertikale Source-Tische, passend zur akzeptierten Orientierungspräferenz.
+
+Kein Sender gestartet oder neu geladen, keine TD-Fernsteuerung und kein
+automatisches Speichern. Nächster Live-Nachweis: aktuellen Python-Sender
+neu laden und dieselbe Source-Szene vergleichen. Physische Raumprüfung bleibt offen.
+
 ## Ergebnis und Prüfumfang
 
 **300/300 Fälle bestanden:** jeweils fünf Rect-Tische, Counts `1–15`,

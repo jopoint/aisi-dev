@@ -1,15 +1,16 @@
 # AISI TODO
 
-Stand: 2026-10-07
+Stand: 2026-10-08
 
 Use this file to choose the next coherent task. Do not execute all items automatically. Completed implementation history belongs in Git and the handoff documents, not in this checklist.
 
 ## NOW — Participant-based Input / TouchDesigner integration
 
-**Einstieg für morgen — Source-Rotation im Rect Input (Johannes, 2026-10-07):**
-- [ ] Beobachtung aus der manuellen Stichprobe reproduzieren: Alle fünf Source-Tische stehen horizontal, die Zielkonturen dagegen vertikal. Die Source-Rotation wird aus Sicht von Johannes nicht ausreichend berücksichtigt.
-- [ ] Zunächst prüfen, ob die 90°-Drehung aus der Synthese oder der Darstellung kommt; Source-/Target-Winkel pro Tisch-ID durch Python → OSC → TD verfolgen. Anschließend untersuchen, wie die vorhandene Source-Orientierung bei geometrisch und semantisch gültigen Alternativen stärker erhalten werden kann.
-- [ ] ROI, Kapazität, Chairs und gerichtete Sitz-/Bewegungsflächen weiter gemeinsam absichern. Die bestandene Kollisionsprüfung belegt noch keine sinnvolle Rotationswahl. Heute keine Änderung der Layout-Logik; keine neue Orientierungsregel beschlossen.
+**Source-Rotation im Rect Input — Auftrag vom 2026-10-07, offline behoben am 2026-10-08:**
+- [x] Beobachtung am 2026-10-08 offline reproduziert: Alle fünf Source-Tische stehen horizontal (0°/180°), die Automatik erzeugt vertikale Ziele (±90°). Ursache ist die positionsbasierte Präsentationsachse mit Ost-Ausweichlösung, kein zusätzlicher Darstellungsversatz. Nord und Süd erhalten die horizontale Orientierung und bestehen die gemeinsame Geometrieprüfung. Source-/Target-Winkel im lokalen OSC-Recorder und 18 gespeicherte Geo-Bindungen aus Version 141 geprüft; kein neuer Live-Nachweis.
+- [x] Nach Johannes' Zustimmung bevorzugt die gemeinsame Rect-Input-Synthese die axiale Source-Orientierung; Positionen bestimmen Präsentationsende und Rollen, explizite Seiten bleiben verbindlich. Die konkrete Live-Quelle ergibt jetzt fünf horizontale Ziele, 0° statt 450° gesamter axialer Rotation. D007 aktualisiert.
+- [x] ROI, Kapazität, Chairs und gerichtete Sitz-/Bewegungsflächen erneut abgesichert: 300/300 gespeicherte Geometriefälle, 300 deterministische Wiederholungen, 140 Scene-Order-Prüfungen, 60 Überkapazitätsablehnungen sowie 57 fokussierte Tests bestanden. [Prüfbericht](docs/INPUT_GEOMETRY_VALIDATION.md).
+- [ ] Nächster kurzer Block: aktuellen Python-Sender neu laden und die horizontale Live-Quelle im Room Editor / Learning-Format-Interface / TD stichprobenartig vergleichen. Kein neuer TD-Live- oder Raum-Nachweis in diesem Offline-Block; kein automatisches Speichern.
 
 Neuer expliziter Auftrag: AISI-Zieltischkonturen müssen auf dem Floor
 erscheinen; AISI-Elemente sollen gestalterisch dem bestehenden Study-Modus

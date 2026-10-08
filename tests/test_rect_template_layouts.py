@@ -60,14 +60,16 @@ class RectTemplateLayoutTests(unittest.TestCase):
                 self.assertTrue(_rect_input_clearances_valid(scene, proposal.table_targets))
 
     def test_input_uses_the_spatially_frontmost_presenter_not_table_id(self) -> None:
+        # Vertical source axes permit an east/west presentation without
+        # rotating the tables; the spatial outlier must retain the role.
         scene = SceneState(
             ROI(0.0, 0.0, 500.0, 500.0),
             [
-                TableState("audience_a", 100.0, 230.0, 0.0, 160.0, 80.0, table_type="rect"),
-                TableState("audience_b", 170.0, 280.0, 0.0, 160.0, 80.0, table_type="rect"),
-                TableState("audience_c", 200.0, 160.0, 0.0, 160.0, 80.0, table_type="rect"),
-                TableState("audience_d", 190.0, 360.0, 0.0, 160.0, 80.0, table_type="rect"),
-                TableState("presenter", 430.0, 250.0, 0.0, 160.0, 80.0, table_type="rect"),
+                TableState("audience_a", 100.0, 230.0, 90.0, 160.0, 80.0, table_type="rect"),
+                TableState("audience_b", 170.0, 280.0, 90.0, 160.0, 80.0, table_type="rect"),
+                TableState("audience_c", 200.0, 160.0, 90.0, 160.0, 80.0, table_type="rect"),
+                TableState("audience_d", 190.0, 360.0, 90.0, 160.0, 80.0, table_type="rect"),
+                TableState("presenter", 430.0, 250.0, 90.0, 160.0, 80.0, table_type="rect"),
             ],
             "input",
         )

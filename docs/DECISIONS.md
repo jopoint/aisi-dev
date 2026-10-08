@@ -1,6 +1,6 @@
 # AISI Decision Log
 
-Last updated: 2026-10-07
+Stand: 2026-10-08
 
 Statuses:
 
@@ -102,7 +102,7 @@ Status: **Accepted**
 
 Status: **Accepted — physische Raumvalidierung offen**
 
-- Die Hauptausdehnung der Source bestimmt die Präsentationsachse.
+- Seit Johannes' Entscheidung am 2026-10-08 hat die gemeinsame axiale Source-Orientierung Vorrang bei der automatischen Präsentationsachse. 0°/180° gelten als dieselbe Tischorientierung; die Achse wird aus dem Mittel der doppelten Winkel abgeleitet und steht senkrecht zur gemeinsamen Tischlängsachse. Bei widersprüchlichen Orientierungen ohne eindeutige Resultierende bleibt die räumliche Hauptausdehnung maßgeblich. Eine ausdrücklich gewählte Präsentationsseite hat Vorrang.
 - Der an einem Endpunkt räumlich am stärksten vom Rest abgesetzte Tisch wird zur Präsentationsrolle; die übrigen Tische werden ohne ID-basierte Rollen mit minimaler Bewegung als Zuhörerformation zugeordnet.
 - Der Präsentationstisch blickt zu den Zuhörenden, die Zuhörenden blicken zur Präsentation.
 - Jeder Rect-Tisch besitzt genau eine `70 cm` tiefe Sitz-/Bewegungsfläche an seiner semantischen Längsseite mit abgerundeten außenliegenden Ecken.
@@ -112,7 +112,7 @@ Status: **Accepted — physische Raumvalidierung offen**
 
 ## D007a — Synthetische teilnehmendenbasierte Input-Vorschau
 
-Status: **In Entwicklung — opt-in Simulation, normale Input-Synthese unverändert**
+Status: **In Entwicklung — opt-in Simulation auf gemeinsamer Rect-Input-Synthese**
 
 - Die Teilnehmendenzahl beschreibt benötigte funktionale Sitzplätze, nicht erkannte Personen/Stühle.
 - Ohne Aktivierung bleiben bestehende Input-Ziele und Chair-Quelle unverändert.

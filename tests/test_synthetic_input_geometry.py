@@ -9,6 +9,8 @@ from aisi.app.sim_room_editor import make_default_tables, scene_payload
 from aisi.app.sim_scene_to_osc import prepare_scene_output, send_chairs
 from aisi.core.table_geometry import circle_inside_convex_polygon, circle_intersects_convex_polygon
 from aisi.generation.adaptive_layout_v1 import LayoutConstraintError
+from aisi.core.models import TableState
+from aisi.generation.layout_synthesizer import _rect_input_presenter_and_axis
 
 
 def scene():
@@ -31,6 +33,42 @@ class CircleGeometryTests(unittest.TestCase):
 
 
 class SyntheticInputGeometryTests(unittest.TestCase):
+    def test_automatic_input_preserves_common_source_axis_instead_of_position_axis(self):
+        # This wide, asymmetric source used to turn every horizontal table
+        # vertical even though a horizontal formation fits the complete ROI.
+        raw = scene()
+        poses = ((112.143,233.571), (187.857,131.429), (386.429,134.286),
+                 (160.0,384.286), (364.286,326.429))
+        for orientation in (0, 90):
+            for table, (x, y) in zip(raw['tables'], poses):
+                table.update(x_cm=x, y_cm=y, rotation_deg=orientation)
+            raw['tables'][3]['rotation_deg'] += 180
+            for count in (9, 10, 15):
+                with self.subTest(orientation=orientation, count=count):
+                    out = plan(raw, count)
+                    validate_synthetic_input_geometry(raw, out)
+                    for table, target in zip(raw['tables'], out.table_targets):
+                        delta = (target['rotation_deg'] - table['rotation_deg'] + 90) % 180 - 90
+                        self.assertAlmostEqual(delta, 0)
+                    reversed_raw = deepcopy(raw)
+                    reversed_raw['tables'].reverse()
+                    other = plan(reversed_raw, count)
+                    self.assertEqual(out.table_targets, list(reversed(other.table_targets)))
+                    self.assertEqual(out.chairs, other.chairs)
+            forced = plan(raw, 15, 'east' if orientation == 0 else 'north')
+            validate_synthetic_input_geometry(raw, forced)
+            for table, target in zip(raw['tables'], forced.table_targets):
+                delta = abs((target['rotation_deg'] - table['rotation_deg'] + 90) % 180 - 90)
+                self.assertAlmostEqual(delta, 90)
+
+    def test_conflicting_source_orientations_keep_deterministic_position_axis(self):
+        tables = [TableState('a', 100, 250, 0, 160, 80, table_type='rect'),
+                  TableState('b', 400, 250, 90, 160, 80, table_type='rect')]
+        presenter, axis = _rect_input_presenter_and_axis(tables)
+        self.assertAlmostEqual(abs(axis[0]), 1)
+        self.assertAlmostEqual(axis[1], 0)
+        self.assertEqual((presenter, axis), _rect_input_presenter_and_axis(list(reversed(tables))))
+
     def test_overcapacity_raises_without_layout_fallback(self):
         with patch('aisi.app.sim_layout_rules.compute_target_layout') as fallback:
             for count in (16,17,30):

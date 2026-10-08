@@ -1,6 +1,6 @@
 # AISI Project Context
 
-Stand: 2026-10-07
+Stand: 2026-10-08
 
 ## 1. Purpose and workstreams
 
@@ -182,10 +182,10 @@ The fixed Rect Input slots have been replaced by a source-adaptive presentation-
 
 Current state:
 
-- presentation axis is derived from the source geometry;
+- Automatische Präsentationsachse seit 2026-10-08: gemeinsame axiale Source-Orientierung bevorzugt, Positionen bestimmen Präsentationsende und Rollen. Ohne eindeutige Orientierungsresultierende gilt die räumliche Hauptausdehnung; eine explizite Präsentationsseite bleibt verbindlich (D007).
 - presentation role is inferred spatially rather than from `table_id`;
 - active Rect tables use one semantic long-side seating/movement surface;
-- the normal productive Input path remains unchanged unless the participant-based preview is explicitly enabled;
+- Die gemeinsame Rect-Input-Synthese berücksichtigt diese Orientierungspräferenz im normalen und im Vorschaupfad; teilnehmendenbasierte Teilmenge, Parken und Chairs bleiben opt-in.
 - virtual Room Editor / Learning-Format / OSC / TouchDesigner checks have been accepted;
 - physical room validation remains open.
 
