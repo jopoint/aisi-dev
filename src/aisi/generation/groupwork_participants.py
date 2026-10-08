@@ -331,7 +331,7 @@ def _attach_clusters(state, targets, islands, profile, sizes, bound_clusters=Non
     return None
 
 
-def _solve_profile(active_state, profile, sizes, bound_clusters=None, seating_cache=None, *, angle_fallback=True):
+def _solve_profile(active_state, profile, sizes, bound_clusters=None, seating_cache=None, *, angle_fallback=True, check_floor_contours=False):
     cluster_sizes = tuple(sorted(descriptor[1] for descriptor in profile))
     if len(cluster_sizes) >= 4 and all(n == 1 for n in cluster_sizes):
         plan = _repair_singleton_profile(active_state,profile,sizes,bound_clusters)
@@ -346,7 +346,15 @@ def _solve_profile(active_state, profile, sizes, bound_clusters=None, seating_ca
                     return plan
         return None
     def accept(candidate):
-        return _attach_clusters(active_state,candidate.table_targets,candidate.groups,profile,sizes,bound_clusters,seating_cache) is not None
+        plan=_attach_clusters(active_state,candidate.table_targets,candidate.groups,profile,sizes,bound_clusters,seating_cache)
+        if plan is None:
+            return False
+        if check_floor_contours:
+            try:
+                validate_groupwork_plan(active_state,plan)
+            except LayoutConstraintError:
+                return False
+        return True
     try:
         result = solve_rect_groupwork_prototype(active_state,selection='source_movement',
                     cluster_sizes=cluster_sizes,candidate_filter=accept,disjoint_regions=True)
@@ -364,7 +372,7 @@ def _solve_profile(active_state, profile, sizes, bound_clusters=None, seating_ca
                 rot_deg=t.rot_deg+fraction*((axis-t.rot_deg+90.) % 180.-90.))
                 for t in active_state.tables],'groupwork')
             plan = _solve_profile(relaxed,profile,sizes,bound_clusters,seating_cache,
-                                  angle_fallback=False)
+                                  angle_fallback=False,check_floor_contours=check_floor_contours)
             if plan is not None:
                 for target in plan.targets:
                     target.source_rot_deg = originals[target.table_id].rot_deg
@@ -621,10 +629,22 @@ def _cached_plan(roi,key,participants,number_of_groups,policy):
             objective = (*_movement_priority(state,plan.targets,plan.parked_table_ids),
                          tuple((t.table_id,targets[t.table_id].target_x,targets[t.table_id].target_y) for t in state.tables))
             if best is None or objective < best[0]:
-                best = (objective,plan);best_rank = rank
+                best = (objective,plan,profile);best_rank = rank
     if best is None:
         raise LayoutConstraintError("Keine gemeinsame Groupwork-Geometrie für Teilnehmergruppen, Chairs und Parktische gefunden.")
-    return _improve_floor_spacing(state,best[1])
+    try:
+        return _improve_floor_spacing(state,best[1])
+    except LayoutConstraintError:
+        # Retry only a proven contour-repair dead end. The candidate filter
+        # then checks floor contours before the source-movement winner is chosen.
+        active_ids={tid for c in best[1].clusters for tid in c.table_ids}
+        active_state=SceneState(state.roi,[t for t in state.tables if t.table_id in active_ids],'groupwork')
+        retry=_solve_profile(active_state,best[2],sizes,seating_cache=seating_cache,check_floor_contours=True)
+        if retry is not None:
+            retry=_complete_parking(state,retry)
+            if retry is not None:
+                return _improve_floor_spacing(state,retry)
+        raise
 
 
 _transform_cache = OrderedDict()

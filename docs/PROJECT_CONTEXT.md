@@ -249,7 +249,15 @@ Bei gleicher Tischzahl/Topologie wird das Pair bevorzugt stärker belegt;
 sofern die vollständige Geometrie passt.
 Rollen bleiben nach der Clusterbildung gebunden; keine globale Zielpermutation.
 Johannes bestätigt die aktuelle `10/4`-Vorschau visuell als passend.
-Vollständige Einzelvalidierung und gemessene Live-Laufzeit bleiben offen. Die Offline-Suche ist inzwischen durch frühe
+Der gemeinsame Offline-Abschlusscheck besteht 130/130 Anfragen (Counts 1–15,
+zulässige Gruppen 1–5, Editor-/Live-Quelle), einschließlich gemeinsamer Geometrie,
+Identität, Scene Order und Determinismus. Kapazitätsbeispiele und technische
+15-Slotgrenze sind separat geprüft. Eine Editor-Sackgasse bei `13/4`–`15/4` wird
+nach Reparaturfehlschlag durch erneute Kandidatensuche mit voller Konturprüfung
+gelöst; zuvor gültige Pfade bleiben unverändert. 52 fokussierte Tests bestanden.
+[Abschlussbericht](GROUPWORK_ABSCHLUSSCHECK.md); Live-Stichprobe der neuen
+Konturreparatur, vollständige interaktive Einzelvalidierung und gemessene
+Live-Laufzeit bleiben offen. Die Offline-Suche ist inzwischen durch frühe
 kanonische Konfliktprüfung, unveränderte Bestwert-Auswahl und auf einen Aufruf
 begrenzte Chair-Prüfcaches beschleunigt; Vergleichspläne bleiben exakt gleich.
 Die zweite Stufe ergänzt sichere Weggrenzen in der Entzerrung sowie kanonische

@@ -66,7 +66,7 @@ aufgeschobene Raumprüfung sind getrennt von der bestandenen Offline-Prüfung.
 
 ## NEXT — Extend participant-based planning to other formats
 
-Synthetische Chairs sind für Input und Groupwork umgesetzt. Die aktuelle Groupwork-Stichprobe `10/4` ist laut Johannes visuell passend. Nächster Schritt ist der gezielte Groupwork-Abschlusscheck; danach folgt die Chair-Implementierung für Discussion. Der gemeinsame Formatwechsel-Check folgt nach den Einzelvalidierungen. Physische Raumprüfungen bleiben separat offen.
+Synthetische Chairs sind für Input und Groupwork umgesetzt. Die aktuelle Groupwork-Stichprobe `10/4` ist laut Johannes visuell passend. Der gemeinsame Groupwork-Offline-Abschlusscheck ist bestanden (130/130 Fälle). Die neue Konturreparatur für `13/4`–`15/4` benötigt noch eine Live-Stichprobe; danach folgt die Chair-Implementierung für Discussion. Der gemeinsame Formatwechsel-Check folgt nach den Einzelvalidierungen. Physische Raumprüfungen bleiben separat offen.
 
 ### Groupwork
 
@@ -91,7 +91,7 @@ Synthetische Chairs sind für Input und Groupwork umgesetzt. Die aktuelle Groupw
 - [x] Nach Johannes’ Bestätigung Gesamtweg vor strikter Aktiv-Wegpriorität bewerten; Groupwork-Parken darf mehrere ROI-Ränder nutzen. Aktuelle `5/1`-Quelle: Gesamtweg 608 → 315 cm, längster Weg 371 → 85 cm. Input-Standard unverändert; harte Geometriebedingungen bleiben erhalten. Beide aktuellen Korrekturen mit 42 fokussierten Tests und zwölf Offline-Fällen geprüft. Johannes bestätigt die aktuelle Live-Stichprobe als passend; vollständige Einzelvalidierung und physische Prüfung offen.
 - [ ] Neue Groupwork-Laufzeit im laufenden Sender nach manuellem Neuladen prüfen; allgemeine Laufzeitgrenze und weitere Optimierung getrennt behandeln.
 - [ ] Neue Groupwork-Vorschau einzeln im Room Editor, Lernformat-Interface und laufenden TD-Projekt prüfen; danach physische Prüfung. Bestehenden Sender beim manuellen Neuladen ersetzen, keine zweite Instanz starten.
-- [ ] Kapazität, eindeutige räumliche Gruppenzuordnung, freie Bewegungsflächen, Clusterabstände, Chair-Geometrie und Parken gemeinsam offline validieren. Sieben-Personen-Beispiel mit zwei zusammengehörigen Clustern sowie Fünf-Personen-Beispiel `2 + 2 + 1` prüfen; TD-Slotlimit getrennt behandeln.
+- [x] Gemeinsamer Groupwork-Offline-Abschlusscheck: 130/130 Fälle (Counts 1–15, zulässige Gruppen 1–5, Editor-/Live-Quelle), kanonische gemeinsame Geometrie, relative Gruppenzuordnung, Identität/Scene Order und Determinismus. Beispiele sieben Personen auf Pair 4 + Singleton 3 sowie Einzel-Tisch `2 + 2 + 1`, geometrische Kapazität und technische 15-Slotgrenze getrennt geprüft. 52 Tests bestanden; Editor-Sackgasse `13/4`–`15/4` durch erneute Suche mit Konturfilter behoben. Live-Stichprobe der neuen Reparatur offen. [Prüfbericht](docs/GROUPWORK_ABSCHLUSSCHECK.md).
 
 ### Discussion
 

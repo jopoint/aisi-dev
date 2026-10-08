@@ -58,6 +58,15 @@ class GroupworkPreviewTests(unittest.TestCase):
                 with self.subTest(people=people,groups=groups),self.assertRaises(LayoutConstraintError):
                     compute_synthetic_layout(self.scene,'groupwork',1.,dict(self.parameters,participants=people,number_of_groups=groups))
 
+    def test_offline_capacity_above_fifteen_is_separate_from_td_slots(self):
+        state=editor_state()
+        plan=plan_participant_groupwork(state,16,5)
+        validate_groupwork_plan(state,plan)
+        self.assertEqual(len(plan.chairs),16)
+        self.assertEqual(plan.group_sizes,(4,3,3,3,3))
+        with self.assertRaisesRegex(LayoutConstraintError,'15 TD-Chair-Slots'):
+            compute_synthetic_layout(self.scene,'groupwork',1.,dict(self.parameters,participants=16,number_of_groups=5))
+
     def test_existing_osc_adapter_owns_groupwork_preview_and_hides_radius(self):
         tables,persons,chairs,targets,reason = prepare_scene_output(self.scene,'groupwork',1.,False,activity_parameters=self.parameters)
         self.assertIsNone(reason); self.assertEqual(len(chairs),5)

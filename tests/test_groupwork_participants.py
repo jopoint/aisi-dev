@@ -16,7 +16,7 @@ from aisi.generation.groupwork_participants import (
     ParticipantCluster, GroupworkPlan, cluster_seating,
     plan_participant_groupwork, validate_groupwork_plan,
     _improve_floor_spacing,
-    _cached_cluster_seating, _movement_priority, _profile_key,
+    _cached_cluster_seating, _movement_priority, _profile_key, groups_are_spatially_distinct,
 )
 
 
@@ -129,6 +129,36 @@ class GroupworkSeatTests(unittest.TestCase):
         blocked=deepcopy(plan);blocked.targets[-1]=replace(blocked.targets[-1],target_x=140,target_y=250)
         with self.assertRaises(LayoutConstraintError):validate_groupwork_plan(state,blocked)
 
+    def test_relative_group_assignment_rejects_interleaved_clusters(self):
+        clusters=(ParticipantCluster('a','group_0',('a',),2),
+                  ParticipantCluster('b','group_0',('b',),2),
+                  ParticipantCluster('c','group_1',('c',),2))
+        targets=[TableTarget('a',100,250),TableTarget('b',180,250),TableTarget('c',400,250)]
+        plan=GroupworkPlan(targets,[],clusters,(4,2),{})
+        self.assertTrue(groups_are_spatially_distinct(plan))
+        plan.targets[1]=replace(plan.targets[1],target_x=450)
+        self.assertFalse(groups_are_spatially_distinct(plan))
+
+    def test_pair_capacity_uses_ends_and_rejects_nonfitting_dense_chairs(self):
+        state=SceneState(ROI(0,0,500,500),[
+            TableState('a',250,206,0,160,80,table_type='rect'),
+            TableState('b',250,294,0,160,80,table_type='rect')],'groupwork')
+        targets=[TableTarget(t.table_id,t.x,t.y,target_rot_deg=0) for t in state.tables]
+        for count in range(1,9):
+            cluster=ParticipantCluster('pair','group_0',('a','b'),count)
+            seats,regions=cluster_seating(state,targets,cluster)
+            validate_groupwork_plan(state,GroupworkPlan(targets,seats,(cluster,),(count,),{'pair':regions}))
+            kinds=Counter(c['seat_kind'] for c in seats)
+            self.assertEqual(kinds['regular_end'],min(max(0,count-4),4))
+            self.assertEqual(kinds['dense_long'],max(0,count-8))
+        # Ten is only the seat-position upper bound: the current ellipse
+        # cannot contain the dense outer-row circles for nine or ten.
+        for count in (9,10):
+            with self.assertRaisesRegex(LayoutConstraintError,'Chair-Kreise'):
+                cluster_seating(state,targets,replace(cluster,participants=count))
+        with self.assertRaisesRegex(LayoutConstraintError,'Sitzpositionen'):
+            cluster_seating(state,targets,replace(cluster,participants=11))
+
     def test_explicit_cluster_topology_is_complete_and_scene_order_independent(self):
         tables=editor_state().tables
         for sizes in ((1,1,1,1,1),(1,2,2),(1,1,1,2)):
@@ -140,6 +170,20 @@ class GroupworkSeatTests(unittest.TestCase):
 
 
 class GroupworkPlanningTests(unittest.TestCase):
+    def test_editor_four_groups_retry_contours_before_rejecting(self):
+        state=editor_state()
+        for count in (13,14,15):
+            with self.subTest(count=count):
+                plan=plan_participant_groupwork(state,count,4)
+                validate_groupwork_plan(state,plan)
+                self.assertEqual(len(plan.chairs),count)
+                self.assertEqual(len({c.group_id for c in plan.clusters}),4)
+                reverse=deepcopy(state);reverse.tables.reverse()
+                other=plan_participant_groupwork(reverse,count,4)
+                self.assertEqual(plan.targets,list(reversed(other.targets)))
+                self.assertEqual(plan.chairs,other.chairs)
+                self.assertEqual(plan,plan_participant_groupwork(state,count,4))
+
     def test_current_source_pair_selection_avoids_long_lower_left_parking(self):
         poses=((363.571,254.286,175),(131.429,100.714,145),
                (364.286,92.857,215),(126.429,389.286,415),(279.433,395.714,40))

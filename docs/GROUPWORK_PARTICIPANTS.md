@@ -461,3 +461,19 @@ Johannes bestätigt anschließend am 2026-10-08 die aktuelle Live-Stichprobe mit
 „ja passt“. Die Rückmeldung gilt als qualitative Bestätigung der beiden
 Korrekturen; sie ersetzt weder eine gemessene Sender-Laufzeit noch die vollständige
 Groupwork-Einzelvalidierung oder die physische Raumprüfung.
+
+## Gemeinsamer Offline-Abschlusscheck
+
+Am 2026-10-08 abgeschlossen: **130/130 Anfragen** für Counts 1–15 und alle
+zulässigen Gruppenzahlen 1–5 mit Editor-/Live-Quelle bestanden, jeweils volle
+Geometrie, deterministische Wiederholung und umgekehrte Scene Order. 52 Tests
+bestanden. Drei zunächst abgelehnte Editor-Fälle (`13/4`–`15/4`) werden nach
+einem gescheiterten Konturreparaturversuch erneut mit vollständiger Konturprüfung
+im Kandidatenfilter gesucht; gültige bisherige Suchpfade bleiben unverändert.
+Kapazitäten, spezifizierte Sitzbeispiele, relative räumliche Gruppenzuordnung
+und technische 15-Slotgrenze sind getrennt geprüft. Details, Grenzen und lokale
+Artefakte: [Abschlussbericht](GROUPWORK_ABSCHLUSSCHECK.md).
+
+Nächste kurze Stichprobe: `13/4`–`15/4` nach manuellem Ersetzen/Neuladen des
+bestehenden Senders. Vollständige interaktive Einzelvalidierung, gemessene
+Sender-Laufzeit und physische Raumprüfung bleiben offen.
