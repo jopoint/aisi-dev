@@ -70,7 +70,7 @@ Synthetische Chairs sind bisher nur für Input umgesetzt. Nächster Implementier
 
 ### Groupwork
 
-- [x] Spezifikation vom 2026-10-08 aufgenommen: Teilnehmergruppe von Tischclustern trennen; mehrere räumlich eindeutig zusammengehörige Cluster pro Gruppe zulässig. Sitzpriorität Längsseiten regulär → Stirnseiten regulär → Längsseiten verdichtet; fünf Personen am Einzel-Rect bevorzugt `2 + 2 + 1`. [D008b](docs/DECISIONS.md#d008b--teilnehmendenbasierte-groupwork-gruppen-und-sitzprioritäten).
+- [x] Spezifikation vom 2026-10-08 aufgenommen: Teilnehmergruppe von Tischclustern trennen; mehrere räumlich eindeutig zusammengehörige Cluster pro Gruppe zulässig. Sitzpriorität: zwei Personen je nutzbarer Längsseite optimal → geometrisch nutzbare Stirnseiten → drei Plätze an einer Längsseite; fünf Personen am Einzel-Rect bevorzugt `2 + 2 + 1`. [D008b](docs/DECISIONS.md#d008b--teilnehmendenbasierte-groupwork-gruppen-und-sitzprioritäten).
 - [x] Offline-Prototyp ergänzt: gleichmäßige Teilnehmergruppen, separate Cluster-/Chair-Zuordnung, kanonische Stirnseitenflächen, vollständige Table-/Chair-/Sitzflächen-/Parkprüfung. 65 fokussierte Tests und zehn Integrationsfälle bestanden; [Handoff](docs/GROUPWORK_PARTICIPANTS.md).
 - [x] Johannes bestätigt `few_tables`: fünf Personen bevorzugt am Einzel-Rect mit `2 + 2 + 1`; Tischzahl zuerst minimieren, danach Sitzpriorität anwenden.
 - [x] `participants` und `number_of_groups` möglichst gleichmäßig auf Teilnehmergruppen verteilen; benötigte Tischzahl und Cluster je Gruppe geometrisch bestimmen statt Teilnehmergruppe mit Insel gleichzusetzen.

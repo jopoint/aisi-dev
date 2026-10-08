@@ -28,8 +28,8 @@ Singletons nutzen die bisherigen beidseitigen abgerundeten 60-cm-Längsstreifen,
 bei belegten Stirnseiten zusätzlich geometrisch entsprechend abgerundete
 60-cm-Stirnseitenstreifen. Pairs behalten ihre bestehende Ellipse und 8-cm-Seam;
 die innere Seam erhält keine Sitzplätze. Chair-Radius bleibt 25 cm.
-Reguläre Längsseiten werden vor regulären Stirnseiten und diese vor Verdichtung
-belegt. Bei fünf Personen am Einzel-Rect ergibt sich `2 + 2 + 1`.
+Zwei Personen je nutzbarer Längsseite sind das Optimum. Geometrisch nutzbare
+Stirnseiten der Gruppe werden vor einem dritten Platz an einer Längsseite belegt. Bei fünf Personen am Einzel-Rect ergibt sich `2 + 2 + 1`.
 Profile enthalten theoretische Positionsobergrenzen; erst die Kreis-/Flächenprüfung
 entscheidet, welche Belegung tatsächlich möglich ist. Insbesondere begrenzt
 die Pair-Ellipse mögliche Randpositionen.
@@ -113,3 +113,13 @@ bestehendem Sender nach manuellem Neuladen, insbesondere fünf Personen/eine Gru
 bei 100 %, dann Count-/Gruppenwechsel und Teilstärken. Physische Gruppenerkennbarkeit
 und Projektion bleiben separat offen. Input, Discussion, Study, Tracking,
 Kalibrierung und Projektorkonfiguration bleiben unverändert.
+
+## Präzisierung der Sitzpriorität
+
+Johannes bestätigt die allgemeine Regel: zwei Personen pro Längsseite optimal,
+Stirnseiten vor drei Plätzen an einer Längsseite. Die vorhandene Belegung erfüllt
+diese Regel bereits; keine Generatoränderung erforderlich. Drei gezielte
+Sitzgeometrietests erneut bestanden (Singleton-Counts 1–8 bei vier Winkeln,
+Sieben-Personen-Clusterbeispiel und Identität der Clusterpartitionen). Zusätzlich
+Pair-Counts 4–8 vollständig geprüft: vier reguläre Längsseitenplätze, danach
+bis zu vier Stirnseitenplätze, keine verdichtete Längsseite. Raumprüfung offen.
