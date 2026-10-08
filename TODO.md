@@ -70,9 +70,10 @@ Synthetische Chairs sind bisher nur für Input umgesetzt. Nächster Implementier
 
 ### Groupwork
 
-- [ ] Distribute participants across accepted Pair/Singleton islands.
-- [ ] Derive Chairs from the accepted island seating surfaces.
-- [ ] Jointly validate capacity, clearance, island spacing, Chair geometry, and parking.
+- [x] Spezifikation vom 2026-10-08 aufgenommen: Teilnehmergruppe von Tischclustern trennen; mehrere räumlich eindeutig zusammengehörige Cluster pro Gruppe zulässig. Sitzpriorität Längsseiten regulär → Stirnseiten regulär → Längsseiten verdichtet; fünf Personen am Einzel-Rect bevorzugt `2 + 2 + 1`. [D008b](docs/DECISIONS.md#d008b--teilnehmendenbasierte-groupwork-gruppen-und-sitzprioritäten).
+- [ ] `participants` und `number_of_groups` möglichst gleichmäßig auf Teilnehmergruppen verteilen; benötigte Tischzahl und Cluster je Gruppe geometrisch bestimmen statt Teilnehmergruppe mit Insel gleichzusetzen.
+- [ ] Chairs mit getrennten Teilnehmergruppen-/Clusterzuordnungen aus freien Sitzflächen ableiten. Bestehende Singleton-Geometrie um die nun erlaubten Stirnseitenplätze ergänzen; Sitzprioritäten prüfen.
+- [ ] Kapazität, eindeutige räumliche Gruppenzuordnung, freie Bewegungsflächen, Clusterabstände, Chair-Geometrie und Parken gemeinsam offline validieren. Sieben-Personen-Beispiel mit zwei zusammengehörigen Clustern sowie Fünf-Personen-Beispiel `2 + 2 + 1` prüfen; TD-Slotlimit getrennt behandeln.
 
 ### Discussion
 

@@ -23,6 +23,7 @@ Statuses:
 - D007 Source-adaptive Rect Input
 - D007a Participant-based Input preview
 - D008 Rect Groupwork topology
+- D008b Teilnehmendenbasierte Groupwork-Gruppen und Sitzprioritäten
 - D008a Layout validation workflow
 - D009 Discussion topology
 - D010 Scout Groupwork semantics
@@ -140,12 +141,24 @@ Status: **Accepted und produktiv umgesetzt**
 - `table_id` dient Identität und Wiederherstellung der ursprünglichen Scene Order, nicht Pair-Bildung oder Rollenvergabe.
 - Jede Groupwork-Sitz-/Bewegungszone muss vollständig innerhalb der `500 × 500 cm` ROI liegen.
 - Rect Pair-Seam: `8 cm`.
-- Ein Rect-Singleton erhält zwei mindestens `60 cm` tiefe Sitz-/Bewegungsstreifen über die vollständige Breite seiner Längsseiten, keine Stirnseiten-Sitzflächen; die zwei äußeren Ecken jedes Streifens sind mit `30 cm` Radius abgerundet.
+- Bisheriger table-only Stand: Ein Rect-Singleton erhält zwei mindestens `60 cm` tiefe Sitz-/Bewegungsstreifen über die vollständige Breite seiner Längsseiten, keine Stirnseiten-Sitzflächen; die zwei äußeren Ecken jedes Streifens sind mit `30 cm` Radius abgerundet. Für die neue teilnehmendenbasierte Groupwork-Planung wird der Ausschluss von Stirnseitenplätzen durch D008b abgelöst; die dafür benötigte Geometrie ist noch nicht umgesetzt.
 - Ein Rect-Pair erhält eine elliptische, mindestens `60 cm` auskragende Clearance.
 - Die Zielrotation eines Pairs erhält die axiale mittlere Orientierung seiner Source-Tische als starke Präferenz.
 - Der produktive Suchkern enumeriert Counts `2–5`, prüft beide Pair-Mitgliederzuordnungen und optimiert freie lokale Gruppenmittelpunkte/Winkel.
 - Auswahlpriorität: Zonenüberlappung, dann maximale und gesamte Verschiebung, Rotationsänderung, Kreuzungen und Inselabstand.
 - Teilstärken werden mit derselben vollständigen Inselgeometrie repariert; eine ältere einseitige Standard-Clearance darf nicht zusätzlich als widersprüchliches Kriterium verwendet werden.
+
+## D008b — Teilnehmendenbasierte Groupwork-Gruppen und Sitzprioritäten
+
+Status: **Fachlich bestätigt durch Johannes am 2026-10-08 — noch nicht umgesetzt**
+
+- Primäre Eingaben sind `participants` und `number_of_groups`. Die Teilnehmenden werden möglichst gleichmäßig verteilt; Gruppengrößen unterscheiden sich höchstens um eine Person.
+- Teilnehmergruppe und Tischcluster sind unterschiedliche Entitäten. Der Generator bestimmt die benötigten Tische; eine Teilnehmergruppe muss nicht genau einer zusammenhängenden Tischfläche entsprechen.
+- Eine größere Teilnehmergruppe darf mehrere räumlich zusammengehörige Tischcluster nutzen, sofern ihre gemeinsame Gruppenzuordnung eindeutig bleibt. Die bestehende Inselzuordnung des Tischgenerators ersetzt diese Teilnehmergruppenzuordnung nicht.
+- Zulässiges Beispiel, keine verpflichtende Aufteilung: Eine Gruppe mit sieben Personen nutzt ein Cluster aus zwei Tischen für vier Personen und ein weiteres Cluster aus einem Tisch für drei Personen.
+- Sitzplatzpräferenz: zuerst reguläre Plätze an Längsseiten, danach reguläre Plätze an Stirnseiten, zuletzt verdichtete Längsseitenbelegung. Bei fünf Personen an einem Einzel-Rect sind `2 + 2` an den Längsseiten und ein Stirnseitenplatz gegenüber `3 + 2` an den Längsseiten zu bevorzugen.
+- Kapazität muss aus tatsächlich freien Sitzplätzen, Footprints und Bewegungsflächen folgen. Weder eine fixe Tischzahl pro Teilnehmergruppe noch die Input-Grenze von 15 definiert die fachliche Groupwork-Kapazität. Die vorhandenen 15 TD-Chair-Slots sind eine separate technische Ausgabegrenze.
+- Nächste Umsetzung: Teilnehmergruppen und Cluster getrennt zuordnen, Stirnseiten-Sitzflächen in die kanonische Geometrie aufnehmen und aktive/parkende Tische sowie sämtliche Chairs gemeinsam prüfen. Kriterien für eindeutige räumliche Gruppenzugehörigkeit und zulässige Verdichtung sind dabei konkret zu validieren; keine neuen Abstandsgrenzen allein aus dem Beispiel ableiten.
 
 ## D008a — Validierung über die Simulationspipeline
 

@@ -209,6 +209,14 @@ Port `9000` senden. Diese Validierung hat keinen Sender gestartet.
 
 ### Groupwork
 
+Neue Spezifikation vom 2026-10-08, noch nicht implementiert: `participants`
+und `number_of_groups` bestimmen möglichst gleich große Teilnehmergruppen.
+Eine Teilnehmergruppe darf mehrere räumlich zugehörige Tischcluster nutzen.
+Die bisherigen Insel-`groups` des Geometriegenerators sind keine vollständige
+Teilnehmergruppenzuordnung. Reguläre Stirnseitenplätze erhalten Vorrang vor
+verdichteten Längsseitenplätzen; die bisherigen Singleton-Längsstreifen
+decken diese neue Sitzregel noch nicht ab. Verbindliche Details: D008b.
+
 Source-adaptive Rect Groupwork for counts `2–5` is productively implemented.
 
 Current state:
