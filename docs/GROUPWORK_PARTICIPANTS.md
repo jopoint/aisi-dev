@@ -456,3 +456,8 @@ Scene Order. Lokaler Bericht und Vergleichsplot:
 `data/aisi/debug/groupwork_participant_preview_2026-10-08/current_source_parking_and_15_5/`.
 Die Debug-Artefakte werden nicht in Git aufgenommen. Keine OSC-Ausgabe,
 TD-Fernsteuerung oder automatische Speicherung; bestehende Änderungen bleiben erhalten.
+
+Johannes bestätigt anschließend am 2026-10-08 die aktuelle Live-Stichprobe mit
+„ja passt“. Die Rückmeldung gilt als qualitative Bestätigung der beiden
+Korrekturen; sie ersetzt weder eine gemessene Sender-Laufzeit noch die vollständige
+Groupwork-Einzelvalidierung oder die physische Raumprüfung.
