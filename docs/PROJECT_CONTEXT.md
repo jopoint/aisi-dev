@@ -229,6 +229,10 @@ Die physische Geometrie und Pair-Seam bleiben unverändert.
 Nach der visuellen Stichprobe ist im teilnehmendenbasierten Suchpfad die
 Source-Verschiebung gegenüber zusätzlichem Gruppenabstand priorisiert;
 Singletons erhalten zusätzliche Source-abgeleitete Winkelkandidaten.
+Der Vier-/Fünf-Singleton-Reparaturpfad nutzt inzwischen begrenzte Winkelannäherung
+statt eines direkten gemeinsamen orthogonalen Fallbacks und prüft abgerundete
+kanonische Flächen. Geparkte Groupwork-Tische stehen bei 100 % mit ihrer physischen
+Längsseite am ROI-Rand und bleiben von der anschließenden Entzerrung ausgenommen.
 Rollen bleiben nach der Clusterbildung gebunden; keine globale Zielpermutation.
 Die aktuelle Korrektur wurde noch nicht in der laufenden Anwendung geladen;
 Live-Prüfung bleibt offen. Die Offline-Suche ist inzwischen durch frühe

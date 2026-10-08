@@ -17,12 +17,32 @@ gemeinsamer Ergebnisse.
 Der vorhandene Groupwork-Suchkern unterstützt optional vorgegebene Clustergrößen
 und eine zusätzliche vollständige Kandidatenprüfung. Sein bisheriger Aufruf
 behält die bestehenden Pair-/Singleton-Regeln. Bei vier/fünf Singletons werden
-zusätzlich konservative Hüllrechtecke aus den kanonischen Sitzflächen mit der
-vorhandenen kontinuierlichen Hard-Constraint-Reparatur verschoben. Zunächst
-werden Source-Winkel erhalten, bei fehlender Lösung Raumachsen versucht.
-Die Endprüfung verwendet ausschließlich tatsächliche kanonische Tisch- und
-Sitzpolygone sowie vollständige Chair-Kreise. Dieser zusätzliche Reparaturpfad
+Source-Winkel zuerst vollständig erhalten. Die vorhandene Hüllrechteck-Reparatur
+liefert Startpositionen; eine begrenzte Verschiebungssuche nutzt anschließend
+Projektionsintervalle der kanonischen abgerundeten Sitzflächen, Tisch-Footprints
+und bestehenden Bodenkonturen. Bei fehlender Lösung werden die Source-Winkel
+schrittweise in Richtung der näheren ROI-Achse angenähert. Einzelne Winkel
+werden danach soweit geometrisch möglich wieder zur Source zurückgeführt.
+Es gibt keine festen Zielslots und keinen direkten Sprung aller Tische auf 0°/90°.
+Die frühere reine Achsenreparatur bleibt nur nach ausgeschöpfter Winkel-/Flächensuche
+als letzte Möglichkeit erhalten; auch sie muss die spätere vollständige Endprüfung bestehen.
+Enge Fünf-Gruppen-Szenen können dennoch überwiegend achsennahe Winkel benötigen.
+Die Endprüfung verwendet tatsächliche kanonische Tisch- und Sitzpolygone,
+Bodenkonturen und vollständige Chair-Kreise. Dieser zusätzliche Reparaturpfad
 gilt bisher nur für Singleton-Profile mit ausschließlich Längsseitenplätzen.
+
+Bei fünf Gruppen und fünf vorhandenen Tischen bleibt je Gruppe ein Singleton.
+Teilnehmeränderungen von einer bis drei Personen je Gruppe ändern die Chair-Belegung;
+die vollständigen beidseitigen 60-cm-Zonen bleiben gleich. Eine künstliche Änderung
+der Tischposen allein aufgrund des Counts ist nicht vorgesehen. Source-Änderungen
+fließen dagegen weiterhin in Winkel und Positionen ein.
+
+Bei 100 % liegen geparkte Groupwork-Tische mit einer physischen Längsseite exakt
+am ROI-Rand. Zulässige Mittelpunkte stammen aus der kanonischen Footprint-Geometrie,
+nicht aus einer festen halben Tischbreite. Die spätere Entzerrung verschiebt nur
+aktive Cluster und lässt Parkposen unverändert. Die zusätzliche 5-cm-Bodenkontur
+ist ein Darstellungsrand; sie wird nicht als physische Tischkante interpretiert.
+Stärke 0 und das bestehende Blending positiver Teilstärken bleiben unverändert.
 
 Singletons nutzen die bisherigen beidseitigen abgerundeten 60-cm-Längsstreifen,
 bei belegten Stirnseiten zusätzlich geometrisch entsprechend abgerundete
@@ -248,3 +268,23 @@ kanonische Hüllrechteck-Vorprüfung sowie begrenzte Caches für reine Polygon-
 und lokale Streifengeometrie. 37 fokussierte Tests und zwölf erneut exakt
 unveränderte Integrationspläne bestanden. Details und direkte Messung im
 [Laufzeit-Handoff](GROUPWORK_PERFORMANCE.md#zweite-optimierungsstufe).
+
+## Nachtrag: fünf Gruppen und Randparken (2026-10-08)
+
+Die aktuelle Live-Quelle und der Editor wurden in zwölf Offline-Fällen geprüft:
+`3/1`, `5/1`, `7/2`, `10/2`, `15/2`, `15/5`; vollständige Geometrie,
+Determinismus und umgekehrte Scene Order jeweils bestanden. 34 fokussierte Tests
+bestanden: 18 Groupwork-Teilnehmendentests, sechs Vorschautests und zehn
+Input-Geometrietests. Neue Regressionen prüfen fünf Gruppen bei 5/10/15 Personen,
+Reaktion auf geänderte Source-Winkel, unveränderte gültige Source-Posen bei vier
+Gruppen sowie kantenbündiges Parken nach der Entzerrung und bei abweichenden
+Tischmaßen/ROI-Grenzen. Die früher schwierige Fünf-Singleton-Quelle bleibt gültig.
+
+Zwei Vergleichsplots und eingefrorene Prüfdaten liegen lokal unter
+`data/aisi/debug/groupwork_participant_preview_2026-10-08/angles_and_edge_parking/`.
+Der Plotlauf benötigte für die aktuelle Fünf-Gruppen-Szene ungefähr 1,8 s statt
+zuvor 0,4 s. Die zusätzliche begrenzte Winkelsuche kostet Zeit; der Plotlauf
+lief teilweise parallel zu Tests und ist kein allgemeiner Laufzeitnachweis.
+Keine OSC-Pakete versendet, kein Sender neu gestartet, kein TD-Projekt verändert
+oder gespeichert. Live-Prüfung nach manuellem Neuladen sowie physische Prüfung
+bleiben offen.

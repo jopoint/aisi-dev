@@ -5,7 +5,7 @@ import unittest
 import math
 from unittest.mock import patch
 
-from aisi.app.sim_layout_rules import _normalize_scene_for_aisi
+from aisi.app.sim_layout_rules import _normalize_scene_for_aisi, _compact_park_targets
 from aisi.app.sim_room_editor import make_default_tables, scene_payload
 from aisi.core.models import ROI, SceneState, TableState, TableTarget
 from aisi.input.scene_loader import build_scene_state_from_dict
@@ -29,6 +29,17 @@ def editor_state():
 
 
 class GroupworkSeatTests(unittest.TestCase):
+    def test_edge_parking_uses_actual_footprint_dimensions_and_roi(self):
+        state=SceneState(ROI(20,30,520,530),[
+            TableState('a',250,250,37,160,100)],'groupwork')
+        for slot,expected in (((250.,40.,0.),(250.,80.)),
+                              ((460.,250.,90.),(470.,250.))):
+            target=_compact_park_targets(state,state.tables,[],(slot,),
+                exclusion_regions=[],edge_aligned=True)[0]
+            self.assertAlmostEqual(target.target_x,expected[0])
+            self.assertAlmostEqual(target.target_y,expected[1])
+            self.assertEqual(target.source_rot_deg,37)
+
     def test_seating_cache_keeps_labels_copies_and_foreign_geometry_separate(self):
         state=SceneState(ROI(0,0,500,500),[
             TableState('a',130,250,0,160,80,table_type='rect'),
@@ -98,6 +109,57 @@ class GroupworkSeatTests(unittest.TestCase):
 
 
 class GroupworkPlanningTests(unittest.TestCase):
+    def test_valid_four_singleton_source_angles_are_preserved_exactly(self):
+        poses=((130,125,10),(370,125,-10),(130,375,-10),(370,375,10))
+        state=SceneState(ROI(0,0,500,500),[
+            TableState(str(i),x,y,angle,160,80,table_type='rect')
+            for i,(x,y,angle) in enumerate(poses)],'groupwork')
+        plan=plan_participant_groupwork(state,12,4)
+        validate_groupwork_plan(state,plan)
+        self.assertEqual([(t.target_x,t.target_y,t.target_rot_deg) for t in plan.targets],
+                         [(t.x,t.y,t.rot_deg) for t in state.tables])
+
+    def test_five_groups_keep_source_derived_angles_and_react_to_source_changes(self):
+        poses=((359.286,247.143,175),(132.143,197.143,145),
+               (364.286,92.857,215),(126.429,389.286,415),(360.147,440.,-5))
+        state=SceneState(ROI(0,0,500,500),[
+            TableState(f'table_{i}',x,y,angle,160,80,table_type='rect')
+            for i,(x,y,angle) in enumerate(poses)],'groupwork')
+        for people in (5,10,15):
+            plan=plan_participant_groupwork(state,people,5)
+            validate_groupwork_plan(state,plan)
+            self.assertEqual(len(plan.chairs),people)
+            self.assertEqual(len(plan.clusters),5)
+            self.assertGreater(max(abs((t.target_rot_deg+45)%90-45) for t in plan.targets),2.)
+            other=deepcopy(state);other.tables.reverse()
+            reversed_plan=plan_participant_groupwork(other,people,5)
+            self.assertEqual(plan.targets,list(reversed(reversed_plan.targets)))
+            self.assertEqual(plan.chairs,reversed_plan.chairs)
+            self.assertEqual(plan,plan_participant_groupwork(state,people,5))
+        moved=deepcopy(state);moved.tables[0].rot_deg+=12
+        changed=plan_participant_groupwork(moved,15,5)
+        validate_groupwork_plan(moved,changed)
+        self.assertNotEqual([(t.target_x,t.target_y,t.target_rot_deg) for t in changed.targets],
+                            [(t.target_x,t.target_y,t.target_rot_deg) for t in plan.targets])
+
+    def test_full_strength_parking_keeps_long_side_flush_after_spacing(self):
+        from aisi.core.table_geometry import footprint_bounds,table_world_footprint
+        state=editor_state()
+        for people,groups in ((3,1),(5,1),(15,2)):
+            plan=plan_participant_groupwork(state,people,groups)
+            validate_groupwork_plan(state,plan)
+            by_id={t.table_id:t for t in state.tables}
+            for target in plan.targets:
+                if target.table_id not in plan.parked_table_ids:
+                    continue
+                x0,y0,x1,y1=footprint_bounds(table_world_footprint(by_id[target.table_id],
+                    (target.target_x,target.target_y),target.target_rot_deg))
+                if abs(target.target_rot_deg % 180.)<1e-8:
+                    gap=min(abs(y0-state.roi.y_min),abs(y1-state.roi.y_max))
+                else:
+                    gap=min(abs(x0-state.roi.x_min),abs(x1-state.roi.x_max))
+                self.assertLess(gap,1e-7)
+
     def test_live_four_groups_do_not_send_upper_left_source_into_distant_pair(self):
         poses=((262.857,211.429,175),(132.143,128.571,145),
                (364.286,83.571,175),(177.143,381.429,195),(398.004,367.143,45))

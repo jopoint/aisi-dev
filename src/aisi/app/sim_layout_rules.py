@@ -550,10 +550,11 @@ def _compact_park_targets(
     candidates: tuple[tuple[float, float, float], ...],
     *,
     exclusion_regions: list[tuple[tuple[float, float], ...]],
+    edge_aligned: bool = False,
 ) -> list[Any]:
     """Choose compact edge bays outside active tables and their seat zones."""
     from aisi.core.models import TableTarget
-    from aisi.core.table_geometry import convex_polygons_intersect, polygon_inside_roi, table_world_footprint
+    from aisi.core.table_geometry import convex_polygons_intersect, polygon_inside_roi, table_world_footprint, table_allowed_center_bounds
 
     if not parked:
         return []
@@ -565,6 +566,16 @@ def _compact_park_targets(
         footprints = list(occupied)
         valid = True
         for table, (x, y, rotation) in zip(parked, slots):
+            if edge_aligned:
+                x0,y0,x1,y1 = table_allowed_center_bounds(table,rotation,
+                    x_min=scene_state.roi.x_min,y_min=scene_state.roi.y_min,
+                    x_max=scene_state.roi.x_max,y_max=scene_state.roi.y_max)
+                if abs(rotation % 180.) < 1e-8:
+                    y = y0 if y < (scene_state.roi.y_min+scene_state.roi.y_max)/2 else y1
+                    x = min(max(x,x0),x1)
+                else:
+                    x = x0 if x < (scene_state.roi.x_min+scene_state.roi.x_max)/2 else x1
+                    y = min(max(y,y0),y1)
             footprint = table_world_footprint(table, (x, y), rotation)
             if (
                 not polygon_inside_roi(footprint, x_min=scene_state.roi.x_min, y_min=scene_state.roi.y_min, x_max=scene_state.roi.x_max, y_max=scene_state.roi.y_max)

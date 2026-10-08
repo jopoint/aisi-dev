@@ -196,6 +196,15 @@ gebunden und bleiben danach erhalten. Die spätere Entzerrung beseitigt zuerst
 Konturkonflikte, minimiert anschließend Source-Wege; zusätzlicher Gruppenabstand
 ist nachrangig. Kanonische Sitz-/Bewegungsflächen bleiben harte Bedingungen.
 Die bisherigen table-only Auswahlprofile bleiben unverändert.
+Nach der Fünf-Gruppen-Live-Stichprobe vom 2026-10-08 ergänzt: Der
+Singleton-Reparaturpfad nähert Source-Winkel bei Platzmangel schrittweise an
+ROI-Achsen an und führt individuelle Winkel soweit möglich zur Source zurück;
+kein unmittelbarer gemeinsamer 0°/90°-Fallback. Kanonische abgerundete Flächen
+und Bodenkonturen entscheiden über die Zulässigkeit. Unveränderte Tischziele
+bei wechselnden Counts sind zulässig, wenn Tischzahl und benötigte Sitzflächen
+gleich bleiben. Geparkte Groupwork-Tische liegen im vollständigen Ziel mit
+einer physischen Längsseite am ROI-Rand; die Entzerrung darf sie nicht wieder
+nach innen schieben. Teilstärken und Stärke 0 behalten ihre bestehenden Regeln.
 Die opt-in Vorschau ist an den bestehenden OSC-Adapter angebunden; über 15
 Teilnehmende werden dort wegen der technischen TD-Slots ausdrücklich abgelehnt.
 Das Offline-Modell behält seine separate geometrische Kapazität.

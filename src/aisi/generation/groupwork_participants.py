@@ -347,36 +347,148 @@ def _solve_profile(active_state, profile, sizes, bound_clusters=None, seating_ca
 
 
 def _repair_singleton_profile(state, profile, sizes, bound_clusters=None):
-    """Repair conservative envelopes derived from actual canonical seat regions."""
-    from aisi.generation.layout_constraints import repair_layout_hard_constraints
+    """Repair source-derived singleton poses using complete canonical regions."""
     if any(n != 1 for _,n,_ in profile):
         return None
     islands = tuple((t.table_id,) for t in state.tables)
-    # Local candidates need not contain the small diagonal shifts required by
-    # five singleton islands. Try a continuous shared repair before rejecting.
-    for rotations in (tuple(t.rot_deg for t in state.tables), (0.,)*len(state.tables), (90.,)*len(state.tables)):
-        proxies=[];seeds=[]
-        for table,rotation in zip(state.tables,rotations):
-            origin=TableTarget(table.table_id,0.,0.,source_rot_deg=table.rot_deg,target_rot_deg=0.)
-            polygons=(*singleton_long_side_clearance_regions(origin,table),
-                      table_world_footprint(table,(0.,0.),0.))
-            # This fallback currently covers long-side-only singleton profiles.
-            # End occupancy stays in the dedicated cluster search above.
-            if any(count>4 for _,_,count in profile):
-                return None
-            x0=min(x for p in polygons for x,y in p);x1=max(x for p in polygons for x,y in p)
-            y0=min(y for p in polygons for x,y in p);y1=max(y for p in polygons for x,y in p)
-            proxies.append(TableState(table.table_id,table.x,table.y,rotation,x1-x0,y1-y0,table_type=None))
-            seeds.append(TableTarget(table.table_id,table.x,table.y,source_rot_deg=table.rot_deg,target_rot_deg=rotation))
-        occupied_state=SceneState(state.roi,proxies,'groupwork')
-        repaired=repair_layout_hard_constraints(occupied_state,seeds,max_iterations=100,
-                    overlap_gap=0.,clearance_depth_factor=None)
-        # Envelopes are conservative and can touch where the actual rounded
-        # regions do not overlap. Only the full canonical final guard decides.
+    if any(count > 4 for _, _, count in profile):
+        return None
+    # Keep source angles whenever the existing conservative repair succeeds.
+    # Otherwise relax towards ROI edge axes progressively, rather than jumping
+    # all five tables to 0/90 degrees. Every trial uses canonical seat polygons.
+    source_angles = tuple(t.rot_deg for t in state.tables)
+    axes = sorted((0., 90.), key=lambda angle: sum(
+        abs((angle-r+90.) % 180.-90.) for r in source_angles))
+    variants = [source_angles]
+    variants.extend(tuple(r+fraction*((axis-r+90.) % 180.-90.) for r in source_angles)
+        for fraction in (.25, .5, .75, .875, .9375, 1.) for axis in axes)
+    for rotations in variants:
+        targets = _repair_singleton_regions(state, rotations)
+        plan = _attach_clusters(state, targets, islands, profile, sizes, bound_clusters)
+        if plan is None:
+            continue
+        try:
+            validate_groupwork_plan(state,plan)
+        except LayoutConstraintError:
+            continue
+        if rotations != source_angles:
+            # Restore individual source angles as far as complete geometry fits.
+            # Existing group/table roles and centers seed each bounded trial.
+            for fraction in (.5, .25, .125):
+                for i, source in enumerate(source_angles):
+                    angles = [t.target_rot_deg for t in plan.targets]
+                    angles[i] += fraction*((source-angles[i]+90.) % 180.-90.)
+                    targets = _repair_singleton_regions(state, angles, plan.targets)
+                    trial = _attach_clusters(state, targets, islands, profile, sizes, bound_clusters)
+                    if trial is not None:
+                        try:
+                            validate_groupwork_plan(state,trial)
+                        except LayoutConstraintError:
+                            continue
+                        plan = trial
+        return plan
+    # Retain the earlier feasible last resort when rounded repair gets stuck.
+    # Contour spacing can still repair this candidate after parking is attached.
+    from aisi.generation.layout_constraints import repair_layout_hard_constraints
+    for rotation in axes:
+        proxies=[]
+        for table in state.tables:
+            origin=TableTarget(table.table_id,0.,0.,target_rot_deg=0.)
+            points=tuple(point for polygon in singleton_long_side_clearance_regions(origin,table)
+                         for point in polygon)
+            proxies.append(replace(table,rot_deg=rotation,table_type=None,
+                width=max(x for x,y in points)-min(x for x,y in points),
+                height=max(y for x,y in points)-min(y for x,y in points)))
+        seeds=[TableTarget(t.table_id,t.x,t.y,source_rot_deg=t.rot_deg,target_rot_deg=rotation)
+               for t in state.tables]
+        repaired=repair_layout_hard_constraints(SceneState(state.roi,proxies,'groupwork'),
+            seeds,max_iterations=100,overlap_gap=0.,clearance_depth_factor=None)
         plan=_attach_clusters(state,repaired.table_targets,islands,profile,sizes,bound_clusters)
         if plan is not None:
             return plan
     return None
+
+
+def _repair_singleton_regions(state, rotations, seeds=None):
+    """Bounded translation repair of canonical rounded occupied polygons.
+
+    Projection intervals include the table, contour and both long-side regions.
+    Rectangular proxies only seed positions; rounded regions govern repair. The complete final guard
+    still decides whether a trial is usable.
+    """
+    if seeds is None:
+        from aisi.generation.layout_constraints import repair_layout_hard_constraints
+        proxies=[]
+        for table,rotation in zip(state.tables,rotations):
+            origin=TableTarget(table.table_id,0.,0.,target_rot_deg=0.)
+            polygons=(*singleton_long_side_clearance_regions(origin,table),
+                      floor_contour_footprint(table,origin))
+            points=tuple(point for polygon in polygons for point in polygon)
+            proxies.append(replace(table,rot_deg=rotation,table_type=None,
+                width=max(x for x,y in points)-min(x for x,y in points),
+                height=max(y for x,y in points)-min(y for x,y in points)))
+        initial=[TableTarget(t.table_id,t.x,t.y,source_rot_deg=t.rot_deg,target_rot_deg=r)
+                 for t,r in zip(state.tables,rotations)]
+        seeds=repair_layout_hard_constraints(SceneState(state.roi,proxies,'groupwork'),
+            initial,max_iterations=100,overlap_gap=0.,clearance_depth_factor=None).table_targets
+    targets = [TableTarget(t.table_id, seed.target_x if seeds else t.x,
+        seed.target_y if seeds else t.y, source_rot_deg=t.rot_deg, target_rot_deg=r)
+        for t,r,seed in zip(state.tables, rotations, seeds or state.tables)]
+    shapes=[]; axes=[]; bounds=[]
+    for table,rotation in zip(state.tables,rotations):
+        origin=TableTarget(table.table_id,0.,0.,target_rot_deg=rotation)
+        polygons=(*singleton_long_side_clearance_regions(origin,table),
+                  table_world_footprint(table,(0.,0.),rotation),
+                  floor_contour_footprint(table,origin))
+        points=tuple(point for polygon in polygons for point in polygon)
+        shapes.append(points)
+        normals=set()
+        for polygon in polygons:
+            for a,b in zip(polygon,polygon[1:]+polygon[:1]):
+                dx,dy=b[0]-a[0],b[1]-a[1]; length=math.hypot(dx,dy)
+                if length>1e-9:
+                    normals.add((-dy/length,dx/length))
+        axes.append(normals)
+        bounds.append((state.roi.x_min-min(x for x,y in points),
+            state.roi.y_min-min(y for x,y in points),
+            state.roi.x_max-max(x for x,y in points),
+            state.roi.y_max-max(y for x,y in points)))
+    projections={}
+    for i,j in combinations(range(len(targets)),2):
+        data=[]
+        for axis in sorted(axes[i]|axes[j]):
+            values=[[x*axis[0]+y*axis[1] for x,y in shapes[k]] for k in (i,j)]
+            data.append((axis,min(values[0]),max(values[0]),min(values[1]),max(values[1])))
+        projections[i,j]=data
+
+    def clamp(i):
+        target=targets[i]; x0,y0,x1,y1=bounds[i]
+        target.target_x=min(max(target.target_x,x0),x1)
+        target.target_y=min(max(target.target_y,y0),y1)
+
+    for _ in range(200):
+        for i in range(len(targets)):
+            clamp(i)
+        conflicts=0
+        for (i,j),data in projections.items():
+            a,b=targets[i],targets[j]; best=None
+            for axis,amin,amax,bmin,bmax in data:
+                delta=(b.target_x-a.target_x)*axis[0]+(b.target_y-a.target_y)*axis[1]
+                forward=amax-bmin-delta; backward=bmax+delta-amin
+                if min(forward,backward)<=1e-7:
+                    break
+                shift=forward if forward<backward else -backward
+                if best is None or abs(shift)<abs(best[0]):
+                    best=(shift,axis)
+            else:
+                conflicts+=1
+                shift,axis=best; shift+=math.copysign(.001,shift)
+                a.target_x-=axis[0]*shift/2; a.target_y-=axis[1]*shift/2
+                b.target_x+=axis[0]*shift/2; b.target_y+=axis[1]*shift/2
+                clamp(i); clamp(j)
+        if not conflicts:
+            break
+    return targets
 
 
 def _complete_parking(state, plan):
@@ -386,7 +498,8 @@ def _complete_parking(state, plan):
     parked = sorted((table for table in state.tables if table.table_id not in active),key=lambda table:table.table_id)
     try:
         extra = _compact_park_targets(state,parked,plan.targets,_parking_candidates(None),
-                  exclusion_regions=[r for regions in plan.regions.values() for r in regions])
+                  exclusion_regions=[r for regions in plan.regions.values() for r in regions],
+                  edge_aligned=True)
     except ValueError:
         return None
     plan.targets.extend(extra)
@@ -513,7 +626,7 @@ def _transform_groupwork_plan(state, plan, strength):
 def _improve_floor_spacing(state, plan):
     """Move existing clusters rigidly; protect seating and table/group identities."""
     by_id = {t.table_id:t for t in state.tables}
-    units = [c.table_ids for c in plan.clusters]+[(tid,) for tid in plan.parked_table_ids]
+    units = [c.table_ids for c in plan.clusters]
 
     def displacement(targets):
         distances = [math.dist((t.target_x,t.target_y),
@@ -569,6 +682,7 @@ def _improve_floor_spacing(state, plan):
                     moved=tuple(replace(t,target_x=t.target_x+mx,target_y=t.target_y+my) for t in members)
                     translated.extend(_fit_option_to_roi(state,_GroupOption(moved,tuple(island),None,True)).targets)
                 targets_by_id={t.table_id:t for t in translated}
+                targets_by_id.update((t.table_id,t) for t in plan.targets if t.table_id in plan.parked_table_ids)
                 candidate=rebuild([targets_by_id[t.table_id] for t in plan.targets])
                 if candidate is not None and score(candidate)<best_score:
                     best=candidate;best_score=score(candidate)
