@@ -86,3 +86,8 @@ kopierte dafür fälschlich die Floor-Render-Einstellungen. Die Parameterüberna
 nutzt die dokumentierte [OP.copyParameters-Methode](https://docs.derivative.ca/OP_Class).
 Syntax, Parameterübernahme, transparenter Hintergrund und Rücknahme sind offline
 geprüft; Bildüberlagerung und Referenzlinien bleiben live zu bestätigen.
+
+Johannes bestätigt am 2026-10-08 die kombinierte Kontrollansicht als passend.
+Der Screenshot zeigt Floor-Ziele/Chairs mit blauen Source-Rechtecken und
+Tabletop-Motion-Pfeilen. Eine Reduktion der Network-Referenzlinien und physische
+Projektionskorrektheit sind damit nicht separat belegt.

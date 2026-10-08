@@ -186,6 +186,16 @@ unverändert, einschließlich der bewusst übergreifenden 5-cm-Konturränder.
 Nach der Auswahl werden bestehende Cluster starr verschoben, um Konturkonflikte
 zu lösen und den kleinsten Abstand zwischen Teilnehmergruppen zu verbessern.
 Kein neuer Slotplan, keine neue Tischpermutation, keine Änderung der TD-Konturen.
+Am 2026-10-08 nach visueller Kontrolle ergänzt: Unnötige Source-Positionswechsel
+vermeiden. Im teilnehmendenbasierten Suchpfad werden gültige Kandidaten zuerst
+nach maximaler und gesamter Source-Verschiebung, danach Rotation bewertet.
+Singletons dürfen zusätzlich die axial nächstgelegenen Orientierungen der
+vorhandenen Source-Tische verwenden. Kein festes Winkelraster und keine
+nachträgliche globale Zielpermutation; Rollen werden bei der Clusterbildung
+gebunden und bleiben danach erhalten. Die spätere Entzerrung beseitigt zuerst
+Konturkonflikte, minimiert anschließend Source-Wege; zusätzlicher Gruppenabstand
+ist nachrangig. Kanonische Sitz-/Bewegungsflächen bleiben harte Bedingungen.
+Die bisherigen table-only Auswahlprofile bleiben unverändert.
 Die opt-in Vorschau ist an den bestehenden OSC-Adapter angebunden; über 15
 Teilnehmende werden dort wegen der technischen TD-Slots ausdrücklich abgelehnt.
 Das Offline-Modell behält seine separate geometrische Kapazität.

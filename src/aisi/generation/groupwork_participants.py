@@ -306,7 +306,7 @@ def _solve_profile(active_state, profile, sizes, bound_clusters=None):
     def accept(candidate):
         return _attach_clusters(active_state,candidate.table_targets,candidate.groups,profile,sizes,bound_clusters) is not None
     try:
-        result = solve_rect_groupwork_prototype(active_state,selection='clearance',
+        result = solve_rect_groupwork_prototype(active_state,selection='source_movement',
                     cluster_sizes=cluster_sizes,candidate_filter=accept)
     except ValueError:
         return _repair_singleton_profile(active_state,profile,sizes,bound_clusters)
@@ -479,7 +479,6 @@ def _transform_groupwork_plan(state, plan, strength):
 def _improve_floor_spacing(state, plan):
     """Move existing clusters rigidly; protect seating and table/group identities."""
     by_id = {t.table_id:t for t in state.tables}
-    original = {t.table_id:t for t in plan.targets}
     units = [c.table_ids for c in plan.clusters]+[(tid,) for tid in plan.parked_table_ids]
 
     def score(candidate):
@@ -488,9 +487,10 @@ def _improve_floor_spacing(state, plan):
         overlaps = sum(_polygons_overlap_with_positive_area(polygons[a.table_id],polygons[b.table_id])
             for a,b in combinations(candidate.targets,2)
             if a.table_id not in cluster_by_id or cluster_by_id[a.table_id] != cluster_by_id.get(b.table_id))
-        movement = math.fsum(math.dist((t.target_x,t.target_y),
-            (original[t.table_id].target_x,original[t.table_id].target_y)) for t in candidate.targets)
-        return overlaps,-round(intergroup_floor_gap(state,candidate),6),movement
+        distances = [math.dist((t.target_x,t.target_y),
+            (by_id[t.table_id].x,by_id[t.table_id].y)) for t in candidate.targets]
+        return (overlaps, round(max(distances),6), round(math.fsum(distances),6),
+                -round(intergroup_floor_gap(state,candidate),6))
 
     def rebuild(targets):
         candidate=GroupworkPlan(targets,[],plan.clusters,plan.group_sizes,{},plan.parked_table_ids)

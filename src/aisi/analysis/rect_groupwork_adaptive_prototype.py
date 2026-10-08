@@ -8,7 +8,7 @@ Geometrie.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import itertools
 import math
 from typing import Callable, Iterable
@@ -105,7 +105,9 @@ def solve_rect_groupwork_prototype(
                     tuple(
                         _fit_option_to_roi(scene_state, option)
                         for option in _group_options(group, pair_index=index, refined=refined,
-                                                     expanded_singletons=cluster_sizes is not None)
+                                                     expanded_singletons=cluster_sizes is not None,
+                                                     singleton_rotations=(tuple(t.rot_deg for t in tables)
+                                                        if selection == 'source_movement' else ()))
                     ),
                     # Twelve representatives preserve source-oriented outward
                     # candidates for every local island without expanding the
@@ -130,8 +132,11 @@ def solve_rect_groupwork_prototype(
     if selection == "clearance":
         result = min(candidates, key=_clearance_candidate_key)
         return _cache_result(cache_key, result) if candidate_filter is None else result
+    if selection == "source_movement":
+        result = min(candidates, key=_source_movement_candidate_key)
+        return _cache_result(cache_key, result) if candidate_filter is None else result
     if selection != "spread":
-        raise ValueError("selection muss 'movement', 'clearance' oder 'spread' sein.")
+        raise ValueError("selection muss 'movement', 'clearance', 'source_movement' oder 'spread' sein.")
 
     minimum_max_movement = min(candidate.objective.max_displacement_cm for candidate in candidates)
     if movement_budget_cm is None:
@@ -248,9 +253,22 @@ def singleton_end_clearance_regions(target: TableTarget, table: TableState):
 
 
 def _group_options(group: tuple[TableState, ...], *, pair_index: int, refined: bool,
-                   expanded_singletons: bool = False) -> tuple[_GroupOption, ...]:
+                   expanded_singletons: bool = False,
+                   singleton_rotations: tuple[float, ...] = ()) -> tuple[_GroupOption, ...]:
     if len(group) == 1:
-        return _singleton_options(group[0], refined=refined, expanded=expanded_singletons)
+        table = group[0]
+        options = list(_singleton_options(table, refined=refined, expanded=expanded_singletons))
+        # Participant planning may rotate in place instead of moving a distant
+        # table into this role. Angles remain source-derived, with no fixed slots.
+        for rotation in sorted(set(singleton_rotations)):
+            angle = table.rot_deg + (rotation-table.rot_deg+90.) % 180. - 90.
+            if abs(angle-table.rot_deg) < 1e-8:
+                continue
+            for option in _singleton_options(replace(table,rot_deg=angle),
+                                              refined=refined,expanded=expanded_singletons):
+                options.append(replace(option,targets=tuple(
+                    replace(target,source_rot_deg=table.rot_deg) for target in option.targets)))
+        return tuple(_deduplicate_options(options))
     return _pair_options(group[0], group[1], pair_index=pair_index, refined=refined)
 
 
@@ -827,6 +845,15 @@ def _candidate_key(result: PrototypeResult) -> tuple[float, float, float, float,
         for target in sorted(result.table_targets, key=lambda target: (target.target_x, target.target_y, target.target_rot_deg))
     )
     return (*result.objective.key(), geometry_key)
+
+
+def _source_movement_candidate_key(result: PrototypeResult) -> tuple:
+    """Rank valid participant candidates by source displacement before rotation."""
+    objective = result.objective
+    return (round(objective.max_displacement_cm, 8),
+            round(objective.total_displacement_cm, 8),
+            round(objective.total_rotation_change_deg, 8),
+            objective.crossing_count, *_candidate_key(result))
 
 
 def _spread_candidate_key(result: PrototypeResult) -> tuple[float, float, float, float, float, float, int, tuple]:

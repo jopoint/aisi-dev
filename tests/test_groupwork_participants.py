@@ -2,6 +2,7 @@ from collections import Counter
 from copy import deepcopy
 from dataclasses import replace
 import unittest
+import math
 from unittest.mock import patch
 
 from aisi.app.sim_layout_rules import _normalize_scene_for_aisi
@@ -14,6 +15,7 @@ from aisi.generation.layout_constraints import evaluate_hard_constraints
 from aisi.generation.groupwork_participants import (
     ParticipantCluster, GroupworkPlan, cluster_seating,
     plan_participant_groupwork, validate_groupwork_plan,
+    _improve_floor_spacing,
 )
 
 
@@ -70,6 +72,45 @@ class GroupworkSeatTests(unittest.TestCase):
 
 
 class GroupworkPlanningTests(unittest.TestCase):
+    def test_live_four_groups_do_not_send_upper_left_source_into_distant_pair(self):
+        poses=((262.857,211.429,175),(132.143,128.571,145),
+               (364.286,83.571,175),(177.143,381.429,195),(398.004,367.143,45))
+        state=SceneState(ROI(0,0,500,500),[
+            TableState(f'table_{i}',x,y,angle,160,80,table_type='rect')
+            for i,(x,y,angle) in enumerate(poses)],'groupwork')
+        plan=plan_participant_groupwork(state,14,4)
+        validate_groupwork_plan(state,plan)
+        targets={t.table_id:t for t in plan.targets}
+        distances=[math.dist((t.x,t.y),(targets[t.table_id].target_x,
+                                       targets[t.table_id].target_y)) for t in state.tables]
+        # Previously table_1 travelled 267 cm into a pair; table_0 moved
+        # towards its vacated source. Turning the singleton avoids that detour.
+        self.assertLess(distances[1],1.)
+        self.assertLess(max(distances),120.)
+        self.assertLess(sum(distances),200.)
+        self.assertIn(('table_1',),[c.table_ids for c in plan.clusters])
+        self.assertEqual(plan,plan_participant_groupwork(state,14,4))
+        reversed_state=deepcopy(state);reversed_state.tables.reverse()
+        reversed_plan=plan_participant_groupwork(reversed_state,14,4)
+        self.assertEqual(plan.targets,list(reversed(reversed_plan.targets)))
+        self.assertEqual(plan.clusters,reversed_plan.clusters)
+        self.assertEqual(plan.chairs,reversed_plan.chairs)
+
+    def test_valid_source_singletons_are_not_moved_only_to_maximize_gap(self):
+        state=SceneState(ROI(0,0,500,500),[
+            TableState('a',130,250,0,160,80,table_type='rect'),
+            TableState('b',370,250,0,160,80,table_type='rect')],'groupwork')
+        targets=[TableTarget(t.table_id,t.x,t.y,target_rot_deg=t.rot_deg) for t in state.tables]
+        clusters=tuple(ParticipantCluster(f'cluster_{i}',f'group_{i}',(t.table_id,),3)
+                       for i,t in enumerate(state.tables))
+        plan=GroupworkPlan(targets,[],clusters,(3,3),{})
+        for cluster in clusters:
+            seats,regions=cluster_seating(state,targets,cluster)
+            plan.chairs.extend(seats);plan.regions[cluster.cluster_id]=regions
+        validate_groupwork_plan(state,plan)
+        result=_improve_floor_spacing(state,plan)
+        self.assertEqual(result,plan)
+
     def test_five_singletons_repair_complete_envelopes_after_local_search_failure(self):
         state=editor_state()
         positions=((112.143,233.571),(187.857,131.429),(386.429,134.286),

@@ -79,6 +79,7 @@ Synthetische Chairs sind bisher nur für Input umgesetzt. Nächster Implementier
 - [x] Vorschau-/Adapter-Meilenstein offline geprüft: 52 fokussierte Tests, sechs Vorschautests nach Cache-Ergänzung erneut, 18/18 Adapterfälle (0/50/100 %, Editor-/Live-Quelle), lokale OSC-Aufzeichnung ohne echte Netzwerkpakete.
 - [x] Aktualisierte Pair-Priorität offline geprüft: 16 Groupwork-Tests und zwölf Integrationsfälle, einschließlich 15 Personen/zwei Gruppen mit zwei Pairs; aktuelle Live-Quelle zusätzlich offline geprüft.
 - [x] Bodenkontur-Überlappung der `14/4`-Live-Stichprobe offline behoben: bestehende 170 × 90 cm Darstellungsränder prüfen, getrennte Cluster ohne Rollenwechsel räumlich verbessern; 17 Tests und zwölf Integrationsfälle bestanden. Live-Bestätigung nach Neuladen noch offen.
+- [x] Unnötigen Source-Positionswechsel der `14/4`-Stichprobe offline behoben: Source-Wege bei Clusterbildung/Entzerrung priorisieren, zusätzliche Source-abgeleitete Singleton-Winkel. Oben links bleibt am Ort; Gesamtweg rund 567 → 142 cm; 32 fokussierte Tests und zwölf Integrationsfälle bestanden. Live-Nachweis nach Neuladen offen.
 - [ ] Groupwork-Laufzeit nach Geometriekorrektur getrennt optimieren: Johannes beobachtet 10–20 Sekunden pro Generierung; Cold-Start, Suche und Teilstärken messen, Geometrie-/Rolleninvarianten erhalten.
 - [ ] Neue Groupwork-Vorschau einzeln im Room Editor, Lernformat-Interface und laufenden TD-Projekt prüfen; danach physische Prüfung. Bestehenden Sender beim manuellen Neuladen ersetzen, keine zweite Instanz starten.
 - [ ] Kapazität, eindeutige räumliche Gruppenzuordnung, freie Bewegungsflächen, Clusterabstände, Chair-Geometrie und Parken gemeinsam offline validieren. Sieben-Personen-Beispiel mit zwei zusammengehörigen Clustern sowie Fünf-Personen-Beispiel `2 + 2 + 1` prüfen; TD-Slotlimit getrennt behandeln.
@@ -93,7 +94,8 @@ Synthetische Chairs sind bisher nur für Input umgesetzt. Nächster Implementier
 
 - [x] Manueller Helfer für `comp_layout_proposal/floor_tabletop_control` vorbereitet: Floor inkl. optionaler Chairs + bestehende blaue Tabletop-Source-Konturen + Tabletop-Motion-Pfeile. Syntax/Struktur offline geprüft, keine bestehenden Ausgaben geändert. [Anleitung](docs/TOUCHDESIGNER_LAYOUT_CONTROL.md).
 - [x] Kontroll-COMP laut Johannes' Screenshot angelegt. Geometrieauswahl auf konkrete Slots `item1` bis `item5` begrenzt; Aktualisierung bestehender Kontrollansicht offline geprüft. Overlay übernimmt nun `render_tabletop`-Einstellungen mit ausschließlich Source-/Motion-Geometrien.
-- [ ] Helfer erneut im TD-Textport ausführen: Reduktion der Referenzlinien und raumgleiche Überlagerung im Operator-Viewer prüfen. Keine automatische Speicherung.
+- [x] Johannes bestätigt die kombinierte Floor-/Tabletop-Kontrollansicht am 2026-10-08 als passend; kein physischer Projektionsnachweis.
+- [ ] Reduktion der Referenzlinien im Network Editor separat bestätigen. Keine automatische Speicherung.
 
 ## NEXT — Manual layout validation
 

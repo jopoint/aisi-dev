@@ -226,7 +226,12 @@ Chairs werden im Adapter als technische Ausgabegrenze abgelehnt.
 Getrennte Cluster werden zusätzlich auf überlappende 170 × 90 cm
 Bodenkonturen geprüft und anschließend ohne Rollenwechsel räumlich entzerrt.
 Die physische Geometrie und Pair-Seam bleiben unverändert.
-Die laufende Anwendung wurde nicht neu geladen; Live-Prüfung bleibt offen. Details: D008b und
+Nach der visuellen Stichprobe ist im teilnehmendenbasierten Suchpfad die
+Source-Verschiebung gegenüber zusätzlichem Gruppenabstand priorisiert;
+Singletons erhalten zusätzliche Source-abgeleitete Winkelkandidaten.
+Rollen bleiben nach der Clusterbildung gebunden; keine globale Zielpermutation.
+Die aktuelle Korrektur wurde noch nicht in der laufenden Anwendung geladen;
+Live-Prüfung bleibt offen. Details: D008b und
 [Groupwork-Handoff](GROUPWORK_PARTICIPANTS.md).
 
 Source-adaptive Rect Groupwork for counts `2–5` is productively implemented.

@@ -186,3 +186,47 @@ inklusive Counts 3/5/7/10/15 und Gruppen 1/2/5, deterministischer Wiederholung
 und umgekehrter Scene Order. Bericht: `floor_contour_fix/integration/validation.json`.
 Cold-Laufzeit der konkreten `14/4`-Reproduktion lag offline bei etwa 52 Sekunden;
 die priorisierte Laufzeitoptimierung ist damit weiterhin ausdrücklich offen.
+
+## Unnötige Source-Positionswechsel
+
+Johannes erkennt im bestätigten kombinierten Kontrollviewer einen unnötigen
+Umweg: Der mittlere Source-Tisch rückt nach oben links, während der dortige
+Source-Tisch weit nach unten in ein Pair fährt. Die reproduzierte `14/4`-Quelle
+zeigt zwei Ursachen: Singleton-Winkel waren im lokalen Suchpfad festgehalten,
+Pair-Orientierungspräferenz rangierte vor Verschiebung. Die nachträgliche
+Entzerrung maximierte außerdem Gruppenabstand vor Bewegung und maß diese
+vom vorherigen Ziel statt von der ursprünglichen Source.
+
+Der teilnehmendenbasierte Suchpfad nutzt nun `source_movement`: gültige
+Kandidaten nach maximaler und gesamter Source-Verschiebung, danach Rotation
+bewerten. Singletons erhalten zusätzlich die axial nächstgelegenen Winkel
+anderer vorhandener Source-Tische. Das ermöglicht Drehen am Ort, ohne feste
+Raumslots oder ein neues Winkelraster. Pair-Geometrie und kanonische harte
+Prüfung bleiben erhalten. Legacy-Auswahlprofile werden nicht geändert.
+Die Rollen werden während der Clusterbildung festgelegt; keine nachträgliche
+Tischpermutation. Die Entzerrung erhält diese Rollen und priorisiert nach
+Konturkonfliktfreiheit die tatsächlichen Source-Wege gegenüber weiterem Abstand.
+
+Konkrete Szene: Gesamtverschiebung rund **567 → 142 cm**, längster Einzelweg
+**267 → 99 cm**. Der obere linke Tisch bleibt am Source-Mittelpunkt und dreht
+um 30°. Der mittlere und obere rechte Tisch bilden nun das Pair. Der kleinste
+Abstand der Bodenkonturen verschiedener Teilnehmergruppen beträgt rund 41 cm
+statt 62 cm; sämtliche Chair-/Sitzflächen-/ROI-/Konturprüfungen bestehen.
+Das ist eine bessere Lösung der begrenzten Suche, kein globaler Optimalitätsnachweis
+und keine Prüfung vollständiger Bewegungspfade.
+
+Quelle, Vorher-/Nachher-Pläne und Vergleichsplot:
+`data/aisi/debug/groupwork_participant_preview_2026-10-08/movement_fix/`.
+Die konkrete Offline-Generierung dauerte etwa 64 Sekunden; die separat
+aufgeschobene Laufzeitoptimierung bleibt offen. Kein Senderneustart, keine
+TD-Fernsteuerung und keine automatische `.toe`-Speicherung. Die aktuelle
+Korrektur ist nach manuellem Neuladen mit genau einem Sender live zu prüfen.
+
+32 fokussierte Tests bestanden (31 bestehende/ergänzte Checks plus konkrete
+`14/4`-Regression separat): Teilnehmermodell, Vorschau/OSC-Adapter, Stärke 0,
+positive Teilstärken mit gebundenen Rollen und bisheriger table-only Suchkern.
+Die zweite neue Regression hält gültige Source-Singletons am Ort statt sie nur
+für maximalen Gruppenabstand zu verschieben. Zusätzlich 12/12 Offline-
+Integrationsfälle mit den gespeicherten Editor-/Live-Quellen bestanden,
+jeweils vollständige Geometrie, Wiederholung und umgekehrte Scene Order.
+Bericht: `movement_fix/integration_validation.json`. Keine OSC-Live-Ausgabe.
