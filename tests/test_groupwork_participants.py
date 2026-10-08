@@ -145,6 +145,9 @@ class GroupworkPlanningTests(unittest.TestCase):
                         _profile_key(pair_fallback,'group_capacity'))
         self.assertLess(_profile_key(pair_fallback,'group_capacity'),
                         _profile_key(split_fallback,'group_capacity'))
+        pair_for_two=((0,1,3),(1,1,3),(2,2,2),(3,1,2))
+        self.assertLess(_profile_key(pair_fallback,'group_capacity'),
+                        _profile_key(pair_for_two,'group_capacity'))
 
     def test_live_ten_four_uses_pair_when_singleton_parking_does_not_fit(self):
         poses=((359.286,247.143,175),(132.143,197.143,145),
@@ -156,6 +159,7 @@ class GroupworkPlanningTests(unittest.TestCase):
         validate_groupwork_plan(state,plan)  # includes exact pair axis / 8-cm seam
         self.assertEqual(plan.group_sizes,(3,3,2,2))
         self.assertEqual(sorted(len(c.table_ids) for c in plan.clusters),[1,1,1,2])
+        self.assertEqual([c.participants for c in plan.clusters if len(c.table_ids)==2],[3])
         self.assertEqual(len({c.group_id for c in plan.clusters}),4)
         self.assertEqual(plan.parked_table_ids,())
         self.assertEqual(len(plan.chairs),10)

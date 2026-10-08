@@ -239,6 +239,9 @@ Bei fehlendem Parkplatz erhält ein zusammenhängendes Pair mit drei Singletons
 Vorrang vor fünf getrennten aktiven Tischclustern für nur vier Gruppen.
 Die Topologie `2 + 1 + 1 + 1` erhält dafür eine begrenzte Winkelannäherung als
 Fallback; Rollen, ursprüngliche Source-Winkel und Scene Order bleiben erhalten.
+Bei gleicher Tischzahl/Topologie wird das Pair bevorzugt stärker belegt;
+`10/4` soll eine Dreiergruppe am Pair und `3 + 2 + 2` an Singletons erhalten,
+sofern die vollständige Geometrie passt.
 Rollen bleiben nach der Clusterbildung gebunden; keine globale Zielpermutation.
 Die aktuelle Korrektur wurde noch nicht in der laufenden Anwendung geladen;
 Live-Prüfung bleibt offen. Die Offline-Suche ist inzwischen durch frühe

@@ -262,7 +262,9 @@ def _profile_key(profile, policy):
         # Keep a social group together before adding a disconnected island.
         # If parking fails, a spare table can form a pair even for <=3 people.
         extra_clusters = len(profile)-len(group_totals)
-        rank = (singleton_excess,missing_pair,extra_clusters,dense,tables,ends)
+        # With equal topology/table use, give the pair to the larger group.
+        pair_occupancy = sum(count for _,size,count in profile if size == 2)
+        rank = (singleton_excess,missing_pair,extra_clusters,dense,tables,ends,-pair_occupancy)
     else:
         rank = (dense,ends,tables) if policy == 'regular_seats' else (tables,dense,ends)
     return rank, max(count for _,_,count in profile), profile

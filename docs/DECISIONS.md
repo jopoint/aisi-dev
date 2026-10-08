@@ -222,6 +222,12 @@ Teilnehmergruppe bleiben für größere Gruppen oder geometrische Ausnahmen erla
 Für die Topologie `2 + 1 + 1 + 1` wird bei erfolgloser Source-Winkelsuche dieselbe
 begrenzte Annäherung an ROI-Achsen versucht; tatsächliche Source-Winkel bleiben
 in den Ausgabedaten erhalten. Pair-Seam und sämtliche harten Grenzen gelten weiter.
+Nach visueller Bestätigung ergänzt Johannes: Bei gleicher Topologie und gleicher
+Tischzahl wird das Pair bevorzugt stärker belegt. Bei `10/4` erhält es möglichst
+eine Dreiergruppe statt einer Zweiergruppe; die übrigen Gruppen bleiben
+`3 + 2 + 2` an Singletons. Diese Belegungspriorität steht vor der Wegauswahl,
+aber hinter den bestehenden Kapazitäts-/Verdichtungs-/Tischzahlpräferenzen.
+Geometrisch unpassende Belegungen bleiben ausgeschlossen.
 Die opt-in Vorschau ist an den bestehenden OSC-Adapter angebunden; über 15
 Teilnehmende werden dort wegen der technischen TD-Slots ausdrücklich abgelehnt.
 Das Offline-Modell behält seine separate geometrische Kapazität.

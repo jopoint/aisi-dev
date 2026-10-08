@@ -370,3 +370,27 @@ verworfen. 46 Tests bestanden; zwölf Integrationspläne und die beiden
 Pair-/Parkregeln und Source-Zuordnung bleiben unverändert.
 Details und Messgrenzen: [Laufzeit-Handoff](GROUPWORK_PERFORMANCE.md).
 Live-Laufzeit nach manuellem Neuladen noch offen.
+
+## Nachtrag: größere Gruppe am Pair
+
+Johannes bestätigt die Vorschau und wünscht für `10/4` bevorzugt drei Personen
+am Pair. `group_capacity` berücksichtigt bei ansonsten gleicher Bewertung die
+Anzahl der Personen an Pairs vor den Source-Wegen. Tischzahl, Anzahl getrennter
+Cluster, Verdichtung und Stirnseiten bleiben vorherige Kriterien; zusätzliche
+Tische werden nicht allein für dieses Kriterium aktiviert. Eine Dreiergruppe
+am Pair und `3 + 2 + 2` an den drei Singletons ersetzt die bisherige bevorzugte
+Zweierbelegung des Pairs. Vollständige Sitz-/Chair-/ROI-/Seam-Prüfung bleibt hart;
+bei unpassender größerer Belegung ist ein gültiger kleinerer Pair-Fallback zulässig.
+Die Vergleichspolitiken `few_tables` und `regular_seats` bleiben unverändert.
+
+28 fokussierte Tests und zwölf Editor-/Live-Integrationsfälle bestanden;
+die zwölf bisherigen Integrationspläne sind vollständig unverändert.
+Zwei zusätzliche eingefrorene `10/4`-Quellen (bisherige Pair-Fallback-Quelle und
+aktuelle Room-Editor-Quelle) liefern jeweils drei Personen am Pair sowie
+`3 + 2 + 2` an Singletons, ohne Parktisch. Vollständige Geometrie, Determinismus
+und umgekehrte Scene Order geprüft. Frische Offline-Prozesse benötigten 3,1 s
+beziehungsweise 2,3 s. Diese Messungen bestätigen keine allgemeine Zeitobergrenze.
+Messwerte und Prüfdaten lokal:
+`data/aisi/debug/groupwork_participant_preview_2026-10-08/pair_three_occupancy/`.
+Kein Sender neu gestartet, kein OSC-Versand und keine TD-Änderung/-Speicherung.
+Live-Nachweis der neuen Belegung und physische Prüfung bleiben offen.
