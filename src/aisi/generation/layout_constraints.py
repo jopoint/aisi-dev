@@ -78,7 +78,7 @@ def evaluate_hard_constraints(
     table_targets: list[TableTarget],
     *,
     overlap_gap: float = 0.0,
-    clearance_depth_factor: float = 1.0,
+    clearance_depth_factor: float | None = 1.0,
     generation_notes: list[str] | None = None,
 ) -> HardConstraintStats:
     """Count hard-constraint violations for a table-only proposal.
@@ -120,7 +120,7 @@ def evaluate_hard_constraints(
             roi_violations += 1
 
     clearance_violations = 0
-    for idx, target in enumerate(targets):
+    for idx, target in enumerate(targets if clearance_depth_factor is not None else []):
         state = by_id[target.table_id]
         zone = _primary_seat_clearance_zone(
             target=target,
@@ -165,7 +165,7 @@ def repair_layout_hard_constraints(
     *,
     max_iterations: int = 28,
     overlap_gap: float = 6.0,
-    clearance_depth_factor: float = 1.0,
+    clearance_depth_factor: float | None = 1.0,
     generation_notes: list[str] | None = None,
 ) -> RepairOutcome:
     """Iteratively repair hard constraints with local geometric nudges.
@@ -175,6 +175,9 @@ def repair_layout_hard_constraints(
     - push apart overlapping tables,
     - push blockers out of seat-side clearance zones,
     - compact groupwork pair members when they drift too far apart.
+
+    ``clearance_depth_factor=None`` disables the legacy directed seat zone
+    when the caller already supplies complete occupied-region envelopes.
     """
     by_id = _table_state_by_id(scene_state)
     pair_context = _build_pair_context(generation_notes)
@@ -320,7 +323,7 @@ def repair_layout_hard_constraints(
                 )
                 changed = True
 
-        for idx, target in enumerate(targets):
+        for idx, target in enumerate(targets if clearance_depth_factor is not None else []):
             state = by_id[target.table_id]
             zone = _primary_seat_clearance_zone(
                 target=target,

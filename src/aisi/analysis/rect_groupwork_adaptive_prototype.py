@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import itertools
 import math
-from typing import Iterable
+from typing import Callable, Iterable
 
 from aisi.core.models import SceneState, TableState, TableTarget
 from aisi.core.table_geometry import (
@@ -72,6 +72,8 @@ def solve_rect_groupwork_prototype(
     *,
     selection: str = "movement",
     movement_budget_cm: float | None = None,
+    cluster_sizes: tuple[int, ...] | None = None,
+    candidate_filter: Callable[[PrototypeResult], bool] | None = None,
 ) -> PrototypeResult:
     """Return the best local Rect Groupwork candidate for counts two through five.
 
@@ -81,7 +83,8 @@ def solve_rect_groupwork_prototype(
     or geometric ordering.
     """
     cache_key = _solver_cache_key(scene_state, selection, movement_budget_cm)
-    cached = _result_cache.get(cache_key)
+    cache_key += (cluster_sizes,)
+    cached = _result_cache.get(cache_key) if candidate_filter is None else None
     if cached is not None:
         return cached
 
@@ -93,18 +96,21 @@ def solve_rect_groupwork_prototype(
 
     candidates: list[PrototypeResult] = []
     for refined in (False, True):
-        for partition in enumerate_pair_partitions(tables):
+        partitions = (enumerate_pair_partitions(tables) if cluster_sizes is None
+                      else enumerate_cluster_partitions(tables, cluster_sizes))
+        for partition in partitions:
             option_sets = [
                 _select_local_options(
                     scene_state,
                     tuple(
                         _fit_option_to_roi(scene_state, option)
-                        for option in _group_options(group, pair_index=index, refined=refined)
+                        for option in _group_options(group, pair_index=index, refined=refined,
+                                                     expanded_singletons=cluster_sizes is not None)
                     ),
                     # Twelve representatives preserve source-oriented outward
                     # candidates for every local island without expanding the
                     # exhaustive cross-product to the full raw option set.
-                    limit=12 if refined else None,
+                    limit=(8 if len(partition) >= 4 else 12) if refined else None,
                 )
                 for index, group in enumerate(partition)
             ]
@@ -112,14 +118,18 @@ def solve_rect_groupwork_prototype(
                 candidate = _materialize_candidate(scene_state, partition, selected_options, refined)
                 if candidate is None:
                     continue
+                if candidate_filter is not None and not candidate_filter(candidate):
+                    continue
                 candidates.append(candidate)
 
     if not candidates:
         raise ValueError("Keine quelladaptive Rect-Groupwork-Lösung erfüllt alle harten Bedingungen.")
     if selection == "movement":
-        return _cache_result(cache_key, min(candidates, key=_candidate_key))
+        result = min(candidates, key=_candidate_key)
+        return _cache_result(cache_key, result) if candidate_filter is None else result
     if selection == "clearance":
-        return _cache_result(cache_key, min(candidates, key=_clearance_candidate_key))
+        result = min(candidates, key=_clearance_candidate_key)
+        return _cache_result(cache_key, result) if candidate_filter is None else result
     if selection != "spread":
         raise ValueError("selection muss 'movement', 'clearance' oder 'spread' sein.")
 
@@ -131,7 +141,8 @@ def solve_rect_groupwork_prototype(
         for candidate in candidates
         if candidate.objective.max_displacement_cm <= minimum_max_movement + movement_budget_cm + 1e-8
     ]
-    return _cache_result(cache_key, min(eligible, key=_spread_candidate_key))
+    result = min(eligible, key=_spread_candidate_key)
+    return _cache_result(cache_key, result) if candidate_filter is None else result
 
 
 def _solver_cache_key(
@@ -196,9 +207,50 @@ def enumerate_pair_partitions(tables: Iterable[TableState]) -> tuple[tuple[tuple
     return tuple(sorted(partitions, key=_partition_geometry_key))
 
 
-def _group_options(group: tuple[TableState, ...], *, pair_index: int, refined: bool) -> tuple[_GroupOption, ...]:
+def enumerate_cluster_partitions(tables: Iterable[TableState], sizes: tuple[int, ...]):
+    """Enumerate requested singleton/pair topology without assigning social groups."""
+    ordered = tuple(sorted(tables, key=_spatial_key))
+    if sum(sizes) != len(ordered) or any(size not in (1, 2) for size in sizes):
+        raise ValueError("Clustergrößen müssen die Tische vollständig in Singletons/Pairs aufteilen.")
+
+    def build(remaining, pending):
+        if not remaining:
+            yield ()
+            return
+        first, rest = remaining[0], remaining[1:]
+        for size in sorted(set(pending)):
+            after_size = list(pending)
+            after_size.remove(size)
+            for companions in itertools.combinations(range(len(rest)), size - 1):
+                group = (first, *(rest[index] for index in companions))
+                after = tuple(table for index, table in enumerate(rest) if index not in companions)
+                for tail in build(after, tuple(after_size)):
+                    yield (group, *tail)
+    return tuple(sorted(build(ordered, sizes), key=_partition_geometry_key))
+
+
+def singleton_end_clearance_regions(target: TableTarget, table: TableState):
+    """Canonical rounded 60-cm strips on the two Rect short ends."""
+    geometry = resolve_table_state_geometry(table)
+    rotation = target.target_rot_deg % 180
+    angle = math.radians(rotation)
+    long_axis = (math.cos(angle), math.sin(angle))
+    offset = geometry.nominal_width * 0.5 + SEAT_CLEARANCE_DEPTH_CM * 0.5
+    return tuple(
+        transform_local_footprint(
+            _rounded_outer_singleton_strip(geometry.nominal_depth, SEAT_CLEARANCE_DEPTH_CM,
+                                           outer_direction=direction),
+            target.target_x - direction * long_axis[0] * offset,
+            target.target_y - direction * long_axis[1] * offset,
+            rotation + 90.0,
+        ) for direction in (-1.0, 1.0)
+    )
+
+
+def _group_options(group: tuple[TableState, ...], *, pair_index: int, refined: bool,
+                   expanded_singletons: bool = False) -> tuple[_GroupOption, ...]:
     if len(group) == 1:
-        return _singleton_options(group[0], refined=refined)
+        return _singleton_options(group[0], refined=refined, expanded=expanded_singletons)
     return _pair_options(group[0], group[1], pair_index=pair_index, refined=refined)
 
 
@@ -270,7 +322,7 @@ def _pair_options(
     return tuple(_deduplicate_options(options))
 
 
-def _singleton_options(table: TableState, *, refined: bool) -> tuple[_GroupOption, ...]:
+def _singleton_options(table: TableState, *, refined: bool, expanded: bool = False) -> tuple[_GroupOption, ...]:
     normal = _rotation_to_short_axis(table.rot_deg)
     tangent = (normal[1], -normal[0])
     offsets = ((0.0, 0.0),) if not refined else (
@@ -278,6 +330,8 @@ def _singleton_options(table: TableState, *, refined: bool) -> tuple[_GroupOptio
         (48.0, 0.0), (-48.0, 0.0), (0.0, 48.0), (0.0, -48.0),
         (96.0, 0.0), (-96.0, 0.0), (0.0, 96.0), (0.0, -96.0),
     )
+    if refined and expanded:
+        offsets += ((144.0,0.0),(-144.0,0.0),(0.0,144.0),(0.0,-144.0))
     options: list[_GroupOption] = []
     for normal_offset, tangent_offset in offsets:
         point = (

@@ -209,13 +209,17 @@ Port `9000` senden. Diese Validierung hat keinen Sender gestartet.
 
 ### Groupwork
 
-Neue Spezifikation vom 2026-10-08, noch nicht implementiert: `participants`
+Neue Spezifikation vom 2026-10-08, als Offline-Prototyp umgesetzt: `participants`
 und `number_of_groups` bestimmen möglichst gleich große Teilnehmergruppen.
 Eine Teilnehmergruppe darf mehrere räumlich zugehörige Tischcluster nutzen.
 Die bisherigen Insel-`groups` des Geometriegenerators sind keine vollständige
 Teilnehmergruppenzuordnung. Reguläre Stirnseitenplätze erhalten Vorrang vor
-verdichteten Längsseitenplätzen; die bisherigen Singleton-Längsstreifen
-decken diese neue Sitzregel noch nicht ab. Verbindliche Details: D008b.
+verdichteten Längsseitenplätzen; zusätzliche kanonische Stirnseitenstreifen
+werden im neuen Offline-Modell bei Belegung geprüft. 65 fokussierte Tests und
+zehn Integrationsfälle bestanden. Standardpriorität zwischen Tischzahl und
+Sitzplatzpräferenz sowie die Anbindung an Vorschau/OSC bleiben offen.
+Produktive Groupwork-Chairs sind weiterhin nicht aktiv. Details: D008b und
+[Groupwork-Handoff](GROUPWORK_PARTICIPANTS.md).
 
 Source-adaptive Rect Groupwork for counts `2–5` is productively implemented.
 

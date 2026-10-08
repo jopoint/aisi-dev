@@ -71,8 +71,11 @@ Synthetische Chairs sind bisher nur für Input umgesetzt. Nächster Implementier
 ### Groupwork
 
 - [x] Spezifikation vom 2026-10-08 aufgenommen: Teilnehmergruppe von Tischclustern trennen; mehrere räumlich eindeutig zusammengehörige Cluster pro Gruppe zulässig. Sitzpriorität Längsseiten regulär → Stirnseiten regulär → Längsseiten verdichtet; fünf Personen am Einzel-Rect bevorzugt `2 + 2 + 1`. [D008b](docs/DECISIONS.md#d008b--teilnehmendenbasierte-groupwork-gruppen-und-sitzprioritäten).
+- [x] Offline-Prototyp ergänzt: gleichmäßige Teilnehmergruppen, separate Cluster-/Chair-Zuordnung, kanonische Stirnseitenflächen, vollständige Table-/Chair-/Sitzflächen-/Parkprüfung. 65 fokussierte Tests und zehn Integrationsfälle bestanden; [Handoff](docs/GROUPWORK_PARTICIPANTS.md).
+- [ ] Standardpriorität für die Tischwahl festlegen: zusätzliche Tische zugunsten regulärer Längsseitenplätze (`regular_seats`) oder möglichst wenige Tische mit anschließender Sitzpriorität (`few_tables`). Beide Varianten offline umgesetzt; Johannes' Antwort auf die konkrete Fünf-Personen-Abwägung steht aus.
 - [ ] `participants` und `number_of_groups` möglichst gleichmäßig auf Teilnehmergruppen verteilen; benötigte Tischzahl und Cluster je Gruppe geometrisch bestimmen statt Teilnehmergruppe mit Insel gleichzusetzen.
 - [ ] Chairs mit getrennten Teilnehmergruppen-/Clusterzuordnungen aus freien Sitzflächen ableiten. Bestehende Singleton-Geometrie um die nun erlaubten Stirnseitenplätze ergänzen; Sitzprioritäten prüfen.
+- [ ] Offline-Modell nach Festlegung der Tischpräferenz an die opt-in Vorschau und den bestehenden OSC-Adapter anbinden; 15 TD-Slots ausdrücklich als technische Grenze behandeln, Source-/Target-Indexbindung und Transformationsstärken prüfen. Bisher keine Groupwork-Chairs in der Live-Ausgabe.
 - [ ] Kapazität, eindeutige räumliche Gruppenzuordnung, freie Bewegungsflächen, Clusterabstände, Chair-Geometrie und Parken gemeinsam offline validieren. Sieben-Personen-Beispiel mit zwei zusammengehörigen Clustern sowie Fünf-Personen-Beispiel `2 + 2 + 1` prüfen; TD-Slotlimit getrennt behandeln.
 
 ### Discussion

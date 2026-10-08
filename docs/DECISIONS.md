@@ -150,7 +150,7 @@ Status: **Accepted und produktiv umgesetzt**
 
 ## D008b — Teilnehmendenbasierte Groupwork-Gruppen und Sitzprioritäten
 
-Status: **Fachlich bestätigt durch Johannes am 2026-10-08 — noch nicht umgesetzt**
+Status: **Fachlich bestätigt durch Johannes am 2026-10-08 — Offline-Prototyp, Live-Anbindung offen**
 
 - Primäre Eingaben sind `participants` und `number_of_groups`. Die Teilnehmenden werden möglichst gleichmäßig verteilt; Gruppengrößen unterscheiden sich höchstens um eine Person.
 - Teilnehmergruppe und Tischcluster sind unterschiedliche Entitäten. Der Generator bestimmt die benötigten Tische; eine Teilnehmergruppe muss nicht genau einer zusammenhängenden Tischfläche entsprechen.
@@ -159,6 +159,18 @@ Status: **Fachlich bestätigt durch Johannes am 2026-10-08 — noch nicht umgese
 - Sitzplatzpräferenz: zuerst reguläre Plätze an Längsseiten, danach reguläre Plätze an Stirnseiten, zuletzt verdichtete Längsseitenbelegung. Bei fünf Personen an einem Einzel-Rect sind `2 + 2` an den Längsseiten und ein Stirnseitenplatz gegenüber `3 + 2` an den Längsseiten zu bevorzugen.
 - Kapazität muss aus tatsächlich freien Sitzplätzen, Footprints und Bewegungsflächen folgen. Weder eine fixe Tischzahl pro Teilnehmergruppe noch die Input-Grenze von 15 definiert die fachliche Groupwork-Kapazität. Die vorhandenen 15 TD-Chair-Slots sind eine separate technische Ausgabegrenze.
 - Nächste Umsetzung: Teilnehmergruppen und Cluster getrennt zuordnen, Stirnseiten-Sitzflächen in die kanonische Geometrie aufnehmen und aktive/parkende Tische sowie sämtliche Chairs gemeinsam prüfen. Kriterien für eindeutige räumliche Gruppenzugehörigkeit und zulässige Verdichtung sind dabei konkret zu validieren; keine neuen Abstandsgrenzen allein aus dem Beispiel ableiten.
+
+Offline-Prototyp am 2026-10-08: getrennte Teilnehmergruppen und Cluster,
+Stirnseitenstreifen aus der vorhandenen abgerundeten 60-cm-Geometrie und
+vollständige Chair-Kreisprüfung umgesetzt. Räumliche Zuordnung vorläufig
+relativ geprüft: Verbindungskanten zwischen Clustern derselben Gruppe müssen
+kürzer als sämtliche gruppenübergreifenden Clusterzentrum-Abstände sein.
+Das ersetzt keinen visuellen oder physischen Nachweis eindeutiger Gruppenzugehörigkeit.
+Offene Abwägung bei der Tischwahl: Bei fünf Personen können ein Einzel-Rect
+mit `2 + 2 + 1` oder zwei Singletons mit ausschließlich regulären Längsseitenplätzen
+gültig sein. Beide Prioritäten sind als Offline-Varianten verfügbar; eine
+verbindliche Standardpriorität ist noch nicht festgelegt. Nachweise und nächste
+Integration: [Groupwork-Handoff](GROUPWORK_PARTICIPANTS.md).
 
 ## D008a — Validierung über die Simulationspipeline
 
