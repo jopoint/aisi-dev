@@ -208,10 +208,13 @@ nach innen schieben. Teilstärken und Stärke 0 behalten ihre bestehenden Regeln
 Johannes ergänzt nach der verbesserten Live-Stichprobe: Geparkte Groupwork-Tische
 müssen mindestens 60 cm Abstand zu jedem aktiven Tisch haben, gemessen als
 kürzeste Distanz zwischen physischen kanonischen Footprints. Dies gilt zusätzlich
-zu freien Sitz-/Bewegungsflächen und Chair-Kollisionsfreiheit. Die Auswahl
-minimiert zuerst maximale und gesamte Verschiebung aktiver Tische, erst danach
-maximale und gesamte Parkverschiebung. Größere Parkwege sind damit ausdrücklich
-akzeptabel. Parkplatzsuche und abschließende Validierung prüfen denselben
+zu freien Sitz-/Bewegungsflächen und Chair-Kollisionsfreiheit. Die zunächst festgelegte strikte Priorität aktiver Wege wurde nach der
+Parkweg-Stichprobe vom 2026-10-08 durch Johannes ersetzt: Bei gleicher fachlicher
+Topologie-/Belegungspriorität wird zuerst der gesamte Translationsweg aller
+Tische minimiert. Bei gleichem Gesamtweg folgen maximaler und gesamter aktiver
+Weg, dann maximaler Parkweg. Aktive Tische dürfen dafür etwas weiter bewegt
+werden. Groupwork-Parkplätze werden zuerst nach Parkweg, danach nach kompakter
+Anordnung gewählt; mehrere ROI-Ränder sind zulässig. Parkplatzsuche und abschließende Validierung prüfen denselben
 Mindestabstand; Stärke 0 bleibt ohne Reparatur ausgenommen.
 Nach der `10/4`-Stichprobe ergänzt Johannes: Wenn vier Einzel-Tische mit einem
 gültigen Parktisch nicht passen, soll der fünfte Tisch zu einem vorhandenen

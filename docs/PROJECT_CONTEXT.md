@@ -234,11 +234,16 @@ statt eines direkten gemeinsamen orthogonalen Fallbacks und prüft abgerundete
 kanonische Flächen. Geparkte Groupwork-Tische stehen bei 100 % mit ihrer physischen
 Längsseite am ROI-Rand und bleiben von der anschließenden Entzerrung ausgenommen.
 Zusätzlich halten Parktische mindestens 60 cm physischen Kantenabstand zu aktiven
-Tischen. Bei der Zielauswahl haben aktive Source-Wege Vorrang vor Parkwegen.
+Tischen. Bei gleicher fachlicher Topologie-/Belegungspriorität minimiert die Zielauswahl
+den Gesamtweg aller Tische; aktive Wege dienen danach als Gleichstandsentscheidung.
+Groupwork-Parken darf mehrere ROI-Ränder nutzen, wenn dies den Parkweg verkürzt.
 Bei fehlendem Parkplatz erhält ein zusammenhängendes Pair mit drei Singletons
 Vorrang vor fünf getrennten aktiven Tischclustern für nur vier Gruppen.
 Die Topologie `2 + 1 + 1 + 1` erhält dafür eine begrenzte Winkelannäherung als
 Fallback; Rollen, ursprüngliche Source-Winkel und Scene Order bleiben erhalten.
+Eine neue lokal festgefahrene `15/5`-Source wird nach erfolgloser normaler Suche
+mit zusätzlichen Source-abgeleiteten Mittelpunkt-/radialen Startpositionen repariert.
+Alle kanonischen Geometriebedingungen bleiben unverändert; kein Parkabstandsproblem.
 Bei gleicher Tischzahl/Topologie wird das Pair bevorzugt stärker belegt;
 `10/4` soll eine Dreiergruppe am Pair und `3 + 2 + 2` an Singletons erhalten,
 sofern die vollständige Geometrie passt.

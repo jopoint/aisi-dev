@@ -415,6 +415,27 @@ def _repair_singleton_profile(state, profile, sizes, bound_clusters=None):
                             continue
                         plan = trial
         return plan
+    if len(state.tables) == 5:
+        # Escape a jammed source ordering without assigning fixed room slots:
+        # retain one source-near-center anchor and expand the other source
+        # vectors. Canonical ROI fitting and region repair determine positions.
+        cx=(state.roi.x_min+state.roi.x_max)/2
+        cy=(state.roi.y_min+state.roi.y_max)/2
+        anchors=sorted(state.tables,key=lambda t:(math.dist((t.x,t.y),(cx,cy)),t.table_id))
+        for rotations in variants:
+            for anchor in anchors:
+                for scale in (2.,4.):
+                    seeds=[TableTarget(t.table_id,cx if t.table_id==anchor.table_id else cx+scale*(t.x-cx),
+                        cy if t.table_id==anchor.table_id else cy+scale*(t.y-cy),
+                        source_rot_deg=t.rot_deg,target_rot_deg=r) for t,r in zip(state.tables,rotations)]
+                    targets=_repair_singleton_regions(state,rotations,seeds)
+                    plan=_attach_clusters(state,targets,islands,profile,sizes,bound_clusters)
+                    if plan is not None:
+                        try:
+                            validate_groupwork_plan(state,plan)
+                        except LayoutConstraintError:
+                            continue
+                        return plan
     # Retain the earlier feasible last resort when rounded repair gets stuck.
     # Contour spacing can still repair this candidate after parking is attached.
     from aisi.generation.layout_constraints import repair_layout_hard_constraints
@@ -527,7 +548,7 @@ def _complete_parking(state, plan):
     try:
         extra = _compact_park_targets(state,parked,plan.targets,_parking_candidates(None),
                   exclusion_regions=[r for regions in plan.regions.values() for r in regions],
-                  edge_aligned=True,min_active_gap_cm=PARK_ACTIVE_CLEARANCE_CM)
+                  edge_aligned=True,min_active_gap_cm=PARK_ACTIVE_CLEARANCE_CM,prefer_short_movement=True)
     except ValueError:
         return None
     plan.targets.extend(extra)
@@ -659,14 +680,14 @@ def _transform_groupwork_plan(state, plan, strength):
 
 
 def _movement_priority(state, targets, parked_ids):
-    """Minimize active movement before accepting longer paths for parking."""
+    """Minimize total movement; active movement breaks equal-total ties."""
     by_id={t.table_id:t for t in state.tables}
     active=[]; parked=[]
     for target in targets:
         source=by_id[target.table_id]
         distance=math.dist((source.x,source.y),(target.target_x,target.target_y))
         (parked if target.table_id in parked_ids else active).append(distance)
-    return max(active,default=0.),math.fsum(active),max(parked,default=0.),math.fsum(parked)
+    return math.fsum(active+parked),max(active,default=0.),math.fsum(active),max(parked,default=0.)
 
 
 def _improve_floor_spacing(state, plan):

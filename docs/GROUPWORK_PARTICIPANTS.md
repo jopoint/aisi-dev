@@ -406,3 +406,53 @@ Chair-/Parkübergängen; anschließend verbleibende gemeinsame Offline-Validieru
 Danach folgt Discussion mit geometrisch abgeleiteten Chairs an den äußeren
 Sitzseiten des nach innen gerichteten Tischrings. Formatübergreifende und
 physische Prüfungen bleiben nachgelagert.
+
+## Nachtrag: lokale Sackgasse bei 15/5
+
+Neue Source-Stichprobe am 2026-10-08: `15/5` wurde wegen überlappender
+Bodenkonturen abgelehnt. Es gab keine Parktische; die neue 60-cm-Parkbedingung
+war daher nicht beteiligt. `15/4` und `15/2` wurden mit derselben eingefrorenen
+Quelle offline erfolgreich erzeugt. Die begrenzte Singleton-Reparatur war lokal
+festgefahren und fand die vorhandene gültige Geometrie nicht.
+
+Nach erfolgloser normaler Suche versucht der Fünf-Singleton-Pfad zusätzliche
+Source-abgeleitete Startpositionen: ein geometrisch Source-naher Mittelpunktanker,
+die übrigen Source-Vektoren vom ROI-Mittelpunkt aus vergrößert. Kanonische
+ROI-Anpassung und dieselbe abgerundete Flächenreparatur bestimmen die Endposen.
+Keine festen Zielslots, kein Rollenwechsel, keine gelockerten Kontur-/Chair- oder
+Sitzflächenbedingungen. Die aktuelle `15/5`-Quelle liefert so offline fünf
+Singletons mit je drei Chairs; erster einzelner Prüflauf rund 6,8 s.
+
+Bei Ablehnung sendet der bestehende Live-Sender keine neue OSC-Ausgabe und lässt
+die Schleife weiterlaufen. Deshalb zeigt TD weiterhin die zuletzt übermittelten
+Ziele. Diese Anzeige belegt keine erfolgreiche Generierung der neuen Anfrage;
+die Ablehnung steht im Sender-Terminal. Das OSC-Verhalten wurde hier nicht verändert.
+
+## Nachtrag: Gesamtweg statt strikter Aktiv-Priorität (2026-10-08)
+
+Johannes bestätigt nach der langen Parkbewegung die neue Priorität: Der kürzere
+Gesamtweg darf geringfügig längere aktive Wege rechtfertigen. Die Auswahl
+vergleicht bei unveränderter fachlicher Topologie-/Belegungspriorität zuerst
+den gesamten Translationsweg aller Tische, danach maximalen und gesamten
+aktiven Weg sowie maximalen Parkweg. Die Entzerrung verwendet dieselbe Bewertung.
+Die Groupwork-Parkplatzsuche bevorzugt kurze Wege vor kompaktem Zusammenparken;
+mehrere ROI-Ränder sind zulässig. Input behält die bisherigen Standardoptionen.
+
+In der eingefrorenen aktuellen `5/1`-Quelle werden Tisch 0 und 2 zum Pair.
+Tisch 3 unten links parkt unten links, Tisch 4 unten mittig parkt unten mittig.
+Gesamtweg rund **608 → 315 cm**, längster Weg **371 → 85 cm**; kalter Offline-Lauf
+rund **4,8 s**. ROI-Randlage, 60-cm-Park-/Aktivabstand, Bodenkonturen, Sitzflächen
+und Chairs bleiben harte Bedingungen. Keine nachträgliche Zielpermutation.
+
+Neue Regressionen prüfen die Gesamtwegpriorität samt Aktiv-Gleichstandsentscheidung
+und die konkrete Source mit kurzer Parkbewegung, deterministischer Wiederholung
+und umgekehrter Scene Order. Die zuvor dokumentierte strikte Aktiv-Priorität
+ist durch diese bestätigte Entscheidung ersetzt. Live- und Raumprüfung bleiben offen.
+
+Abschlussprüfung: **42 fokussierte Tests** (Groupwork-Planung/Vorschau sowie
+Input-Geometrie) und **12/12 Offline-Integrationsfälle** bestanden, einschließlich
+aktueller `15/5`-Source, vollständiger Geometrie, Determinismus und umgekehrter
+Scene Order. Lokaler Bericht und Vergleichsplot:
+`data/aisi/debug/groupwork_participant_preview_2026-10-08/current_source_parking_and_15_5/`.
+Die Debug-Artefakte werden nicht in Git aufgenommen. Keine OSC-Ausgabe,
+TD-Fernsteuerung oder automatische Speicherung; bestehende Änderungen bleiben erhalten.

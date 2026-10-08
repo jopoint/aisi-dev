@@ -552,6 +552,7 @@ def _compact_park_targets(
     exclusion_regions: list[tuple[tuple[float, float], ...]],
     edge_aligned: bool = False,
     min_active_gap_cm: float = 0.0,
+    prefer_short_movement: bool = False,
 ) -> list[Any]:
     """Choose compact edge bays outside active tables and their seat zones."""
     from aisi.core.models import TableTarget
@@ -605,7 +606,7 @@ def _compact_park_targets(
         xs, ys = zip(*((target.target_x, target.target_y) for target in proposed))
         compactness = (max(xs) - min(xs)) + (max(ys) - min(ys))
         movement = sum(math.dist((table.x, table.y), (target.target_x, target.target_y)) for table, target in zip(parked, proposed))
-        score = (compactness, movement)
+        score = (movement, compactness) if prefer_short_movement else (compactness, movement)
         if best is None or score < best[0]:
             best = (score, proposed)
     if best is None:

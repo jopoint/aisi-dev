@@ -49,13 +49,16 @@ class GroupworkSeatTests(unittest.TestCase):
             _compact_park_targets(state,[state.tables[1]],targets[:1],candidate,
                 exclusion_regions=[],min_active_gap_cm=60.)
 
-    def test_active_movement_has_priority_over_shorter_parking_paths(self):
+    def test_total_movement_precedes_active_movement_with_active_tie_break(self):
         state=SceneState(ROI(0,0,500,500),[
             TableState('a',250,250,0,160,80),TableState('b',250,250,0,160,80)],'groupwork')
         keep_active=[TableTarget('a',251,250),TableTarget('b',250,450)]
         move_active=[TableTarget('a',270,250),TableTarget('b',251,250)]
+        self.assertLess(_movement_priority(state,move_active,('b',)),
+                        _movement_priority(state,keep_active,('b',)))
+        equal_total=[TableTarget('a',270,250),TableTarget('b',431,250)]
         self.assertLess(_movement_priority(state,keep_active,('b',)),
-                        _movement_priority(state,move_active,('b',)))
+                        _movement_priority(state,equal_total,('b',)))
 
     def test_edge_parking_uses_actual_footprint_dimensions_and_roi(self):
         state=SceneState(ROI(20,30,520,530),[
@@ -137,6 +140,44 @@ class GroupworkSeatTests(unittest.TestCase):
 
 
 class GroupworkPlanningTests(unittest.TestCase):
+    def test_current_source_pair_selection_avoids_long_lower_left_parking(self):
+        poses=((363.571,254.286,175),(131.429,100.714,145),
+               (364.286,92.857,215),(126.429,389.286,415),(279.433,395.714,40))
+        state=SceneState(ROI(0,0,500,500),[
+            TableState(f'table_{i}',x,y,angle,160,80,table_type='rect')
+            for i,(x,y,angle) in enumerate(poses)],'groupwork')
+        plan=plan_participant_groupwork(state,5,1)
+        validate_groupwork_plan(state,plan)
+        self.assertEqual(len(plan.clusters[0].table_ids),2)
+        distances=[math.hypot(t.target_x-state.tables[i].x,t.target_y-state.tables[i].y)
+                   for i,t in enumerate(plan.targets)]
+        self.assertLess(sum(distances),490.)
+        self.assertLess(distances[3],260.)
+        other=deepcopy(state);other.tables.reverse()
+        reverse=plan_participant_groupwork(other,5,1)
+        self.assertEqual(plan.targets,list(reversed(reverse.targets)))
+        self.assertEqual(plan.chairs,reverse.chairs)
+        self.assertEqual(plan,plan_participant_groupwork(state,5,1))
+
+    def test_fifteen_five_escapes_current_source_jam_without_relaxing_contours(self):
+        poses=((363.571,254.286,175),(131.429,100.714,145),
+               (364.286,92.857,215),(126.429,389.286,415),(279.433,395.714,40))
+        state=SceneState(ROI(0,0,500,500),[
+            TableState(f'table_{i}',x,y,angle,160,80,table_type='rect')
+            for i,(x,y,angle) in enumerate(poses)],'groupwork')
+        plan=plan_participant_groupwork(state,15,5)
+        validate_groupwork_plan(state,plan)
+        self.assertEqual(plan.group_sizes,(3,)*5)
+        self.assertEqual(len(plan.clusters),5)
+        self.assertEqual(len(plan.chairs),15)
+        self.assertEqual(plan.parked_table_ids,())
+        self.assertTrue(all(len(c.table_ids)==1 and c.participants==3 for c in plan.clusters))
+        other=deepcopy(state);other.tables.reverse()
+        reverse=plan_participant_groupwork(other,15,5)
+        self.assertEqual(plan.targets,list(reversed(reverse.targets)))
+        self.assertEqual(plan.chairs,reverse.chairs)
+        self.assertEqual(plan,plan_participant_groupwork(state,15,5))
+
     def test_connected_pair_fallback_precedes_split_small_group(self):
         four_singles=((0,1,3),(1,1,3),(2,1,2),(3,1,2))
         pair_fallback=((0,2,3),(1,1,3),(2,1,2),(3,1,2))
