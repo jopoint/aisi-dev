@@ -551,6 +551,7 @@ def _compact_park_targets(
     *,
     exclusion_regions: list[tuple[tuple[float, float], ...]],
     edge_aligned: bool = False,
+    min_active_gap_cm: float = 0.0,
 ) -> list[Any]:
     """Choose compact edge bays outside active tables and their seat zones."""
     from aisi.core.models import TableTarget
@@ -560,6 +561,18 @@ def _compact_park_targets(
         return []
     active_by_id = {table.table_id: table for table in scene_state.tables}
     occupied = [table_world_footprint(active_by_id[target.table_id], (target.target_x, target.target_y), target.target_rot_deg) for target in active_targets]
+    gap_cache = {}
+
+    def active_gap_ok(table_id, x, y, rotation, footprint):
+        if min_active_gap_cm <= 0.:
+            return True
+        from aisi.analysis.rect_groupwork_adaptive_prototype import _polygon_distance
+        key = (table_id,x,y,rotation)
+        if key not in gap_cache:
+            gap_cache[key] = all(_polygon_distance(footprint,other) >= min_active_gap_cm-1e-7
+                                 for other in occupied)
+        return gap_cache[key]
+
     best: tuple[tuple[float, float], list[TableTarget]] | None = None
     for slots in permutations(candidates, len(parked)):
         proposed: list[TableTarget] = []
@@ -581,6 +594,7 @@ def _compact_park_targets(
                 not polygon_inside_roi(footprint, x_min=scene_state.roi.x_min, y_min=scene_state.roi.y_min, x_max=scene_state.roi.x_max, y_max=scene_state.roi.y_max)
                 or any(convex_polygons_intersect(footprint, other) for other in footprints)
                 or any(convex_polygons_intersect(footprint, region) for region in exclusion_regions)
+                or not active_gap_ok(table.table_id,x,y,rotation,footprint)
             ):
                 valid = False
                 break

@@ -205,6 +205,14 @@ bei wechselnden Counts sind zulässig, wenn Tischzahl und benötigte Sitzfläche
 gleich bleiben. Geparkte Groupwork-Tische liegen im vollständigen Ziel mit
 einer physischen Längsseite am ROI-Rand; die Entzerrung darf sie nicht wieder
 nach innen schieben. Teilstärken und Stärke 0 behalten ihre bestehenden Regeln.
+Johannes ergänzt nach der verbesserten Live-Stichprobe: Geparkte Groupwork-Tische
+müssen mindestens 60 cm Abstand zu jedem aktiven Tisch haben, gemessen als
+kürzeste Distanz zwischen physischen kanonischen Footprints. Dies gilt zusätzlich
+zu freien Sitz-/Bewegungsflächen und Chair-Kollisionsfreiheit. Die Auswahl
+minimiert zuerst maximale und gesamte Verschiebung aktiver Tische, erst danach
+maximale und gesamte Parkverschiebung. Größere Parkwege sind damit ausdrücklich
+akzeptabel. Parkplatzsuche und abschließende Validierung prüfen denselben
+Mindestabstand; Stärke 0 bleibt ohne Reparatur ausgenommen.
 Die opt-in Vorschau ist an den bestehenden OSC-Adapter angebunden; über 15
 Teilnehmende werden dort wegen der technischen TD-Slots ausdrücklich abgelehnt.
 Das Offline-Modell behält seine separate geometrische Kapazität.

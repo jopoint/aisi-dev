@@ -233,6 +233,8 @@ Der Vier-/Fünf-Singleton-Reparaturpfad nutzt inzwischen begrenzte Winkelannähe
 statt eines direkten gemeinsamen orthogonalen Fallbacks und prüft abgerundete
 kanonische Flächen. Geparkte Groupwork-Tische stehen bei 100 % mit ihrer physischen
 Längsseite am ROI-Rand und bleiben von der anschließenden Entzerrung ausgenommen.
+Zusätzlich halten Parktische mindestens 60 cm physischen Kantenabstand zu aktiven
+Tischen. Bei der Zielauswahl haben aktive Source-Wege Vorrang vor Parkwegen.
 Rollen bleiben nach der Clusterbildung gebunden; keine globale Zielpermutation.
 Die aktuelle Korrektur wurde noch nicht in der laufenden Anwendung geladen;
 Live-Prüfung bleibt offen. Die Offline-Suche ist inzwischen durch frühe

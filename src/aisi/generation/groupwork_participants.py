@@ -23,6 +23,7 @@ from aisi.analysis.rect_groupwork_adaptive_prototype import (
 from aisi.generation.adaptive_layout_v1 import ActivityParameters, LayoutConstraintError, evenly_distribute
 
 CHAIR_RADIUS_CM = 25.0
+PARK_ACTIVE_CLEARANCE_CM = 60.0
 # Existing Study-style floor contours are 170 x 90 around physical 160 x 80.
 FLOOR_CONTOUR_PADDING_CM = 5.0
 
@@ -162,6 +163,9 @@ def validate_groupwork_plan(state: SceneState, plan: GroupworkPlan, *, check_flo
     if any(not polygon_inside_roi(p,**roi) for p in footprints.values()) or any(
             _polygons_overlap_with_positive_area(a,b) for a,b in combinations(footprints.values(),2)):
         raise LayoutConstraintError("Groupwork-Tischkollision oder ROI-Verletzung.")
+    if any(_polygon_distance(footprints[parked],footprints[tid]) < PARK_ACTIVE_CLEARANCE_CM-1e-7
+           for parked in plan.parked_table_ids for tid in active):
+        raise LayoutConstraintError("Geparkter Groupwork-Tisch unterschreitet 60 cm Abstand zu aktivem Tisch.")
     contours = {t.table_id:floor_contour_footprint(by_id[t.table_id],t) for t in plan.targets}
     cluster_by_table = {tid:c.cluster_id for c in plan.clusters for tid in c.table_ids}
     for a,b in combinations(plan.targets,2):
@@ -499,7 +503,7 @@ def _complete_parking(state, plan):
     try:
         extra = _compact_park_targets(state,parked,plan.targets,_parking_candidates(None),
                   exclusion_regions=[r for regions in plan.regions.values() for r in regions],
-                  edge_aligned=True)
+                  edge_aligned=True,min_active_gap_cm=PARK_ACTIVE_CLEARANCE_CM)
     except ValueError:
         return None
     plan.targets.extend(extra)
@@ -561,8 +565,7 @@ def _cached_plan(roi,key,participants,number_of_groups,policy):
             if plan is None:
                 continue
             targets = {t.table_id:t for t in plan.targets}
-            distances = [math.dist((t.x,t.y),(targets[t.table_id].target_x,targets[t.table_id].target_y)) for t in state.tables]
-            objective = (max(distances),math.fsum(distances),
+            objective = (*_movement_priority(state,plan.targets,plan.parked_table_ids),
                          tuple((t.table_id,targets[t.table_id].target_x,targets[t.table_id].target_y) for t in state.tables))
             if best is None or objective < best[0]:
                 best = (objective,plan);best_rank = rank
@@ -623,15 +626,24 @@ def _transform_groupwork_plan(state, plan, strength):
     return _improve_floor_spacing(state,result)
 
 
+def _movement_priority(state, targets, parked_ids):
+    """Minimize active movement before accepting longer paths for parking."""
+    by_id={t.table_id:t for t in state.tables}
+    active=[]; parked=[]
+    for target in targets:
+        source=by_id[target.table_id]
+        distance=math.dist((source.x,source.y),(target.target_x,target.target_y))
+        (parked if target.table_id in parked_ids else active).append(distance)
+    return max(active,default=0.),math.fsum(active),max(parked,default=0.),math.fsum(parked)
+
+
 def _improve_floor_spacing(state, plan):
     """Move existing clusters rigidly; protect seating and table/group identities."""
     by_id = {t.table_id:t for t in state.tables}
     units = [c.table_ids for c in plan.clusters]
 
     def displacement(targets):
-        distances = [math.dist((t.target_x,t.target_y),
-            (by_id[t.table_id].x,by_id[t.table_id].y)) for t in targets]
-        return round(max(distances),6),round(math.fsum(distances),6)
+        return tuple(round(value,6) for value in _movement_priority(state,targets,plan.parked_table_ids))
 
     def score(candidate):
         cluster_by_id = {tid:c.cluster_id for c in candidate.clusters for tid in c.table_ids}
@@ -646,7 +658,7 @@ def _improve_floor_spacing(state, plan):
         # After contour conflicts are solved, a strictly worse source path
         # cannot win, even with more intergroup space. Keep equal paths for
         # the unchanged gap tie-break and retain full repair while conflicts remain.
-        if best_score[0] == 0 and displacement(targets) > best_score[1:3]:
+        if best_score[0] == 0 and displacement(targets) > best_score[1:5]:
             return None
         candidate=GroupworkPlan(targets,[],plan.clusters,plan.group_sizes,{},plan.parked_table_ids)
         try:

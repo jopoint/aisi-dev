@@ -16,7 +16,7 @@ from aisi.generation.groupwork_participants import (
     ParticipantCluster, GroupworkPlan, cluster_seating,
     plan_participant_groupwork, validate_groupwork_plan,
     _improve_floor_spacing,
-    _cached_cluster_seating,
+    _cached_cluster_seating, _movement_priority,
 )
 
 
@@ -29,6 +29,34 @@ def editor_state():
 
 
 class GroupworkSeatTests(unittest.TestCase):
+    def test_park_active_gap_is_edge_distance_and_a_hard_constraint(self):
+        state=SceneState(ROI(0,0,500,500),[
+            TableState('a',280,250,0,160,80,table_type='rect'),
+            TableState('b',460,250,90,160,80,table_type='rect')],'groupwork')
+        targets=[TableTarget(t.table_id,t.x,t.y,target_rot_deg=t.rot_deg) for t in state.tables]
+        cluster=ParticipantCluster('c','group_0',('a',),3)
+        seats,regions=cluster_seating(state,targets,cluster)
+        plan=GroupworkPlan(targets,seats,(cluster,),(3,),{'c':regions},('b',))
+        validate_groupwork_plan(state,plan)  # physical edge gap is exactly 60 cm
+        too_close=deepcopy(plan);too_close.targets[1].target_x-=.001
+        with self.assertRaisesRegex(LayoutConstraintError,'60 cm'):
+            validate_groupwork_plan(state,too_close)
+        # Without the new option the existing shared parking contract is retained.
+        candidate=((459.,250.,90.),)
+        self.assertEqual(len(_compact_park_targets(state,[state.tables[1]],targets[:1],
+            candidate,exclusion_regions=[])),1)
+        with self.assertRaises(ValueError):
+            _compact_park_targets(state,[state.tables[1]],targets[:1],candidate,
+                exclusion_regions=[],min_active_gap_cm=60.)
+
+    def test_active_movement_has_priority_over_shorter_parking_paths(self):
+        state=SceneState(ROI(0,0,500,500),[
+            TableState('a',250,250,0,160,80),TableState('b',250,250,0,160,80)],'groupwork')
+        keep_active=[TableTarget('a',251,250),TableTarget('b',250,450)]
+        move_active=[TableTarget('a',270,250),TableTarget('b',251,250)]
+        self.assertLess(_movement_priority(state,keep_active,('b',)),
+                        _movement_priority(state,move_active,('b',)))
+
     def test_edge_parking_uses_actual_footprint_dimensions_and_roi(self):
         state=SceneState(ROI(20,30,520,530),[
             TableState('a',250,250,37,160,100)],'groupwork')
@@ -159,6 +187,15 @@ class GroupworkPlanningTests(unittest.TestCase):
                 else:
                     gap=min(abs(x0-state.roi.x_min),abs(x1-state.roi.x_max))
                 self.assertLess(gap,1e-7)
+                from aisi.analysis.rect_groupwork_adaptive_prototype import _polygon_distance
+                parked_poly=table_world_footprint(by_id[target.table_id],
+                    (target.target_x,target.target_y),target.target_rot_deg)
+                for active in plan.targets:
+                    if active.table_id in plan.parked_table_ids:
+                        continue
+                    active_poly=table_world_footprint(by_id[active.table_id],
+                        (active.target_x,active.target_y),active.target_rot_deg)
+                    self.assertGreaterEqual(_polygon_distance(parked_poly,active_poly),60.-1e-7)
 
     def test_live_four_groups_do_not_send_upper_left_source_into_distant_pair(self):
         poses=((262.857,211.429,175),(132.143,128.571,145),

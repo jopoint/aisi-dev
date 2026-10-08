@@ -288,3 +288,33 @@ lief teilweise parallel zu Tests und ist kein allgemeiner Laufzeitnachweis.
 Keine OSC-Pakete versendet, kein Sender neu gestartet, kein TD-Projekt verändert
 oder gespeichert. Live-Prüfung nach manuellem Neuladen sowie physische Prüfung
 bleiben offen.
+
+## Nachtrag: Mindestabstand und Vorrang aktiver Tische (2026-10-08)
+
+Johannes bestätigt die vorherige Live-Darstellung als verbessert und ergänzt:
+Parktische sollen mindestens 60 cm von aktiven Tischen entfernt stehen; längere
+Parkwege sind akzeptabel. Die Implementierung misst den kürzesten Abstand
+zwischen physischen kanonischen Tisch-Footprints, einschließlich gedrehter Tische.
+Die Prüfung gilt zusätzlich zu Sitzflächen und Chairs, sowohl in der Parkplatzsuche
+als auch in der Endvalidierung und bei positiver Teilstärken-Reparatur. Stärke 0
+bleibt ausgenommen. Randparken bezieht sich weiterhin auf das vollständige Ziel.
+
+Die Planbewertung minimiert zuerst maximalen und gesamten Weg aktiver Tische,
+danach maximalen und gesamten Parkweg. Derselbe Vorrang gilt in der Entzerrung;
+geparkte Tische bleiben dort ortsfest. Die gemeinsame Parkplatzfunktion erhält
+eine optionale Mindestdistanz; der bestehende Input-Aufruf behält sein Verhalten.
+Abstandsprüfungen werden innerhalb eines Parksuchlaufs pro Tisch/Slot wiederverwendet.
+
+36 fokussierte Tests bestanden: 20 Teilnehmendentests, sechs Vorschautests und
+zehn Input-Geometrietests. Neue Grenztests prüfen exakt 60 cm und die Ablehnung
+von 59,999 cm sowie den Vorrang eines kurzen aktiven Wegs vor kurzen Parkwegen.
+Zwölf Editor-/Live-Integrationsfälle und zwei zusätzliche Live-Quellenfälle
+`7/3`, `9/3` bestanden mit deterministischer Ausgabe und erhaltener Scene Order.
+In den beiden Drei-Gruppen-Fällen beträgt der kleinste Park-/Aktivabstand rund
+120,3 cm. Die aktuelle Quelle wurde für die Offline-Prüfung eingefroren.
+
+Plot und Prüfdaten liegen lokal unter
+`data/aisi/debug/groupwork_participant_preview_2026-10-08/parking_60cm/`.
+Die neue 60-cm-Regel ist noch nicht live bestätigt. Kein Sender neu gestartet,
+keine OSC-Pakete versendet, kein TD-Projekt verändert oder gespeichert;
+physische Raumprüfung bleibt offen.
