@@ -235,6 +235,10 @@ kanonische Flächen. Geparkte Groupwork-Tische stehen bei 100 % mit ihrer physis
 Längsseite am ROI-Rand und bleiben von der anschließenden Entzerrung ausgenommen.
 Zusätzlich halten Parktische mindestens 60 cm physischen Kantenabstand zu aktiven
 Tischen. Bei der Zielauswahl haben aktive Source-Wege Vorrang vor Parkwegen.
+Bei fehlendem Parkplatz erhält ein zusammenhängendes Pair mit drei Singletons
+Vorrang vor fünf getrennten aktiven Tischclustern für nur vier Gruppen.
+Die Topologie `2 + 1 + 1 + 1` erhält dafür eine begrenzte Winkelannäherung als
+Fallback; Rollen, ursprüngliche Source-Winkel und Scene Order bleiben erhalten.
 Rollen bleiben nach der Clusterbildung gebunden; keine globale Zielpermutation.
 Die aktuelle Korrektur wurde noch nicht in der laufenden Anwendung geladen;
 Live-Prüfung bleibt offen. Die Offline-Suche ist inzwischen durch frühe

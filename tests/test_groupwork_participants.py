@@ -16,7 +16,7 @@ from aisi.generation.groupwork_participants import (
     ParticipantCluster, GroupworkPlan, cluster_seating,
     plan_participant_groupwork, validate_groupwork_plan,
     _improve_floor_spacing,
-    _cached_cluster_seating, _movement_priority,
+    _cached_cluster_seating, _movement_priority, _profile_key,
 )
 
 
@@ -137,6 +137,38 @@ class GroupworkSeatTests(unittest.TestCase):
 
 
 class GroupworkPlanningTests(unittest.TestCase):
+    def test_connected_pair_fallback_precedes_split_small_group(self):
+        four_singles=((0,1,3),(1,1,3),(2,1,2),(3,1,2))
+        pair_fallback=((0,2,3),(1,1,3),(2,1,2),(3,1,2))
+        split_fallback=((0,1,1),(0,1,2),(1,1,3),(2,1,2),(3,1,2))
+        self.assertLess(_profile_key(four_singles,'group_capacity'),
+                        _profile_key(pair_fallback,'group_capacity'))
+        self.assertLess(_profile_key(pair_fallback,'group_capacity'),
+                        _profile_key(split_fallback,'group_capacity'))
+
+    def test_live_ten_four_uses_pair_when_singleton_parking_does_not_fit(self):
+        poses=((359.286,247.143,175),(132.143,197.143,145),
+               (364.286,92.857,215),(126.429,389.286,415),(403.719,409.286,40))
+        state=SceneState(ROI(0,0,500,500),[
+            TableState(f'table_{i}',x,y,angle,160,80,table_type='rect')
+            for i,(x,y,angle) in enumerate(poses)],'groupwork')
+        plan=plan_participant_groupwork(state,10,4)
+        validate_groupwork_plan(state,plan)  # includes exact pair axis / 8-cm seam
+        self.assertEqual(plan.group_sizes,(3,3,2,2))
+        self.assertEqual(sorted(len(c.table_ids) for c in plan.clusters),[1,1,1,2])
+        self.assertEqual(len({c.group_id for c in plan.clusters}),4)
+        self.assertEqual(plan.parked_table_ids,())
+        self.assertEqual(len(plan.chairs),10)
+        other=deepcopy(state);other.tables.reverse()
+        reversed_plan=plan_participant_groupwork(other,10,4)
+        self.assertEqual(plan.targets,list(reversed(reversed_plan.targets)))
+        self.assertEqual(plan.chairs,reversed_plan.chairs)
+        self.assertEqual(plan,plan_participant_groupwork(state,10,4))
+        five_groups=plan_participant_groupwork(state,10,5)
+        validate_groupwork_plan(state,five_groups)
+        self.assertEqual(len(five_groups.clusters),5)
+        self.assertTrue(all(len(c.table_ids)==1 for c in five_groups.clusters))
+
     def test_valid_four_singleton_source_angles_are_preserved_exactly(self):
         poses=((130,125,10),(370,125,-10),(130,375,-10),(370,375,10))
         state=SceneState(ROI(0,0,500,500),[

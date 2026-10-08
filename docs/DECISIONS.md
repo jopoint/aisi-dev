@@ -213,6 +213,15 @@ minimiert zuerst maximale und gesamte Verschiebung aktiver Tische, erst danach
 maximale und gesamte Parkverschiebung. Größere Parkwege sind damit ausdrücklich
 akzeptabel. Parkplatzsuche und abschließende Validierung prüfen denselben
 Mindestabstand; Stärke 0 bleibt ohne Reparatur ausgenommen.
+Nach der `10/4`-Stichprobe ergänzt Johannes: Wenn vier Einzel-Tische mit einem
+gültigen Parktisch nicht passen, soll der fünfte Tisch zu einem vorhandenen
+Tisch geschoben werden. Bevorzugter Fallback ist ein Pair plus drei Singletons,
+mit weiterhin vier Teilnehmergruppen und ohne Parktisch. Eine kleine Gruppe
+auf zwei getrennte Singletons aufzuteilen ist nachrangig. Mehrere Cluster pro
+Teilnehmergruppe bleiben für größere Gruppen oder geometrische Ausnahmen erlaubt.
+Für die Topologie `2 + 1 + 1 + 1` wird bei erfolgloser Source-Winkelsuche dieselbe
+begrenzte Annäherung an ROI-Achsen versucht; tatsächliche Source-Winkel bleiben
+in den Ausgabedaten erhalten. Pair-Seam und sämtliche harten Grenzen gelten weiter.
 Die opt-in Vorschau ist an den bestehenden OSC-Adapter angebunden; über 15
 Teilnehmende werden dort wegen der technischen TD-Slots ausdrücklich abgelehnt.
 Das Offline-Modell behält seine separate geometrische Kapazität.

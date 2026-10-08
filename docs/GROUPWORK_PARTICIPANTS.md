@@ -101,7 +101,8 @@ Die Tischwahl ist in zwei überprüfbaren Varianten vorbereitet:
 Johannes aktualisiert die Tischwahl nach der Live-Stichprobe: drei Personen
 optimal am Einzel-Tisch; bei mehr Personen pro Gruppe zuerst ein Pair versuchen.
 Standard ist jetzt `group_capacity`: überbelegte Singletons vermeiden,
-größeren Gruppen ein Pair geben, dann geringe Verdichtung, wenige Tische und
+größeren Gruppen ein Pair geben, dann zusätzliche getrennte Cluster vermeiden,
+geringe Verdichtung, wenige Tische und
 wenige Stirnseitenplätze. Es gilt weiterhin die vollständige Geometrieprüfung.
 Drei ist keine harte Kapazitätsgrenze: Wenn kein Pair verfügbar oder passend ist,
 bleibt ein geometrisch gültiger Singleton eine nachrangige Alternative.
@@ -318,3 +319,43 @@ Plot und Prüfdaten liegen lokal unter
 Die neue 60-cm-Regel ist noch nicht live bestätigt. Kein Sender neu gestartet,
 keine OSC-Pakete versendet, kein TD-Projekt verändert oder gespeichert;
 physische Raumprüfung bleibt offen.
+
+## Nachtrag: Pair-Fallback bei 10 Personen / 4 Gruppen (2026-10-08)
+
+Die Live-Stichprobe zeigte fünf einzelne aktive Tische bei `10/4`. Intern war
+eine Dreiergruppe auf zwei Singletons mit einer und zwei Personen verteilt;
+die Ausgabe enthielt weiterhin vier soziale Gruppen, wirkte aber wie `10/5`.
+Vier aktive Singletons waren geometrisch gültig, für den fünften Tisch fand
+keine der ausgewählten Anordnungen einen Randparkplatz mit 60 cm Abstand.
+
+Johannes legt für diesen Fall ein Pair plus drei Singletons ohne Parktisch fest.
+`group_capacity` priorisiert jetzt zusammenhängende Gruppen vor zusätzlichen
+getrennten Clustern. Vier Singletons mit gültigem Parkplatz bleiben vor einem
+zusätzlichen aktiven Tisch bevorzugt. Für die Topologie `2 + 1 + 1 + 1` ergänzt
+bei erfolgloser erster Suche eine begrenzte Winkelannäherung an die nähere
+ROI-Achse die bestehenden kanonischen Kandidaten. Source-Positionen werden dabei
+nicht ersetzt; originale Source-Winkel werden vor der Ausgabe wieder zugeordnet.
+Keine nachträgliche globale Tischpermutation. Geometrisch gleichwertige Profile,
+die nur gleich große Gruppen anders benennen, werden einmal geprüft; die erste
+deterministische Zuordnung bleibt erhalten.
+
+Die Regeln zu 8-cm-Pair-Seam, vollständigen Sitz-/Bewegungsflächen, Chair-Kreisen,
+ROI und Parkabstand bleiben unverändert. Mehrere räumlich zugehörige Cluster pro
+Teilnehmergruppe bleiben erlaubt, erhalten gegenüber einem nutzbaren einzelnen
+Cluster aber eine niedrigere Priorität. Die expliziten Offline-Vergleichspolitiken
+`few_tables` und `regular_seats` behalten ihre Bewertungsregeln.
+
+28 fokussierte Tests bestanden (22 Teilnehmendentests, sechs Vorschautests).
+Zwölf Editor-/Live-Integrationsfälle sowie die eingefrorene `10/4`-/`10/5`-Quelle
+wurden vollständig geprüft: Determinismus, umgekehrte Scene Order, Chair-Counts,
+Pair-Seam, Gruppenrollen und sämtliche Geometriebedingungen. `10/4` liefert
+`3 + 3 + 2 + 2` mit einem Pair für eine Zweiergruppe und drei Singletons,
+ohne Parktisch. `10/5` liefert fünf Singletons mit je zwei Chairs. Ursprüngliche
+Source-Winkel bleiben in beiden Ausgaben erhalten. Zusätzlich `10/4` bei
+0/50/100 % geprüft: 0 % über den Simulationsadapter exakt ohne Chairs/Reparatur,
+positive Stärken mit vollständiger Geometrie und unveränderten Gruppen-/Pair-Rollen.
+Lokaler Vergleichsplot und
+Prüfdaten: `data/aisi/debug/groupwork_participant_preview_2026-10-08/pair_fallback_10_4/`.
+Die Zusatzsuche kann Laufzeit kosten; eine allgemeine Laufzeitgrenze bleibt offen.
+Keine OSC-Pakete versendet, kein Sender neu gestartet, kein TD-Projekt verändert
+oder gespeichert. Live-Nachweis nach manuellem Neuladen und physische Prüfung offen.

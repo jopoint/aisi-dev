@@ -259,7 +259,10 @@ def _profile_key(profile, policy):
                         for g,_,_ in profile}
         missing_pair = sum(total > 3 and not any(owner == g and size == 2
                            for owner,size,_ in profile) for g,total in group_totals.items())
-        rank = (singleton_excess,missing_pair,dense,tables,ends)
+        # Keep a social group together before adding a disconnected island.
+        # If parking fails, a spare table can form a pair even for <=3 people.
+        extra_clusters = len(profile)-len(group_totals)
+        rank = (singleton_excess,missing_pair,extra_clusters,dense,tables,ends)
     else:
         rank = (dense,ends,tables) if policy == 'regular_seats' else (tables,dense,ends)
     return rank, max(count for _,_,count in profile), profile
@@ -326,7 +329,7 @@ def _attach_clusters(state, targets, islands, profile, sizes, bound_clusters=Non
     return None
 
 
-def _solve_profile(active_state, profile, sizes, bound_clusters=None, seating_cache=None):
+def _solve_profile(active_state, profile, sizes, bound_clusters=None, seating_cache=None, *, angle_fallback=True):
     cluster_sizes = tuple(sorted(descriptor[1] for descriptor in profile))
     if len(cluster_sizes) >= 4 and all(n == 1 for n in cluster_sizes):
         plan = _repair_singleton_profile(active_state,profile,sizes,bound_clusters)
@@ -346,7 +349,26 @@ def _solve_profile(active_state, profile, sizes, bound_clusters=None, seating_ca
         result = solve_rect_groupwork_prototype(active_state,selection='source_movement',
                     cluster_sizes=cluster_sizes,candidate_filter=accept)
     except ValueError:
-        return _repair_singleton_profile(active_state,profile,sizes,bound_clusters)
+        plan = _repair_singleton_profile(active_state,profile,sizes,bound_clusters)
+        if plan is not None or not angle_fallback or cluster_sizes != (1,1,1,2):
+            return plan
+        # A spare table should join a social group's pair when edge parking
+        # cannot fit. Keep source positions and relax only the search angles.
+        originals = {t.table_id:t for t in active_state.tables}
+        axis = min((0.,90.),key=lambda angle: sum(
+            abs((angle-t.rot_deg+90.) % 180.-90.) for t in active_state.tables))
+        for fraction in (.5,.75,1.):
+            relaxed = SceneState(active_state.roi,[replace(t,
+                rot_deg=t.rot_deg+fraction*((axis-t.rot_deg+90.) % 180.-90.))
+                for t in active_state.tables],'groupwork')
+            plan = _solve_profile(relaxed,profile,sizes,bound_clusters,seating_cache,
+                                  angle_fallback=False)
+            if plan is not None:
+                for target in plan.targets:
+                    target.source_rot_deg = originals[target.table_id].rot_deg
+                validate_groupwork_plan(active_state,plan,check_floor_contours=False)
+                return plan
+        return None
     return _attach_clusters(active_state,result.table_targets,result.groups,profile,sizes,bound_clusters,seating_cache)
 
 
@@ -551,10 +573,18 @@ def _cached_plan(roi,key,participants,number_of_groups,policy):
     ordered = sorted(profiles,key=lambda profile:_profile_key(profile,policy))
     seating_cache = OrderedDict()
     best = None;best_rank = None
+    seen_single_cluster_profiles = set()
     for profile in ordered:
         rank = _profile_key(profile,policy)[0]
         if best is not None and rank > best_rank:
             break
+        if len(profile) == len(sizes):
+            # Equivalent labels of equal-sized groups have identical geometry;
+            # _attach_clusters already enumerates all physical assignments.
+            physical_profile = tuple(sorted((size,count) for _,size,count in profile))
+            if physical_profile in seen_single_cluster_profiles:
+                continue
+            seen_single_cluster_profiles.add(physical_profile)
         required = sum(n for _,n,_ in profile)
         for active in combinations(state.tables,required):
             active_state = SceneState(state.roi,list(active),'groupwork')
