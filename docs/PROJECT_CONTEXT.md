@@ -243,8 +243,8 @@ Bei gleicher Tischzahl/Topologie wird das Pair bevorzugt stärker belegt;
 `10/4` soll eine Dreiergruppe am Pair und `3 + 2 + 2` an Singletons erhalten,
 sofern die vollständige Geometrie passt.
 Rollen bleiben nach der Clusterbildung gebunden; keine globale Zielpermutation.
-Die aktuelle Korrektur wurde noch nicht in der laufenden Anwendung geladen;
-Live-Prüfung bleibt offen. Die Offline-Suche ist inzwischen durch frühe
+Johannes bestätigt die aktuelle `10/4`-Vorschau visuell als passend.
+Vollständige Einzelvalidierung und gemessene Live-Laufzeit bleiben offen. Die Offline-Suche ist inzwischen durch frühe
 kanonische Konfliktprüfung, unveränderte Bestwert-Auswahl und auf einen Aufruf
 begrenzte Chair-Prüfcaches beschleunigt; Vergleichspläne bleiben exakt gleich.
 Die zweite Stufe ergänzt sichere Weggrenzen in der Entzerrung sowie kanonische

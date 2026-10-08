@@ -394,3 +394,15 @@ Messwerte und Prüfdaten lokal:
 `data/aisi/debug/groupwork_participant_preview_2026-10-08/pair_three_occupancy/`.
 Kein Sender neu gestartet, kein OSC-Versand und keine TD-Änderung/-Speicherung.
 Live-Nachweis der neuen Belegung und physische Prüfung bleiben offen.
+
+## Aktueller Live-Handoff
+
+Johannes bestätigt die aktuelle Groupwork-Darstellung nach der Pair-Belegungsänderung
+am 2026-10-08 als visuell passend. Dies schließt die konkrete `10/4`-Stichprobe,
+aber weder sämtliche Counts/Übergänge noch eine gemessene Live-Laufzeit oder
+physische Raumprüfung ab. Nächster Block: kurzer Groupwork-Abschlusscheck bei
+100 % mit `3/1`, `5/1`, `15/2`, `15/5` einschließlich Source-Änderungen und
+Chair-/Parkübergängen; anschließend verbleibende gemeinsame Offline-Validierung.
+Danach folgt Discussion mit geometrisch abgeleiteten Chairs an den äußeren
+Sitzseiten des nach innen gerichteten Tischrings. Formatübergreifende und
+physische Prüfungen bleiben nachgelagert.
