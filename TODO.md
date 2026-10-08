@@ -10,7 +10,7 @@ Use this file to choose the next coherent task. Do not execute all items automat
 - [x] Beobachtung am 2026-10-08 offline reproduziert: Alle fünf Source-Tische stehen horizontal (0°/180°), die Automatik erzeugt vertikale Ziele (±90°). Ursache ist die positionsbasierte Präsentationsachse mit Ost-Ausweichlösung, kein zusätzlicher Darstellungsversatz. Nord und Süd erhalten die horizontale Orientierung und bestehen die gemeinsame Geometrieprüfung. Source-/Target-Winkel im lokalen OSC-Recorder und 18 gespeicherte Geo-Bindungen aus Version 141 geprüft; kein neuer Live-Nachweis.
 - [x] Nach Johannes' Zustimmung bevorzugt die gemeinsame Rect-Input-Synthese die axiale Source-Orientierung; Positionen bestimmen Präsentationsende und Rollen, explizite Seiten bleiben verbindlich. Die konkrete Live-Quelle ergibt jetzt fünf horizontale Ziele, 0° statt 450° gesamter axialer Rotation. D007 aktualisiert.
 - [x] ROI, Kapazität, Chairs und gerichtete Sitz-/Bewegungsflächen erneut abgesichert: 300/300 gespeicherte Geometriefälle, 300 deterministische Wiederholungen, 140 Scene-Order-Prüfungen, 60 Überkapazitätsablehnungen sowie 57 fokussierte Tests bestanden. [Prüfbericht](docs/INPUT_GEOMETRY_VALIDATION.md).
-- [ ] Nächster kurzer Block: aktuellen Python-Sender neu laden und die horizontale Live-Quelle im Room Editor / Learning-Format-Interface / TD stichprobenartig vergleichen. Kein neuer TD-Live- oder Raum-Nachweis in diesem Offline-Block; kein automatisches Speichern.
+- [x] Johannes bestätigt am 2026-10-08 die neue Rotationswahl in der Live-Stichprobe als sinnvoll. Zuvor wurde der doppelte alte Sender beendet; Bild anschließend ruhig. Diese Bestätigung betrifft die virtuelle Anzeige, keine physische Raumprüfung; keine zusätzliche Behauptung zu vollständigen Count-/Seitenkombinationen.
 
 Neuer expliziter Auftrag: AISI-Zieltischkonturen müssen auf dem Floor
 erscheinen; AISI-Elemente sollen gestalterisch dem bestehenden Study-Modus
@@ -60,11 +60,13 @@ aufgeschobene Raumprüfung sind getrennt von der bestandenen Offline-Prüfung.
    - ROI, Tisch-/Chair-Kollisionen, Chair-Abstände und freie gerichtete Sitz-/Bewegungsflächen bestanden.
    - 300 deterministische Wiederholungen, 140 Scene-Order-Prüfungen und 60 explizite Überkapazitätsablehnungen bestanden; 59 fokussierte Tests bestanden.
    - Drei Plotübersichten und reproduzierbare Quellen im [Prüfbericht](docs/INPUT_GEOMETRY_VALIDATION.md). Count 0 ausgenommen, physische Raumprüfung aufgeschoben.
-5. [ ] Check Chair redistribution when participant count changes for stable, comprehensible behavior.
+5. [x] Johannes bestätigt am 2026-10-08 die Chair-Umverteilung im Input bei Count-Wechseln als sinnvoll; qualitative Live-Stichprobe, keine Garantie minimaler Umverteilung für alle Quellen.
 6. [ ] Physically validate the optional regular Floor-Chair output for visibility, position, size, masking, and projection behavior.
 7. [x] Senderprüfung am 2026-10-08 nach gemeldetem Flackern: alter Sender PID 40517 und heutiger Sender PID 94900 liefen gleichzeitig auf Zielport 9000. Alten Sender beendet; danach genau eine Layout-Senderinstanz (PID 94900) verifiziert. Johannes bestätigt anschließend das ruhige Bild. Befunde im [Chair-Debug-Handoff](docs/TOUCHDESIGNER_SYNTH_CHAIR_DEBUG.md); beim Neuladen bestehenden Sender beenden statt eine zweite Instanz daneben starten.
 
 ## NEXT — Extend participant-based planning to other formats
+
+Synthetische Chairs sind bisher nur für Input umgesetzt. Nächster Implementierungsblock ist Groupwork; danach Discussion. Der gemeinsame Formatwechsel-Check folgt erst nach der jeweiligen Chair-Implementierung und Einzelvalidierung. Physische Input-Raumprüfung und verbleibende isolierte TD-/OSC-Nachweise bleiben separat offen.
 
 ### Groupwork
 
