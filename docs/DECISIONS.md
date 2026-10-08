@@ -327,9 +327,13 @@ Status: **Frozen for current pilot**
 
 Status: **Frozen**
 
-- Active trial definition: `pilot_v7`.
-- Matching snapshot: `trials_pilot_v7.json`.
-- T1–T4 einschließlich A/B-Geometrie sind aus `pilot_v6` übernommen; `pilot_v7` ergänzt nur die Familiarization-Konfiguration.
+- Aktive Trial-Definition: `pilot_v8`, weiterhin `frozen_for_study`.
+- Zugehöriger eingefrorener Snapshot: `trials_pilot_v8.json`; `trials_pilot_v7.json` bleibt unverändert erhalten.
+- T1–T3, Familiarization und sämtliche Teilnehmerstartpositionen bleiben unverändert aus `pilot_v7` übernommen.
+- Alle T4-Tischposen (Source, Target und beide Statiktische in A/B) werden gemeinsam um exakt `+11 cm` in Welt-Y verschoben. X und Rotation sowie die aufgabenspezifische A/B-Transformation bleiben erhalten.
+- Grund: Die bisherige Source-Lage nahe der oberen ROI-Grenze erforderte bei Bewegung mit vorangehendem kurzen Tischende ein künstliches anfängliches Zurücksetzen. Die Verschiebung erhält die relative Tischgeometrie und ermöglicht einen natürlicheren Referenzweg.
+- Vom Auftrag vorgegebener Referenzwegvergleich: T3/T4 jeweils ungefähr `410 cm` Translation, kumulative Rotation ungefähr `195°`/`170°`. Diese Werte sind Validierungskontext, keine Laufzeitkonstanten und hier nicht neu berechnet.
+- Offline werden exakte Geometrie, Erhalt der übrigen Definitionen, A/B-Involution, ROI, kollisionsfreie Source-/Target-Konfigurationen und Hash-Konsistenz geprüft. Neue Setup-Plots dienen der Raumprüfung; die physische Validierung im autoritativen TouchDesigner-Projekt bleibt offen.
 - Any geometry change creates a new named snapshot before replacing `trials.json`.
 - Session metadata records the active definition SHA-256.
 

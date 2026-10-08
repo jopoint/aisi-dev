@@ -93,7 +93,7 @@ Key files:
 - `src/aisi/app/study_logging.py`
 - `src/aisi/analysis/study_metrics.py`
 
-The active Study definition is `pilot_v7`. T1–T4 are unchanged from `pilot_v6`; `pilot_v7` adds a non-experimental Familiarization before the experimental tasks. Practice remains excluded from trial counters and `study_metrics`.
+Die aktive Study-Definition ist `pilot_v8`. T1–T3, Familiarization und sämtliche Teilnehmerstartpositionen bleiben unverändert aus `pilot_v7`. Nur alle T4-Tischposen werden gemeinsam um `+11 cm` in Welt-Y verschoben; X, Rotation und A/B-Transformation bleiben erhalten. Practice bleibt aus Trial-Zählern und `study_metrics` ausgeschlossen.
 
 ### Vision/tracking path
 
@@ -290,8 +290,11 @@ Current state:
 
 Repository-confirmed:
 
-- `trials.json`: `pilot_v7`, `frozen_for_study`;
-- matching frozen snapshot: `trials_pilot_v7.json`;
+- `trials.json`: `pilot_v8`, `frozen_for_study`;
+- zugehöriger eingefrorener Snapshot: `trials_pilot_v8.json`; `pilot_v7` bleibt erhalten;
+- T1–T3 und Familiarization einschließlich Teilnehmerstarts unverändert aus `pilot_v7`;
+- T4A/T4B: Source, Target und beide Statiktische um exakt `+11 cm` in Welt-Y verschoben, bei unverändertem X und unveränderter Rotation;
+- Anlass: natürlicherer Referenzweg mit vorangehendem kurzen Tischende ohne künstliches anfängliches Zurücksetzen; physische Raumvalidierung bleibt offen;
 - eight experimental trials: T1–T4 × A/B;
 - T1/T2 use one active table and no distractors;
 - T3/T4 use one active table and two static distractors;

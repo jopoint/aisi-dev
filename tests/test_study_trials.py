@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import json
+from decimal import Decimal
 import math
 from pathlib import Path
 import tempfile
@@ -80,10 +82,10 @@ class StudyTrialTests(unittest.TestCase):
             (trials[(StudyTask.T4, StudyVariant.A)].target_x_cm,
              trials[(StudyTask.T4, StudyVariant.A)].target_y_cm,
              trials[(StudyTask.T4, StudyVariant.A)].target_rotation_deg),
-            (234.84473024735843, 404.1752983481141, -91.7400727688127),
+            (234.84473024735843, 415.1752983481141, -91.7400727688127),
         )
 
-    def test_pilot_v1_through_v7_snapshots_preserve_their_respective_frozen_layouts(self) -> None:
+    def test_pilot_v1_through_v8_snapshots_preserve_their_respective_frozen_layouts(self) -> None:
         study_directory = Path(__file__).resolve().parents[1] / "data" / "aisi" / "study"
         active_path = study_directory / "trials.json"
         prior_snapshot_path = study_directory / "trials_pilot_v1.json"
@@ -92,7 +94,8 @@ class StudyTrialTests(unittest.TestCase):
         final_snapshot_path = study_directory / "trials_pilot_v4.json"
         prior_final_snapshot_path = study_directory / "trials_pilot_v5.json"
         prior_newest_snapshot_path = study_directory / "trials_pilot_v6.json"
-        newest_snapshot_path = study_directory / "trials_pilot_v7.json"
+        v7_snapshot_path = study_directory / "trials_pilot_v7.json"
+        newest_snapshot_path = study_directory / "trials_pilot_v8.json"
         self.assertTrue(prior_snapshot_path.is_file())
         self.assertTrue(snapshot_path.is_file())
         self.assertTrue(current_snapshot_path.is_file())
@@ -108,12 +111,13 @@ class StudyTrialTests(unittest.TestCase):
         prior_final_snapshot_payload = json.loads(prior_final_snapshot_path.read_text(encoding="utf-8"))
         newest_snapshot_payload = json.loads(newest_snapshot_path.read_text(encoding="utf-8"))
         expected_active_metadata = {
-            "version": "pilot_v7",
+            "version": "pilot_v8",
             "status": "frozen_for_study",
-            "description": "Frozen pilot_v6 T1-T4 geometry plus non-experimental familiarization",
+            "description": "Frozen pilot_v7 with all T4 table poses shifted +11 cm in world Y; unchanged T1-T3 and familiarization",
         }
         self.assertEqual({key: active_payload.get(key) for key in expected_active_metadata}, expected_active_metadata)
         self.assertEqual({key: newest_snapshot_payload.get(key) for key in expected_active_metadata}, expected_active_metadata)
+        self.assertEqual(json.loads(v7_snapshot_path.read_text(encoding="utf-8"))["version"], "pilot_v7")
         self.assertEqual(json.loads(prior_newest_snapshot_path.read_text(encoding="utf-8"))["version"], "pilot_v6")
         self.assertEqual(prior_final_snapshot_payload["version"], "pilot_v5")
         self.assertEqual(final_snapshot_payload["version"], "pilot_v4")
@@ -126,6 +130,75 @@ class StudyTrialTests(unittest.TestCase):
         self.assertNotEqual(load_trial_definitions(active_path), load_trial_definitions(prior_snapshot_path))
         self.assertEqual(len(trial_definition_metadata(active_path)["trial_definitions_sha256"]), 64)
         self.assertEqual(len(trial_definition_metadata(newest_snapshot_path)["trial_definitions_sha256"]), 64)
+
+    def test_pilot_v8_changes_only_t4_y_and_version_metadata_from_v7(self) -> None:
+        directory = Path(__file__).resolve().parents[1] / "data" / "aisi" / "study"
+        prior_raw = (directory / "trials_pilot_v7.json").read_text(encoding="utf-8")
+        active_raw = (directory / "trials.json").read_text(encoding="utf-8")
+        prior = json.loads(prior_raw, parse_float=Decimal)
+        active = json.loads(active_raw, parse_float=Decimal)
+        self.assertEqual(len(active["trials"]), 8)
+        self.assertEqual(active["familiarization"], prior["familiarization"])
+        # Preserve the authored Familiarization and T1–T3 text byte-for-byte.
+        self.assertEqual(
+            active_raw[active_raw.index('  "familiarization"'):active_raw.index('      "task_id": "T4"')],
+            prior_raw[prior_raw.index('  "familiarization"'):prior_raw.index('      "task_id": "T4"')],
+        )
+        for old, new in zip(prior["trials"], active["trials"]):
+            self.assertEqual(new["participant_start_positions"], old["participant_start_positions"])
+            if old["task_id"] == "T4":
+                for pose in (old["source_pose"], old["target_pose"], *old["distractor_tables"]):
+                    pose["y_cm"] += Decimal("11.0")
+            self.assertEqual(new, old)
+        for key in ("version", "description"):
+            prior[key] = active[key]
+        self.assertEqual(active, prior)
+
+    def test_pilot_v8_t4_matches_requested_coordinates_to_four_decimals(self) -> None:
+        path = Path(__file__).resolve().parents[1] / "data" / "aisi" / "study" / "trials.json"
+        expected = {
+            StudyVariant.A: ((265.3746, 64.3003, 179.1566), (234.8447, 415.1753, -91.7401),
+                             (200.2798, 165.8329, 173.2387), (330.7904, 404.6398, -101.8769)),
+            StudyVariant.B: ((234.6254, 64.3003, -179.1566), (265.1553, 415.1753, 91.7401),
+                             (299.7202, 165.8329, -173.2387), (169.2096, 404.6398, 101.8769)),
+        }
+        trials = load_trial_definitions(path)
+        for variant, poses in expected.items():
+            trial = trials[(StudyTask.T4, variant)]
+            actual = (trial.source_pose, type(trial.source_pose)(
+                trial.target_x_cm, trial.target_y_cm, trial.target_rotation_deg,
+            ), *trial.distractor_tables)
+            self.assertEqual(tuple(tuple(round(value, 4) for value in
+                (pose.x_cm, pose.y_cm, pose.rotation_deg)) for pose in actual), poses)
+
+    def test_pilot_v8_snapshot_bytes_and_hash_metadata_match_active(self) -> None:
+        directory = Path(__file__).resolve().parents[1] / "data" / "aisi" / "study"
+        active = directory / "trials.json"
+        snapshot = directory / "trials_pilot_v8.json"
+        self.assertEqual(active.read_bytes(), snapshot.read_bytes())
+        expected_hash = hashlib.sha256(active.read_bytes()).hexdigest()
+        self.assertNotEqual(expected_hash, trial_definition_metadata(directory / "trials_pilot_v7.json")["trial_definitions_sha256"])
+        for path in (active, snapshot):
+            metadata = trial_definition_metadata(path)
+            self.assertEqual(metadata["trial_definitions_sha256"], expected_hash)
+            self.assertEqual(metadata["trial_definitions_version"], "pilot_v8")
+            self.assertEqual(metadata["trial_definitions_status"], "frozen_for_study")
+            self.assertEqual(load_familiarization_definition(path), load_familiarization_definition(directory / "trials_pilot_v7.json"))
+
+    def test_t4_source_and_target_configurations_are_collision_free(self) -> None:
+        path = Path(__file__).resolve().parents[1] / "data" / "aisi" / "study" / "trials.json"
+        trials = load_trial_definitions(path)
+        for variant in StudyVariant:
+            trial = trials[(StudyTask.T4, variant)]
+            for active_pose in (trial.source_pose, type(trial.source_pose)(
+                trial.target_x_cm, trial.target_y_cm, trial.target_rotation_deg,
+            )):
+                poses = (active_pose, *trial.distractor_tables)
+                footprints = [world_footprint("rect", pose.x_cm, pose.y_cm, pose.rotation_deg) for pose in poses]
+                for left in range(len(footprints)):
+                    for right in range(left + 1, len(footprints)):
+                        self.assertFalse(convex_polygons_intersect(footprints[left], footprints[right]),
+                                         f"T4{variant.name}: {poses[left]} / {poses[right]}")
 
     def test_finalized_trials_have_required_setup_table_counts_and_one_active_source(self) -> None:
         path = Path(__file__).resolve().parents[1] / "data" / "aisi" / "study" / "trials.json"
@@ -153,8 +226,8 @@ class StudyTrialTests(unittest.TestCase):
             "T2B": ((333, 74.5, -10), (245.9, 436, -175), ()),
             "T3A": ((87.44109878029548, 271.7760216418562, 101.15960012857052), (397.2182816800569, 237.33178597669993, -96.01579621441935), ((197.4417669961654, 194.69924154574431, 99.75089545617918), (295.01593705427456, 228.7988341653692, -91.69820657021306))),
             "T3B": ((87.44109878029548, 228.2239783581438, 78.84039987142948), (397.2182816800569, 262.66821402330007, -83.98420378558065), ((197.4417669961654, 305.3007584542557, 80.24910454382082), (295.01593705427456, 271.2011658346308, -88.30179342978694))),
-            "T4A": ((265.37464310054287, 53.30026150452769, 179.1565691228634), (234.84473024735843, 404.1752983481141, -91.7400727688127), ((200.27976364082878, 154.83289474640358, 173.23873712478508), (330.79043090699105, 393.6398110955178, -101.87692619306351))),
-            "T4B": ((234.62535689945713, 53.30026150452769, -179.1565691228634), (265.1552697526416, 404.1752983481141, 91.7400727688127), ((299.7202363591712, 154.83289474640358, -173.23873712478508), (169.20956909300895, 393.6398110955178, 101.87692619306351))),
+            "T4A": ((265.37464310054287, 64.30026150452769, 179.1565691228634), (234.84473024735843, 415.1752983481141, -91.7400727688127), ((200.27976364082878, 165.83289474640358, 173.23873712478508), (330.79043090699105, 404.6398110955178, -101.87692619306351))),
+            "T4B": ((234.62535689945713, 64.30026150452769, -179.1565691228634), (265.1552697526416, 415.1752983481141, 91.7400727688127), ((299.7202363591712, 165.83289474640358, -173.23873712478508), (169.20956909300895, 404.6398110955178, 101.87692619306351))),
         }
         for task in StudyTask:
             for variant in StudyVariant:
@@ -187,6 +260,10 @@ class StudyTrialTests(unittest.TestCase):
             )
             for actual, expected in zip(b.distractor_tables, a.distractor_tables):
                 assert_pose((actual.x_cm, actual.y_cm, actual.rotation_deg), transform(task, expected))
+            a_poses = (a.source_pose, type(a.source_pose)(a.target_x_cm, a.target_y_cm, a.target_rotation_deg), *a.distractor_tables)
+            for pose in a_poses:
+                transformed = type(pose)(*transform(task, pose))
+                assert_pose(transform(task, transformed), (pose.x_cm, pose.y_cm, pose.rotation_deg))
             assert_pose(transform(task, type("Pose", (), {"x_cm": b.source_pose.x_cm, "y_cm": b.source_pose.y_cm, "rotation_deg": b.source_pose.rotation_deg})()), (a.source_pose.x_cm, a.source_pose.y_cm, a.source_pose.rotation_deg))
             for actual, expected in zip(b.participant_start_positions, a.participant_start_positions):
                 expected_position = (

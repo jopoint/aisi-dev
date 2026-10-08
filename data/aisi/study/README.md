@@ -1,10 +1,14 @@
 # Study trial versions
 
 `trials.json` enthält die aktive Study-Konfiguration. Die Dateien
-`trials_pilot_v1.json` bis `trials_pilot_v6.json` bewahren frühere eingefrorene
-Stände. `trials_pilot_v7.json` ist der aktuelle Snapshot: Die T1–T4-Geometrie
-ist unverändert aus `pilot_v6` übernommen, ergänzt wurde ausschließlich die
-nicht-experimentelle Familiarization. Jede spätere Geometrieänderung erhält
+`trials_pilot_v1.json` bis `trials_pilot_v7.json` bewahren frühere eingefrorene
+Stände. `trials_pilot_v8.json` ist der aktuelle Snapshot (`frozen_for_study`):
+T1–T3, Familiarization und alle Teilnehmerstartpositionen bleiben unverändert
+aus `pilot_v7`. Nur die gesamte T4-Tischkonfiguration (Source, Target und
+beide Statiktische in A/B) ist um exakt `+11 cm` in Welt-Y verschoben; X,
+Rotation und A/B-Transformation bleiben erhalten. Dies ermöglicht einen
+natürlicheren Referenzweg mit vorangehendem kurzen Tischende ohne künstliches
+anfängliches Zurücksetzen. Die physische Raumvalidierung bleibt offen. Jede spätere Geometrieänderung erhält
 vor dem Austausch der aktiven Definition einen neuen benannten Snapshot. Die
 Session-Metadaten protokollieren den SHA-256 der aktiven Definition.
 

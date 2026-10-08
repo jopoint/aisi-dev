@@ -115,7 +115,7 @@ Synthetische Chairs sind für Input und Groupwork umgesetzt. Die aktuelle Groupw
 ## NEXT — Pilot / Study readiness
 
 - [ ] Validate Familiarization in the authoritative TouchDesigner project and physical room, including live switching between Floor-only and Dual-surface.
-- [ ] Physically run all eight `pilot_v7` experimental trials in both conditions.
+- [ ] Alle acht experimentellen `pilot_v8`-Trials in beiden Bedingungen im Raum prüfen; insbesondere T4 nach der Verschiebung um `+11 cm` in Welt-Y.
 - [ ] Verify HOME, READY, ACTIVE, and COMPLETE transitions in the authoritative TouchDesigner project.
 - [ ] Verify Floor-only and Dual-surface visuals match the written method description.
 - [ ] Verify active-table and distractor binding for T3/T4 under real tracking.
@@ -139,7 +139,7 @@ Done when a participant-like session runs without manual data repair and visuals
 
 ## OPEN DECISIONS — Johannes
 
-- [ ] Is `pilot_v7` ready for data collection, or still a pre-pilot configuration?
+- [ ] Ist `pilot_v8` bereit für die Datenerhebung oder weiterhin eine Vorpilot-Konfiguration?
 - [ ] Which Study measures are formally primary versus secondary/exploratory?
 
 ## DEFERRED — Documentation
