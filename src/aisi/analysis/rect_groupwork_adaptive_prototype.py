@@ -95,6 +95,9 @@ def solve_rect_groupwork_prototype(
         raise ValueError("Der adaptive Prototyp ist ausschließlich für Rect-Tische bestimmt.")
 
     candidates: list[PrototypeResult] = []
+    option_geometry = {}
+    option_compatibility = {}
+    filtered_best_key = None
     for refined in (False, True):
         partitions = (enumerate_pair_partitions(tables) if cluster_sizes is None
                       else enumerate_cluster_partitions(tables, cluster_sizes))
@@ -116,12 +119,33 @@ def solve_rect_groupwork_prototype(
                 )
                 for index, group in enumerate(partition)
             ]
-            for selected_options in itertools.product(*option_sets):
+            combinations = (_compatible_option_combinations(scene_state, option_sets,
+                                option_geometry, option_compatibility)
+                            if candidate_filter is not None else itertools.product(*option_sets))
+            for selected_options in combinations:
+                if filtered_best_key is not None:
+                    selected = {t.table_id:t for option in selected_options for t in option.targets}
+                    # Use original Scene Order, matching _objective's sum and
+                    # rounding exactly. No costly geometry/objective rebuild
+                    # is needed when displacement alone already loses.
+                    distances = [math.dist((t.x,t.y),(selected[t.table_id].target_x,
+                        selected[t.table_id].target_y)) for t in scene_state.tables]
+                    if (round(max(distances),8),round(sum(distances),8)) > filtered_best_key[:2]:
+                        continue
                 candidate = _materialize_candidate(scene_state, partition, selected_options, refined)
                 if candidate is None:
                     continue
+                # Seat feasibility cannot improve the displacement objective.
+                # Once a fully accepted result exists, worse/equal candidates
+                # cannot win; equality retains the original first-result tie.
+                candidate_key = (_source_movement_candidate_key(candidate)
+                    if selection == 'source_movement' and candidate_filter is not None else None)
+                if candidate_key is not None and filtered_best_key is not None and candidate_key >= filtered_best_key:
+                    continue
                 if candidate_filter is not None and not candidate_filter(candidate):
                     continue
+                if candidate_key is not None:
+                    filtered_best_key = candidate_key
                 candidates.append(candidate)
 
     if not candidates:
@@ -250,6 +274,48 @@ def singleton_end_clearance_regions(target: TableTarget, table: TableState):
             rotation + 90.0,
         ) for direction in (-1.0, 1.0)
     )
+
+
+def _compatible_option_combinations(scene_state, option_sets, geometry_cache, compatibility_cache):
+    """Discard only canonically invalid combinations; retain product order.
+
+    Caches belong to one solve, so geometry never survives a changed source,
+    ROI or table shape. Final materialization still runs its complete guard.
+    """
+    tables = {t.table_id:t for t in scene_state.tables}
+    prepared_sets = []
+    for options in option_sets:
+        prepared = []
+        for option in options:
+            key = tuple((t.table_id,t.target_x,t.target_y,t.target_rot_deg) for t in option.targets)
+            if key not in geometry_cache:
+                ids = tuple(t.table_id for t in option.targets)
+                if not _satisfies_prototype_hard_constraints(scene_state,option.targets,(ids,),()):
+                    geometry_cache[key] = None
+                else:
+                    footprints = tuple(table_world_footprint(tables[t.table_id],
+                        (t.target_x,t.target_y),t.target_rot_deg) for t in option.targets)
+                    regions = _clearance_regions_for_group(list(option.targets),tables)
+                    geometry_cache[key] = footprints,regions
+            if geometry_cache[key] is not None:
+                prepared.append((option,key))
+        prepared_sets.append(prepared)
+
+    def compatible(first, second):
+        key = first[1],second[1]
+        if key not in compatibility_cache:
+            first_tables,first_regions = geometry_cache[key[0]]
+            second_tables,second_regions = geometry_cache[key[1]]
+            compatibility_cache[key] = not any(
+                _polygons_overlap_with_positive_area(a,b)
+                for first_polygons,second_polygons in ((first_tables,second_tables),
+                    (first_regions,second_tables),(second_regions,first_tables))
+                for a in first_polygons for b in second_polygons)
+        return compatibility_cache[key]
+
+    for choice in itertools.product(*prepared_sets):
+        if all(compatible(a,b) for a,b in itertools.combinations(choice,2)):
+            yield tuple(item[0] for item in choice)
 
 
 def _group_options(group: tuple[TableState, ...], *, pair_index: int, refined: bool,

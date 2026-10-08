@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import itertools
 from pathlib import Path
 import unittest
 
@@ -9,6 +10,8 @@ from aisi.analysis.rect_groupwork_adaptive_prototype import (
     _all_group_clearance_regions_inside_roi,
     _group_clearance_regions,
     _satisfies_prototype_hard_constraints,
+    _compatible_option_combinations, _group_options, _fit_option_to_roi,
+    _select_local_options, _materialize_candidate, _source_movement_candidate_key,
     enumerate_pair_partitions,
     solve_rect_groupwork_prototype,
 )
@@ -59,6 +62,46 @@ def _legacy_id_template_distances(scene: SceneState) -> list[float]:
 
 
 class RectGroupworkAdaptivePrototypeTests(unittest.TestCase):
+    def test_early_compatibility_preserves_all_canonical_candidates_and_order(self):
+        geometry_cache={};compatibility_cache={};valid_count=0;invalid_count=0
+        for count in (2,3,4,5):
+            state=_scene(count)
+            # Each solve owns its caches; sources and ROI cannot leak between runs.
+            geometry_cache.clear();compatibility_cache.clear()
+            for partition in enumerate_pair_partitions(state.tables)[:3]:
+                options=[_select_local_options(state,tuple(_fit_option_to_roi(state,o)
+                    for o in _group_options(group,pair_index=i,refined=True)),limit=4)
+                    for i,group in enumerate(partition)]
+                reference=[c for choice in itertools.product(*options)
+                    if (c:=_materialize_candidate(state,partition,choice,True)) is not None]
+                actual=[_materialize_candidate(state,partition,choice,True)
+                    for choice in _compatible_option_combinations(state,options,geometry_cache,compatibility_cache)]
+                self.assertEqual(actual,reference)
+                valid_count+=len(reference)
+                invalid_count+=math.prod(map(len,options))-len(reference)
+        self.assertGreater(valid_count,0)
+        self.assertGreater(invalid_count,0)
+
+    def test_filtered_source_search_keeps_exhaustive_best_including_rejections(self):
+        state=_scene(3);candidates=[]
+        def collect(candidate):
+            candidates.append(candidate)
+            return False
+        with self.assertRaises(ValueError):
+            solve_rect_groupwork_prototype(state,selection='source_movement',candidate_filter=collect)
+        # Reject the unconstrained optimum, as Chair checks may do, and verify
+        # that pruning starts only after an accepted incumbent exists.
+        minimum=min(c.objective.max_displacement_cm for c in candidates)
+        eligible=lambda c:c.objective.max_displacement_cm>minimum+1.
+        expected=min((c for c in candidates if eligible(c)),key=_source_movement_candidate_key)
+        calls=[]
+        def accept(candidate):
+            calls.append(candidate)
+            return eligible(candidate)
+        actual=solve_rect_groupwork_prototype(state,selection='source_movement',candidate_filter=accept)
+        self.assertEqual(actual,expected)
+        self.assertLess(len(calls),len(candidates))
+
     def test_enumerates_every_pair_singleton_partition(self) -> None:
         tables = [TableState(f"table_{index}", 100.0 + index * 20.0, 250.0) for index in range(5)]
         partitions = enumerate_pair_partitions(tables)

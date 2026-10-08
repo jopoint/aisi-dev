@@ -1,4 +1,4 @@
-from collections import Counter
+from collections import Counter, OrderedDict
 from copy import deepcopy
 from dataclasses import replace
 import unittest
@@ -16,6 +16,7 @@ from aisi.generation.groupwork_participants import (
     ParticipantCluster, GroupworkPlan, cluster_seating,
     plan_participant_groupwork, validate_groupwork_plan,
     _improve_floor_spacing,
+    _cached_cluster_seating,
 )
 
 
@@ -28,6 +29,31 @@ def editor_state():
 
 
 class GroupworkSeatTests(unittest.TestCase):
+    def test_seating_cache_keeps_labels_copies_and_foreign_geometry_separate(self):
+        state=SceneState(ROI(0,0,500,500),[
+            TableState('a',130,250,0,160,80,table_type='rect'),
+            TableState('b',370,250,0,160,80,table_type='rect')],'groupwork')
+        targets=[TableTarget(t.table_id,t.x,t.y,target_rot_deg=0) for t in state.tables]
+        cluster=ParticipantCluster('cluster_a','group_0',('a',),3)
+        cache=OrderedDict()
+        seats,regions=_cached_cluster_seating(state,targets,cluster,(),cache)
+        seats[0]['x_cm']=-999
+        relabeled=replace(cluster,group_id='group_1')
+        repeated,_=_cached_cluster_seating(state,targets,relabeled,(),cache)
+        self.assertTrue(all(s['group_id']=='group_1' for s in repeated))
+        self.assertTrue(all(s['x_cm']>=0 for s in repeated))
+        self.assertEqual(len(cache),1)
+        # A newly occupied foreign footprint must never reuse a prior success.
+        blocked=[targets[0],replace(targets[1],target_x=130,target_y=180)]
+        with self.assertRaises(LayoutConstraintError):
+            _cached_cluster_seating(state,blocked,cluster,(),cache)
+        # Changes to occupied seating regions and ROI also invalidate the entry.
+        with self.assertRaises(LayoutConstraintError):
+            _cached_cluster_seating(state,targets,cluster,regions,cache)
+        smaller=deepcopy(state);smaller.roi.y_min=200
+        with self.assertRaises(LayoutConstraintError):
+            _cached_cluster_seating(smaller,targets,cluster,(),cache)
+
     def test_singleton_uses_regular_ends_before_dense_long_rows(self):
         for rotation in (0,37,90,180):
             state=single_state(rotation)

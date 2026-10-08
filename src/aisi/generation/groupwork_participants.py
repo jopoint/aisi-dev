@@ -261,7 +261,30 @@ def _profile_key(profile, policy):
     return rank, max(count for _,_,count in profile), profile
 
 
-def _attach_clusters(state, targets, islands, profile, sizes, bound_clusters=None):
+def _cached_cluster_seating(state, targets, cluster, reserved_regions, cache):
+    """Reuse identical physical checks within one solve, retaining fresh labels."""
+    if cache is None:
+        return cluster_seating(state,targets,cluster,reserved_regions=reserved_regions)
+    key = ((state.roi.x_min,state.roi.y_min,state.roi.x_max,state.roi.y_max),
+           tuple((t.table_id,t.width,t.height,t.table_type) for t in state.tables),
+           tuple((t.table_id,t.target_x,t.target_y,t.target_rot_deg) for t in targets),
+           cluster.table_ids,cluster.cluster_id,cluster.participants,reserved_regions)
+    if key not in cache:
+        try:
+            cache[key] = cluster_seating(state,targets,cluster,reserved_regions=reserved_regions)
+        except LayoutConstraintError:
+            cache[key] = None
+        if len(cache) > 4096:
+            cache.popitem(last=False)
+    result = cache[key]
+    cache.move_to_end(key)
+    if result is None:
+        raise LayoutConstraintError('Keine gültige Sitzgeometrie für diesen Kandidaten.')
+    seats,regions = result
+    return [dict(seat,group_id=cluster.group_id) for seat in seats],regions
+
+
+def _attach_clusters(state, targets, islands, profile, sizes, bound_clusters=None, seating_cache=None):
     islands = sorted((tuple(sorted(ids)) for ids in islands))
     assignments = ((profile,) if len({(size,count) for _,size,count in profile}) == 1
                    and len(profile) == len(sizes) else sorted(set(permutations(profile))))
@@ -271,16 +294,26 @@ def _attach_clusters(state, targets, islands, profile, sizes, bound_clusters=Non
             return None
         assignments = (tuple((int(by_island[ids].group_id.split("_")[-1]), len(ids),
                               by_island[ids].participants) for ids in islands),)
+    # With exactly one cluster per group, exchanging labels of equally sized
+    # groups cannot change seating feasibility or spatial distinctness. Keep
+    # the first (existing deterministic) assignment, avoiding duplicate checks.
+    single_cluster_groups = len({g for g,_,_ in profile}) == len(profile)
+    checked_seating = set()
     for assignment in assignments:
         if any(len(ids) != descriptor[1] for ids,descriptor in zip(islands,assignment)):
             continue
+        seating_key = tuple((size,count) for _,size,count in assignment)
+        if single_cluster_groups:
+            if seating_key in checked_seating:
+                continue
+            checked_seating.add(seating_key)
         clusters = tuple(ParticipantCluster(f'cluster_{i}',f'group_{g}',ids,count)
                          for i,(ids,(g,_,count)) in enumerate(zip(islands,assignment)))
         plan = GroupworkPlan(list(targets),[],clusters,sizes,{})
         try:
             for cluster in clusters:
-                seats,regions = cluster_seating(state,targets,cluster,
-                    reserved_regions=tuple(r for rs in plan.regions.values() for r in rs))
+                seats,regions = _cached_cluster_seating(state,targets,cluster,
+                    tuple(r for rs in plan.regions.values() for r in rs),seating_cache)
                 plan.chairs.extend(seats);plan.regions[cluster.cluster_id] = regions
             validate_groupwork_plan(state,plan,check_floor_contours=False)
         except LayoutConstraintError:
@@ -289,7 +322,7 @@ def _attach_clusters(state, targets, islands, profile, sizes, bound_clusters=Non
     return None
 
 
-def _solve_profile(active_state, profile, sizes, bound_clusters=None):
+def _solve_profile(active_state, profile, sizes, bound_clusters=None, seating_cache=None):
     cluster_sizes = tuple(sorted(descriptor[1] for descriptor in profile))
     if len(cluster_sizes) >= 4 and all(n == 1 for n in cluster_sizes):
         plan = _repair_singleton_profile(active_state,profile,sizes,bound_clusters)
@@ -299,18 +332,18 @@ def _solve_profile(active_state, profile, sizes, bound_clusters=None):
         for refined in (False,True):
             for option in _singleton_options(active_state.tables[0],refined=refined,expanded=True):
                 fitted = _fit_option_to_roi(active_state,option)
-                plan = _attach_clusters(active_state,fitted.targets,((active_state.tables[0].table_id,),),profile,sizes,bound_clusters)
+                plan = _attach_clusters(active_state,fitted.targets,((active_state.tables[0].table_id,),),profile,sizes,bound_clusters,seating_cache)
                 if plan is not None:
                     return plan
         return None
     def accept(candidate):
-        return _attach_clusters(active_state,candidate.table_targets,candidate.groups,profile,sizes,bound_clusters) is not None
+        return _attach_clusters(active_state,candidate.table_targets,candidate.groups,profile,sizes,bound_clusters,seating_cache) is not None
     try:
         result = solve_rect_groupwork_prototype(active_state,selection='source_movement',
                     cluster_sizes=cluster_sizes,candidate_filter=accept)
     except ValueError:
         return _repair_singleton_profile(active_state,profile,sizes,bound_clusters)
-    return _attach_clusters(active_state,result.table_targets,result.groups,profile,sizes,bound_clusters)
+    return _attach_clusters(active_state,result.table_targets,result.groups,profile,sizes,bound_clusters,seating_cache)
 
 
 def _repair_singleton_profile(state, profile, sizes, bound_clusters=None):
@@ -399,6 +432,7 @@ def _cached_plan(roi,key,participants,number_of_groups,policy):
         if sum(n for _,n,_ in profile) <= len(key):
             profiles.add(profile)
     ordered = sorted(profiles,key=lambda profile:_profile_key(profile,policy))
+    seating_cache = OrderedDict()
     best = None;best_rank = None
     for profile in ordered:
         rank = _profile_key(profile,policy)[0]
@@ -407,7 +441,7 @@ def _cached_plan(roi,key,participants,number_of_groups,policy):
         required = sum(n for _,n,_ in profile)
         for active in combinations(state.tables,required):
             active_state = SceneState(state.roi,list(active),'groupwork')
-            plan = _solve_profile(active_state,profile,sizes)
+            plan = _solve_profile(active_state,profile,sizes,seating_cache=seating_cache)
             if plan is None:
                 continue
             plan = _complete_parking(state,plan)

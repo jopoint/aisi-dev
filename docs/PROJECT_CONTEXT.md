@@ -231,7 +231,10 @@ Source-Verschiebung gegenüber zusätzlichem Gruppenabstand priorisiert;
 Singletons erhalten zusätzliche Source-abgeleitete Winkelkandidaten.
 Rollen bleiben nach der Clusterbildung gebunden; keine globale Zielpermutation.
 Die aktuelle Korrektur wurde noch nicht in der laufenden Anwendung geladen;
-Live-Prüfung bleibt offen. Details: D008b und
+Live-Prüfung bleibt offen. Die Offline-Suche ist inzwischen durch frühe
+kanonische Konfliktprüfung, unveränderte Bestwert-Auswahl und auf einen Aufruf
+begrenzte Chair-Prüfcaches beschleunigt; Vergleichspläne bleiben exakt gleich.
+Siehe [Laufzeit-Handoff](GROUPWORK_PERFORMANCE.md). Details: D008b und
 [Groupwork-Handoff](GROUPWORK_PARTICIPANTS.md).
 
 Source-adaptive Rect Groupwork for counts `2–5` is productively implemented.

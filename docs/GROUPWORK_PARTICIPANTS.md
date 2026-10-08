@@ -230,3 +230,14 @@ für maximalen Gruppenabstand zu verschieben. Zusätzlich 12/12 Offline-
 Integrationsfälle mit den gespeicherten Editor-/Live-Quellen bestanden,
 jeweils vollständige Geometrie, Wiederholung und umgekehrte Scene Order.
 Bericht: `movement_fix/integration_validation.json`. Keine OSC-Live-Ausgabe.
+
+## Laufzeitoptimierung
+
+Am 2026-10-08 die wiederholte Kandidaten-/Chair-Prüfung gezielt reduziert.
+Frühe kanonische Kompatibilität, Bestwert-Grenzen ohne geänderte Auswahlregeln
+und begrenzte Cache-Nutzung innerhalb einer Generierung erhalten die vollständigen
+Geometrieprüfungen. 35 fokussierte Tests und zwölf Integrationsfälle bestanden;
+alle zwölf Vergleichspläne sowie die konkrete `14/4`-Quelle exakt unverändert.
+Direkter Cold-Vergleich der konkreten `14/4`-Quelle: 70,7 → 10,4 Sekunden
+(rund 6,8× schneller); weitere Läufe ab 8,6 Sekunden.
+Messung, Grenzen und nächster Live-Check: [Groupwork-Laufzeit](GROUPWORK_PERFORMANCE.md).
