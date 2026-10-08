@@ -439,9 +439,9 @@ def prepare_scene_output(
             activity_parameters=activity_parameters,
         )
         targets = layout.table_targets
-        # The explicitly enabled Input preview owns its review chairs.  The
+        # The explicitly enabled participant preview owns its review chairs.  The
         # normal pipeline continues to pass through the scene's chair source.
-        if layout_mode == "input":
+        if layout_mode in {"input", "groupwork"}:
             chairs = layout.chairs
     else:
         # Keep the established function boundary intact for normal layout
@@ -754,7 +754,7 @@ def main() -> None:
                     activity_parameters=activity_parameters,
                 )
             except ValueError as exc:
-                # Reject the whole invalid Input preview before any OSC sends.
+                # Reject the whole invalid participant preview before any OSC sends.
                 # Keep the loop alive so a corrected request can recover.
                 now = time.monotonic()
                 if now - last_bad_json_notice >= 1.0:

@@ -665,6 +665,36 @@ def compute_synthetic_layout(
 
     parameters = activity_parameters or {}
     preview_enabled = parameters.get("adaptive_layout_preview") is True
+    if preview_enabled and learning_format == "groupwork":
+        from aisi.generation.groupwork_participants import plan_participant_groupwork, transform_groupwork_plan
+        from aisi.generation.adaptive_layout_v1 import LayoutConstraintError
+        from aisi.input.scene_loader import build_scene_state_from_dict
+        participants = parameters.get("participants", 4)
+        groups = parameters.get("number_of_groups", 1)
+        if type(participants) is not int or type(groups) is not int or not 1 <= groups <= participants:
+            raise LayoutConstraintError("Groupwork benötigt gültige ganzzahlige Teilnehmer-/Gruppenzahlen.")
+        if participants > 15:
+            raise LayoutConstraintError("Groupwork-Ausgabe überschreitet die technischen 15 TD-Chair-Slots; keine Kürzung.")
+        state = build_scene_state_from_dict(_normalize_scene_for_aisi(scene), learning_format="groupwork")
+        strength = float(transformation_strength)
+        if not math.isfinite(strength):
+            raise LayoutConstraintError("Ungültige Transformationsstärke.")
+        strength = max(0.0, min(1.0, strength))
+        if strength == 0.0:
+            return SyntheticLayoutOutput(
+                table_targets=[{"x_cm": t.x, "y_cm": t.y, "rotation_deg": t.rot_deg} for t in state.tables],
+                chairs=[],
+            )
+        plan = plan_participant_groupwork(state, participants, groups)
+        if strength < 1.0:
+            plan = transform_groupwork_plan(state, plan, strength)
+        active = {tid for cluster in plan.clusters for tid in cluster.table_ids}
+        return SyntheticLayoutOutput(
+            table_targets=[{"x_cm": t.target_x, "y_cm": t.target_y, "rotation_deg": t.target_rot_deg} for t in plan.targets],
+            chairs=plan.chairs,
+            active_table_ids=tuple(t.table_id for t in state.tables if t.table_id in active),
+            parked_table_ids=plan.parked_table_ids,
+        )
     if preview_enabled and learning_format == "input":
         table_plan = _participant_aware_input_preview(scene, transformation_strength, parameters)
         chairs = plan_synthetic_input_chairs(scene, table_plan, int(parameters.get("participants", 4)))

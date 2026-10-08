@@ -141,7 +141,7 @@ Status: **Accepted und produktiv umgesetzt**
 - `table_id` dient Identität und Wiederherstellung der ursprünglichen Scene Order, nicht Pair-Bildung oder Rollenvergabe.
 - Jede Groupwork-Sitz-/Bewegungszone muss vollständig innerhalb der `500 × 500 cm` ROI liegen.
 - Rect Pair-Seam: `8 cm`.
-- Bisheriger table-only Stand: Ein Rect-Singleton erhält zwei mindestens `60 cm` tiefe Sitz-/Bewegungsstreifen über die vollständige Breite seiner Längsseiten, keine Stirnseiten-Sitzflächen; die zwei äußeren Ecken jedes Streifens sind mit `30 cm` Radius abgerundet. Für die neue teilnehmendenbasierte Groupwork-Planung wird der Ausschluss von Stirnseitenplätzen durch D008b abgelöst; die dafür benötigte Geometrie ist noch nicht umgesetzt.
+- Bisheriger table-only Stand: Ein Rect-Singleton erhält zwei mindestens `60 cm` tiefe Sitz-/Bewegungsstreifen über die vollständige Breite seiner Längsseiten, keine Stirnseiten-Sitzflächen; die zwei äußeren Ecken jedes Streifens sind mit `30 cm` Radius abgerundet. Für die neue teilnehmendenbasierte Groupwork-Planung wird der Ausschluss von Stirnseitenplätzen durch D008b abgelöst; die dafür benötigte Geometrie ist im teilnehmendenbasierten Modell umgesetzt.
 - Ein Rect-Pair erhält eine elliptische, mindestens `60 cm` auskragende Clearance.
 - Die Zielrotation eines Pairs erhält die axiale mittlere Orientierung seiner Source-Tische als starke Präferenz.
 - Der produktive Suchkern enumeriert Counts `2–5`, prüft beide Pair-Mitgliederzuordnungen und optimiert freie lokale Gruppenmittelpunkte/Winkel.
@@ -150,7 +150,7 @@ Status: **Accepted und produktiv umgesetzt**
 
 ## D008b — Teilnehmendenbasierte Groupwork-Gruppen und Sitzprioritäten
 
-Status: **Fachlich bestätigt durch Johannes am 2026-10-08 — Offline-Prototyp, Live-Anbindung offen**
+Status: **Fachlich bestätigt durch Johannes am 2026-10-08 — Vorschau-/OSC-Anbindung im Code, Live-Prüfung offen**
 
 - Primäre Eingaben sind `participants` und `number_of_groups`. Die Teilnehmenden werden möglichst gleichmäßig verteilt; Gruppengrößen unterscheiden sich höchstens um eine Person.
 - Teilnehmergruppe und Tischcluster sind unterschiedliche Entitäten. Der Generator bestimmt die benötigten Tische; eine Teilnehmergruppe muss nicht genau einer zusammenhängenden Tischfläche entsprechen.
@@ -166,11 +166,14 @@ vollständige Chair-Kreisprüfung umgesetzt. Räumliche Zuordnung vorläufig
 relativ geprüft: Verbindungskanten zwischen Clustern derselben Gruppe müssen
 kürzer als sämtliche gruppenübergreifenden Clusterzentrum-Abstände sein.
 Das ersetzt keinen visuellen oder physischen Nachweis eindeutiger Gruppenzugehörigkeit.
-Offene Abwägung bei der Tischwahl: Bei fünf Personen können ein Einzel-Rect
-mit `2 + 2 + 1` oder zwei Singletons mit ausschließlich regulären Längsseitenplätzen
-gültig sein. Beide Prioritäten sind als Offline-Varianten verfügbar; eine
-verbindliche Standardpriorität ist noch nicht festgelegt. Nachweise und nächste
-Integration: [Groupwork-Handoff](GROUPWORK_PARTICIPANTS.md).
+Tischwahl bestätigt durch Johannes: möglichst wenige Tische (`few_tables`),
+danach reguläre Längsseiten vor Stirnseiten vor Verdichtung. Fünf Personen
+nutzen bevorzugt einen Einzel-Rect mit `2 + 2 + 1`; zusätzliche Tische nur,
+wenn die vollständige Geometrie oder Kapazität sie erfordert.
+Die opt-in Vorschau ist an den bestehenden OSC-Adapter angebunden; über 15
+Teilnehmende werden dort wegen der technischen TD-Slots ausdrücklich abgelehnt.
+Das Offline-Modell behält seine separate geometrische Kapazität.
+Nachweise und nächste Prüfung: [Groupwork-Handoff](GROUPWORK_PARTICIPANTS.md).
 
 ## D008a — Validierung über die Simulationspipeline
 

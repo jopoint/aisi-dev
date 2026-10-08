@@ -1,7 +1,7 @@
 # Teilnehmendenbasierter Rect Groupwork — Offline-Handoff
 
-Stand: 2026-10-08. Offline-Prototyp auf Branch `vision/wip-dark-proposals`;
-keine neue Live-/OSC-Ausgabe, keine TD-Fernsteuerung, kein Speichern einer `.toe`.
+Stand: 2026-10-08. Teilnehmendenmodell mit Vorschau-Anbindung auf Branch `vision/wip-dark-proposals`;
+OSC-Anbindung im Code; kein laufender Sender neu gestartet, keine TD-Fernsteuerung, kein Speichern einer `.toe`.
 
 ## Umgesetzt
 
@@ -67,7 +67,7 @@ MPLBACKEND=Agg MPLCONFIGDIR=/private/tmp/aisi-mpl .venv/bin/python scripts/valid
 MPLBACKEND=Agg MPLCONFIGDIR=/private/tmp/aisi-mpl .venv/bin/python scripts/validate_groupwork_participants.py --fixtures data/aisi/debug/groupwork_participant_preview_2026-10-08/review/validation.json --output /private/tmp/aisi-groupwork-recheck
 ```
 
-## Offen vor Live-Anbindung
+## Tischpriorität
 
 Die Tischwahl ist in zwei überprüfbaren Varianten vorbereitet:
 
@@ -78,8 +78,38 @@ Die Tischwahl ist in zwei überprüfbaren Varianten vorbereitet:
   regulären Längsseitenplätzen nutzen; die drei Personen eines Singletons sitzen
   dabei über beide Längsseiten verteilt, nicht verdichtet an einer Seite.
 
-Johannes' Rückmeldung zur Standardpriorität steht aus. Erst danach folgen
-Anbindung an die opt-in Vorschau/OSC, explizite Behandlung der 15 TD-Chair-Slots,
-Stärke 0 und Blend-before-repair für Teilstärken, sowie Live-Einzelprüfung.
-Der Offline-Prototyp arbeitet bislang am 100-%-Endzustand. Input, Discussion,
-Study, Tracking, Kalibrierung und Projektorkonfiguration bleiben unverändert.
+Johannes bestätigt `few_tables`: fünf Personen bevorzugt am Einzel-Rect mit
+`2 + 2 + 1`. Diese Priorität ist der Standard des Modells und der opt-in Vorschau.
+`regular_seats` bleibt als explizite Offline-Vergleichsoption verfügbar.
+
+## Vorschau und OSC
+
+`compute_synthetic_layout` erzeugt bei aktivierter Vorschau auch Groupwork-Chairs.
+Der bestehende `prepare_scene_output` übergibt sie mit unveränderten Float-Adressen
+`/chair/{index}/{x,y,radius}`; Tischziele bleiben in Source Scene Order.
+Anfragen über 15 werden vor der Synthese aufgrund der technischen TD-Slots
+abgelehnt, ohne Kürzung oder Ersatzlayout. Dies begrenzt nicht das Offline-Modell.
+Bei Stärke 0 bleiben Source-Positionen und Winkel exakt, ohne Reparatur oder Chairs.
+Bei positiver Teilstärke erfolgt zuerst das vorhandene Shortest-angle-Blending,
+danach vollständige Cluster-Reparatur. Teilnehmergruppen, Cluster und Tischrollen
+bleiben gebunden; wenn keine gültige Reparatur gelingt, folgt ausdrückliche Ablehnung.
+Chairs werden aus den reparierten Sitzflächen neu abgeleitet.
+Ein begrenzter Cache liefert unabhängige Kopien für wiederholte OSC-Ausgaben.
+
+52 fokussierte Tests bestanden: neues Groupwork-Vorschau-Modul (6),
+Groupwork-Teilnehmendenmodell (9), Tracking-/OSC-Isolation (24), synthetische
+Input-Geometrie (10) und Lernformat-Interface (3). Nach Ergänzung des Teilstärken-
+Caches wurden die sechs Vorschautests erneut bestanden; enthalten sind auch
+unabhängige Cache-Kopien. OSC wurde ausschließlich mit einem lokalen Recorder
+auf Float-Adressen, Source-/Target-Indexbindung und Radius-null-Ausblendung geprüft.
+18/18 Offline-Adapterfälle aus den gespeicherten Editor-/Live-Quellen bestanden:
+`5/1`, `7/2`, `15/5` jeweils bei 0 %, 50 % und 100 %, mit gleicher Wiederholung.
+Bericht: `review/adapter_validation.json` neben dem bisherigen Offline-Bericht.
+Keine neuen Netzwerkpakete, keine Aussage zur physischen Darstellung.
+
+Die laufende Anwendung wurde nicht neu geladen und kein OSC-Paket ins laufende
+TD-Projekt gesendet. Nächster Block: interaktive Groupwork-Einzelprüfung mit
+bestehendem Sender nach manuellem Neuladen, insbesondere fünf Personen/eine Gruppe
+bei 100 %, dann Count-/Gruppenwechsel und Teilstärken. Physische Gruppenerkennbarkeit
+und Projektion bleiben separat offen. Input, Discussion, Study, Tracking,
+Kalibrierung und Projektorkonfiguration bleiben unverändert.

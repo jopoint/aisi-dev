@@ -1,8 +1,9 @@
 """Teilnehmergruppen, Tischcluster und kanonische Groupwork-Sitzgeometrie."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from copy import deepcopy
+from collections import OrderedDict
 from functools import lru_cache
 from itertools import combinations, permutations, product
 import math
@@ -221,10 +222,16 @@ def _profile_key(profile, policy):
     return rank, max(count for _,_,count in profile), profile
 
 
-def _attach_clusters(state, targets, islands, profile, sizes):
+def _attach_clusters(state, targets, islands, profile, sizes, bound_clusters=None):
     islands = sorted((tuple(sorted(ids)) for ids in islands))
     assignments = ((profile,) if len({(size,count) for _,size,count in profile}) == 1
                    and len(profile) == len(sizes) else sorted(set(permutations(profile))))
+    if bound_clusters is not None:
+        by_island = {tuple(sorted(c.table_ids)): c for c in bound_clusters}
+        if set(islands) != set(by_island):
+            return None
+        assignments = (tuple((int(by_island[ids].group_id.split("_")[-1]), len(ids),
+                              by_island[ids].participants) for ids in islands),)
     for assignment in assignments:
         if any(len(ids) != descriptor[1] for ids,descriptor in zip(islands,assignment)):
             continue
@@ -243,31 +250,31 @@ def _attach_clusters(state, targets, islands, profile, sizes):
     return None
 
 
-def _solve_profile(active_state, profile, sizes):
+def _solve_profile(active_state, profile, sizes, bound_clusters=None):
     cluster_sizes = tuple(sorted(descriptor[1] for descriptor in profile))
     if len(cluster_sizes) >= 4 and all(n == 1 for n in cluster_sizes):
-        plan = _repair_singleton_profile(active_state,profile,sizes)
+        plan = _repair_singleton_profile(active_state,profile,sizes,bound_clusters)
         if plan is not None:
             return plan
     if len(active_state.tables) == 1:
         for refined in (False,True):
             for option in _singleton_options(active_state.tables[0],refined=refined,expanded=True):
                 fitted = _fit_option_to_roi(active_state,option)
-                plan = _attach_clusters(active_state,fitted.targets,((active_state.tables[0].table_id,),),profile,sizes)
+                plan = _attach_clusters(active_state,fitted.targets,((active_state.tables[0].table_id,),),profile,sizes,bound_clusters)
                 if plan is not None:
                     return plan
         return None
     def accept(candidate):
-        return _attach_clusters(active_state,candidate.table_targets,candidate.groups,profile,sizes) is not None
+        return _attach_clusters(active_state,candidate.table_targets,candidate.groups,profile,sizes,bound_clusters) is not None
     try:
         result = solve_rect_groupwork_prototype(active_state,selection='clearance',
                     cluster_sizes=cluster_sizes,candidate_filter=accept)
     except ValueError:
-        return _repair_singleton_profile(active_state,profile,sizes)
-    return _attach_clusters(active_state,result.table_targets,result.groups,profile,sizes)
+        return _repair_singleton_profile(active_state,profile,sizes,bound_clusters)
+    return _attach_clusters(active_state,result.table_targets,result.groups,profile,sizes,bound_clusters)
 
 
-def _repair_singleton_profile(state, profile, sizes):
+def _repair_singleton_profile(state, profile, sizes, bound_clusters=None):
     """Repair conservative envelopes derived from actual canonical seat regions."""
     from aisi.generation.layout_constraints import repair_layout_hard_constraints
     if any(n != 1 for _,n,_ in profile):
@@ -294,7 +301,7 @@ def _repair_singleton_profile(state, profile, sizes):
                     overlap_gap=0.,clearance_depth_factor=None)
         # Envelopes are conservative and can touch where the actual rounded
         # regions do not overlap. Only the full canonical final guard decides.
-        plan=_attach_clusters(state,repaired.table_targets,islands,profile,sizes)
+        plan=_attach_clusters(state,repaired.table_targets,islands,profile,sizes,bound_clusters)
         if plan is not None:
             return plan
     return None
@@ -319,7 +326,7 @@ def _complete_parking(state, plan):
     return plan
 
 
-def plan_participant_groupwork(state, participants, number_of_groups, *, table_policy):
+def plan_participant_groupwork(state, participants, number_of_groups, *, table_policy="few_tables"):
     """Offline full-strength plan; policy explicitly resolves table-use preference."""
     if type(participants) is not int or type(number_of_groups) is not int:
         raise LayoutConstraintError("Teilnehmerzahl und Gruppenzahl müssen ganze Zahlen sein.")
@@ -376,3 +383,56 @@ def _cached_plan(roi,key,participants,number_of_groups,policy):
     if best is None:
         raise LayoutConstraintError("Keine gemeinsame Groupwork-Geometrie für Teilnehmergruppen, Chairs und Parktische gefunden.")
     return best[1]
+
+
+_transform_cache = OrderedDict()
+
+
+def transform_groupwork_plan(state, plan, strength):
+    """Return independent cached copies for the OSC resend cadence."""
+    key = (tuple((t.table_id,t.x,t.y,t.rot_deg,t.width,t.height,t.table_type) for t in state.tables),
+           (state.roi.x_min,state.roi.y_min,state.roi.x_max,state.roi.y_max),
+           tuple((t.table_id,t.target_x,t.target_y,t.target_rot_deg) for t in plan.targets),
+           plan.clusters,plan.group_sizes,plan.parked_table_ids,strength)
+    if key not in _transform_cache:
+        _transform_cache[key] = _transform_groupwork_plan(state,plan,strength)
+        if len(_transform_cache) > 32:
+            _transform_cache.popitem(last=False)
+    _transform_cache.move_to_end(key)
+    return deepcopy(_transform_cache[key])
+
+
+def _transform_groupwork_plan(state, plan, strength):
+    """Blend first, then repair complete geometry with fixed table/group roles."""
+    from aisi.generation.layout_synthesizer import _blend_targets_with_source
+    blended = _blend_targets_with_source(state, plan.targets, strength)
+    try:
+        result = deepcopy(plan)
+        result.targets = blended
+        result.chairs = []; result.regions = {}
+        for cluster in result.clusters:
+            chairs, regions = cluster_seating(state, blended, cluster,
+                reserved_regions=tuple(r for rs in result.regions.values() for r in rs))
+            result.chairs.extend(chairs); result.regions[cluster.cluster_id] = regions
+        validate_groupwork_plan(state, result)
+        return result
+    except LayoutConstraintError:
+        pass
+    poses = {t.table_id: t for t in blended}
+    intermediate = SceneState(state.roi, [replace(t, x=poses[t.table_id].target_x,
+        y=poses[t.table_id].target_y, rot_deg=poses[t.table_id].target_rot_deg)
+        for t in state.tables], 'groupwork')
+    active = {tid for c in plan.clusters for tid in c.table_ids}
+    active_state = SceneState(state.roi, [t for t in intermediate.tables if t.table_id in active], 'groupwork')
+    profile = tuple((int(c.group_id.split('_')[-1]),len(c.table_ids),c.participants) for c in plan.clusters)
+    result = _solve_profile(active_state, profile, plan.group_sizes, plan.clusters)
+    if result is not None:
+        result = _complete_parking(intermediate, result)
+    if result is None:
+        raise LayoutConstraintError('Keine gültige Groupwork-Reparatur bei dieser Transformationsstärke; Rollen bleiben gebunden.')
+    originals = {t.table_id:t for t in state.tables}
+    targets = {t.table_id:replace(t,source_rot_deg=originals[t.table_id].rot_deg) for t in result.targets}
+    result.targets = [targets[t.table_id] for t in state.tables]
+    result.parked_table_ids = plan.parked_table_ids
+    validate_groupwork_plan(state, result)
+    return result

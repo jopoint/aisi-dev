@@ -216,9 +216,12 @@ Die bisherigen Insel-`groups` des Geometriegenerators sind keine vollständige
 Teilnehmergruppenzuordnung. Reguläre Stirnseitenplätze erhalten Vorrang vor
 verdichteten Längsseitenplätzen; zusätzliche kanonische Stirnseitenstreifen
 werden im neuen Offline-Modell bei Belegung geprüft. 65 fokussierte Tests und
-zehn Integrationsfälle bestanden. Standardpriorität zwischen Tischzahl und
-Sitzplatzpräferenz sowie die Anbindung an Vorschau/OSC bleiben offen.
-Produktive Groupwork-Chairs sind weiterhin nicht aktiv. Details: D008b und
+zehn Integrationsfälle bestanden. Johannes bestätigt wenige Tische vor
+Sitzplatzpräferenz (`few_tables`, fünf Personen mit `2 + 2 + 1`). Die opt-in
+Vorschau/OSC-Anbindung ist im Code ergänzt; Stärke 0 ohne Chairs/Reparatur,
+positive Teilstärken mit Blend-before-repair und gebundenen Rollen. Über 15
+Chairs werden im Adapter als technische Ausgabegrenze abgelehnt.
+Die laufende Anwendung wurde nicht neu geladen; Live-Prüfung bleibt offen. Details: D008b und
 [Groupwork-Handoff](GROUPWORK_PARTICIPANTS.md).
 
 Source-adaptive Rect Groupwork for counts `2–5` is productively implemented.
