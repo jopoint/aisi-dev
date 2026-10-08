@@ -15,7 +15,7 @@ from aisi.generation.layout_constraints import evaluate_hard_constraints
 from aisi.generation.groupwork_participants import (
     ParticipantCluster, GroupworkPlan, cluster_seating,
     plan_participant_groupwork, validate_groupwork_plan,
-    _improve_floor_spacing,
+    _improve_floor_spacing, intergroup_floor_gap,
     _cached_cluster_seating, _movement_priority, _profile_key, groups_are_spatially_distinct,
 )
 
@@ -170,6 +170,22 @@ class GroupworkSeatTests(unittest.TestCase):
 
 
 class GroupworkPlanningTests(unittest.TestCase):
+    def test_free_space_separates_current_singletons_without_breaking_pair(self):
+        poses=((375.,237.857,175),(131.429,100.714,145),
+               (364.286,92.857,215),(126.429,389.286,415),(259.433,347.143,40))
+        state=SceneState(ROI(0,0,500,500),[
+            TableState(f'table_{i}',x,y,r,160,80,table_type='rect')
+            for i,(x,y,r) in enumerate(poses)],'groupwork')
+        plan=plan_participant_groupwork(state,15,4)
+        validate_groupwork_plan(state,plan)
+        self.assertGreaterEqual(intergroup_floor_gap(state,plan),60.)
+        self.assertEqual(sorted(len(c.table_ids) for c in plan.clusters),[1,1,1,2])
+        reverse=deepcopy(state);reverse.tables.reverse()
+        other=plan_participant_groupwork(reverse,15,4)
+        self.assertEqual(plan.targets,list(reversed(other.targets)))
+        self.assertEqual(plan.chairs,other.chairs)
+        self.assertEqual(plan,plan_participant_groupwork(state,15,4))
+
     def test_editor_four_groups_retry_contours_before_rejecting(self):
         state=editor_state()
         for count in (13,14,15):
@@ -331,7 +347,10 @@ class GroupworkPlanningTests(unittest.TestCase):
                                        targets[t.table_id].target_y)) for t in state.tables]
         # Previously table_1 travelled 267 cm into a pair; table_0 moved
         # towards its vacated source. Turning the singleton avoids that detour.
-        self.assertLess(distances[1],1.)
+        # The new soft separation preference permits a small local shift,
+        # while still preventing the former 267-cm source-position exchange.
+        self.assertLess(distances[1],20.)
+        self.assertGreaterEqual(intergroup_floor_gap(state,plan),60.)
         self.assertLess(max(distances),120.)
         self.assertLess(sum(distances),200.)
         self.assertIn(('table_1',),[c.table_ids for c in plan.clusters])

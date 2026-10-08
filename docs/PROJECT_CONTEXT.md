@@ -226,8 +226,13 @@ Chairs werden im Adapter als technische Ausgabegrenze abgelehnt.
 Getrennte Cluster werden zusätzlich auf überlappende 170 × 90 cm
 Bodenkonturen geprüft und anschließend ohne Rollenwechsel räumlich entzerrt.
 Die physische Geometrie und Pair-Seam bleiben unverändert.
-Nach der visuellen Stichprobe ist im teilnehmendenbasierten Suchpfad die
-Source-Verschiebung gegenüber zusätzlichem Gruppenabstand priorisiert;
+Die Clusterwahl minimiert weiterhin den Gesamtweg. Die abschließende starre
+Entzerrung nutzt freie Fläche für ein weiches 60-cm-Ziel zwischen Bodenkonturen
+verschiedener Teilnehmergruppen (bestehende Sitzflächentiefe); zusätzliche Wege
+sind bis dahin zulässig, danach wieder nachrangig. Das Ziel ist keine harte
+Ablehnungsbedingung. In der aktuellen `15/4`-Quelle steigt der kleinste
+Gruppenabstand von 0,5 auf 60,4 cm bei rund 2,4 s Offline-Laufzeit.
+Pair-Seam, Sitzflächen, ROI und Parkregeln bleiben erhalten;
 Singletons erhalten zusätzliche Source-abgeleitete Winkelkandidaten.
 Der Vier-/Fünf-Singleton-Reparaturpfad nutzt inzwischen begrenzte Winkelannäherung
 statt eines direkten gemeinsamen orthogonalen Fallbacks und prüft abgerundete

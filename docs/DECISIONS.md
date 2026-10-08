@@ -193,8 +193,14 @@ Singletons dürfen zusätzlich die axial nächstgelegenen Orientierungen der
 vorhandenen Source-Tische verwenden. Kein festes Winkelraster und keine
 nachträgliche globale Zielpermutation; Rollen werden bei der Clusterbildung
 gebunden und bleiben danach erhalten. Die spätere Entzerrung beseitigt zuerst
-Konturkonflikte, minimiert anschließend Source-Wege; zusätzlicher Gruppenabstand
-ist nachrangig. Kanonische Sitz-/Bewegungsflächen bleiben harte Bedingungen.
+Konturkonflikte. Nach der erneuten Live-Stichprobe nutzt sie freie Fläche für
+Abstand zwischen verschiedenen Teilnehmergruppen: Die bestehende Sitzflächentiefe
+(60 cm) dient als weiches Ziel für den kleinsten Abstand zwischen Bodenkonturen.
+Das ist eine reversible technische Präferenz, keine neue harte Abstands- oder
+Kapazitätsregel. Solange der Zielabstand unterschritten ist, darf zusätzlicher
+Weg ihn verbessern; danach hat wieder der kürzere Gesamtweg Vorrang. Bei
+Platzmangel bleibt das vollständig geometrisch gültige Layout zulässig.
+Pairs werden starr verschoben, ihre 8-cm-Seam bleibt unverändert. Kanonische Sitz-/Bewegungsflächen bleiben harte Bedingungen.
 Die bisherigen table-only Auswahlprofile bleiben unverändert.
 Nach der Fünf-Gruppen-Live-Stichprobe vom 2026-10-08 ergänzt: Der
 Singleton-Reparaturpfad nähert Source-Winkel bei Platzmangel schrittweise an

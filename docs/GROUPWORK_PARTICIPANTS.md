@@ -477,3 +477,28 @@ Artefakte: [Abschlussbericht](GROUPWORK_ABSCHLUSSCHECK.md).
 Nächste kurze Stichprobe: `13/4`–`15/4` nach manuellem Ersetzen/Neuladen des
 bestehenden Senders. Vollständige interaktive Einzelvalidierung, gemessene
 Sender-Laufzeit und physische Raumprüfung bleiben offen.
+
+## Nachtrag: freie Fläche für Gruppenabstand nutzen
+
+Johannes zeigt erneut nahezu aneinanderliegende Einzel-Tische verschiedener
+Teilnehmergruppen trotz freier ROI-Fläche. Ursache: Die Entzerrung ließ nach
+behebbaren Konturkonflikten keine längeren Source-Wege für mehr Abstand zu.
+
+Die begrenzte bestehende Suche mit starren Clustertranslationen bevorzugt nun
+den kleinsten Gruppen-Konturabstand bis zur vorhandenen Sitzflächentiefe von
+60 cm; danach gewinnt wieder der kürzere Gesamtweg. Dies ist ein weiches
+Qualitätsziel, keine neue harte Kapazitäts-/Abstandsbedingung. Geometrisch gültige
+engere Ergebnisse bleiben bei Platzmangel zulässig. Parktische bleiben fix am
+Rand, Pairs erhalten ihre gemeinsame Achse und 8-cm-Seam, sämtliche Chairs und
+Sitzflächen werden vollständig neu geprüft. Keine neue globale Tischpermutation.
+
+Aktuelle eingefrorene `15/4`-Quelle: kleinster Gruppen-Konturabstand
+**0,48 → 60,42 cm**, Gesamtweg **142,6 → 190,7 cm**, längster Weg
+**55,9 → 84,5 cm**. Einzelne kalte Läufe **2,41 → 2,38 s**; das sind
+Offline-Stichproben, keine gemessene Sender-Laufzeit. Vorher/Nachher-Plot und
+Berichte liegen lokal unter
+`data/aisi/debug/groupwork_participant_preview_2026-10-08/freier_gruppenabstand/`.
+35 fokussierte Groupwork-/Vorschautests bestanden. Zwölf Integrationsfälle
+mit gespeicherten Editor-/Live-Quellen bestehen volle
+Geometrie, Determinismus und Scene Order. Live-Nachweis nach manuellem
+Sender-Neuladen und physische Prüfung bleiben offen.

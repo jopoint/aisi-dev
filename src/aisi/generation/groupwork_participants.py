@@ -724,16 +724,22 @@ def _improve_floor_spacing(state, plan):
         overlaps = sum(_polygons_overlap_with_positive_area(polygons[a.table_id],polygons[b.table_id])
             for a,b in combinations(candidate.targets,2)
             if a.table_id not in cluster_by_id or cluster_by_id[a.table_id] != cluster_by_id.get(b.table_id))
-        return (overlaps, *displacement(candidate.targets),
-                -round(intergroup_floor_gap(state,candidate),6))
+        gap=round(intergroup_floor_gap(state,candidate),6)
+        # Use the existing seating depth as a soft separation preference.
+        # It never rejects a feasible layout; movement wins once attained.
+        return (overlaps, -min(gap,SEAT_CLEARANCE_DEPTH_CM),
+                *displacement(candidate.targets), -gap)
 
     def rebuild(targets):
-        # After contour conflicts are solved, a strictly worse source path
-        # cannot win, even with more intergroup space. Keep equal paths for
-        # the unchanged gap tie-break and retain full repair while conflicts remain.
-        if best_score[0] == 0 and displacement(targets) > best_score[1:5]:
-            return None
         candidate=GroupworkPlan(targets,[],plan.clusters,plan.group_sizes,{},plan.parked_table_ids)
+        # Additional movement is useful only while it improves separation
+        # below the soft target. Keep the fast path for adequately spaced plans.
+        if best_score[0] == 0 and displacement(targets) > best_score[2:6]:
+            if best_score[1] <= -SEAT_CLEARANCE_DEPTH_CM:
+                return None
+            gap=round(intergroup_floor_gap(state,candidate),6)
+            if -min(gap,SEAT_CLEARANCE_DEPTH_CM) >= best_score[1]:
+                return None
         try:
             for c in candidate.clusters:
                 chairs,regions=cluster_seating(state,targets,c,
