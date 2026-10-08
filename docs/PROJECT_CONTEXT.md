@@ -234,6 +234,9 @@ Die aktuelle Korrektur wurde noch nicht in der laufenden Anwendung geladen;
 Live-Prüfung bleibt offen. Die Offline-Suche ist inzwischen durch frühe
 kanonische Konfliktprüfung, unveränderte Bestwert-Auswahl und auf einen Aufruf
 begrenzte Chair-Prüfcaches beschleunigt; Vergleichspläne bleiben exakt gleich.
+Die zweite Stufe ergänzt sichere Weggrenzen in der Entzerrung sowie kanonische
+Hüllrechteck-Vorprüfung und begrenzte, vollständig koordinatenabhängige
+Geometriecaches.
 Siehe [Laufzeit-Handoff](GROUPWORK_PERFORMANCE.md). Details: D008b und
 [Groupwork-Handoff](GROUPWORK_PARTICIPANTS.md).
 

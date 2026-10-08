@@ -9,6 +9,7 @@ Geometrie.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from functools import lru_cache
 import itertools
 import math
 from typing import Callable, Iterable
@@ -21,6 +22,7 @@ from aisi.core.table_geometry import (
     resolve_table_state_geometry,
     table_support_distance,
     table_world_footprint,
+    footprint_bounds,
     transform_local_footprint,
 )
 PAIR_SEAM_CM = 8.0
@@ -642,10 +644,16 @@ def _rounded_outer_singleton_strip(
     width.  A 30-cm radius rounds only the two far corners of the 60-cm-deep
     strip, matching the approved singleton sketch without adding end seating.
     """
+    return _cached_rounded_outer_strip(width,depth,
+        1.0 if outer_direction >= 0.0 else -1.0,
+        min(SINGLETON_OUTER_CORNER_RADIUS_CM,width*0.5,depth))
+
+
+@lru_cache(maxsize=64)
+def _cached_rounded_outer_strip(width, depth, outer_sign, radius):
+    """Cache only immutable local geometry, including its effective radius."""
     half_width = width * 0.5
     half_depth = depth * 0.5
-    radius = min(SINGLETON_OUTER_CORNER_RADIUS_CM, half_width, depth)
-    outer_sign = 1.0 if outer_direction >= 0.0 else -1.0
     vertices: list[tuple[float, float]] = [
         (-half_width, -outer_sign * half_depth),
         (half_width, -outer_sign * half_depth),
@@ -715,11 +723,19 @@ def _pair_clearance_ellipse(
     )
 
 
+@lru_cache(maxsize=4096)
 def _polygons_overlap_with_positive_area(
     first: tuple[tuple[float, float], ...],
     second: tuple[tuple[float, float], ...],
 ) -> bool:
     """Treat exactly 60 cm of separation as valid; reject only area overlap."""
+    # A conservative broad phase: only clearly disjoint canonical bounds
+    # bypass SAT. Near contacts retain the existing tolerances and checks.
+    if len(first) >= 3 and len(second) >= 3:
+        first_bounds,second_bounds = footprint_bounds(first),footprint_bounds(second)
+        if (first_bounds[2] < second_bounds[0]-1e-7 or second_bounds[2] < first_bounds[0]-1e-7
+            or first_bounds[3] < second_bounds[1]-1e-7 or second_bounds[3] < first_bounds[1]-1e-7):
+            return False
     if not convex_polygons_intersect(first, second):
         return False
     for polygon in (first, second):

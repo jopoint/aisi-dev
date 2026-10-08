@@ -134,7 +134,9 @@ class GroupworkPlanningTests(unittest.TestCase):
             seats,regions=cluster_seating(state,targets,cluster)
             plan.chairs.extend(seats);plan.regions[cluster.cluster_id]=regions
         validate_groupwork_plan(state,plan)
-        result=_improve_floor_spacing(state,plan)
+        with patch('aisi.generation.groupwork_participants.cluster_seating',
+                   side_effect=AssertionError('A strictly worse path must not rebuild seating')):
+            result=_improve_floor_spacing(state,plan)
         self.assertEqual(result,plan)
 
     def test_five_singletons_repair_complete_envelopes_after_local_search_failure(self):

@@ -241,3 +241,10 @@ alle zwölf Vergleichspläne sowie die konkrete `14/4`-Quelle exakt unverändert
 Direkter Cold-Vergleich der konkreten `14/4`-Quelle: 70,7 → 10,4 Sekunden
 (rund 6,8× schneller); weitere Läufe ab 8,6 Sekunden.
 Messung, Grenzen und nächster Live-Check: [Groupwork-Laufzeit](GROUPWORK_PERFORMANCE.md).
+
+Weitere Laufzeitprüfung am 2026-10-08: konkrete `14/4`-Quelle zusätzlich
+9,6 → 5,6 Sekunden (42 % weniger Zeit). Sichere Weggrenze auch in der Entzerrung,
+kanonische Hüllrechteck-Vorprüfung sowie begrenzte Caches für reine Polygon-
+und lokale Streifengeometrie. 37 fokussierte Tests und zwölf erneut exakt
+unveränderte Integrationspläne bestanden. Details und direkte Messung im
+[Laufzeit-Handoff](GROUPWORK_PERFORMANCE.md#zweite-optimierungsstufe).

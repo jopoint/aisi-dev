@@ -515,18 +515,26 @@ def _improve_floor_spacing(state, plan):
     by_id = {t.table_id:t for t in state.tables}
     units = [c.table_ids for c in plan.clusters]+[(tid,) for tid in plan.parked_table_ids]
 
+    def displacement(targets):
+        distances = [math.dist((t.target_x,t.target_y),
+            (by_id[t.table_id].x,by_id[t.table_id].y)) for t in targets]
+        return round(max(distances),6),round(math.fsum(distances),6)
+
     def score(candidate):
         cluster_by_id = {tid:c.cluster_id for c in candidate.clusters for tid in c.table_ids}
         polygons = {t.table_id:floor_contour_footprint(by_id[t.table_id],t) for t in candidate.targets}
         overlaps = sum(_polygons_overlap_with_positive_area(polygons[a.table_id],polygons[b.table_id])
             for a,b in combinations(candidate.targets,2)
             if a.table_id not in cluster_by_id or cluster_by_id[a.table_id] != cluster_by_id.get(b.table_id))
-        distances = [math.dist((t.target_x,t.target_y),
-            (by_id[t.table_id].x,by_id[t.table_id].y)) for t in candidate.targets]
-        return (overlaps, round(max(distances),6), round(math.fsum(distances),6),
+        return (overlaps, *displacement(candidate.targets),
                 -round(intergroup_floor_gap(state,candidate),6))
 
     def rebuild(targets):
+        # After contour conflicts are solved, a strictly worse source path
+        # cannot win, even with more intergroup space. Keep equal paths for
+        # the unchanged gap tie-break and retain full repair while conflicts remain.
+        if best_score[0] == 0 and displacement(targets) > best_score[1:3]:
+            return None
         candidate=GroupworkPlan(targets,[],plan.clusters,plan.group_sizes,{},plan.parked_table_ids)
         try:
             for c in candidate.clusters:

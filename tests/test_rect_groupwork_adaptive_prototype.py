@@ -4,6 +4,7 @@ import math
 import itertools
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 from aisi.analysis.rect_groupwork_adaptive_prototype import (
     SEAT_CLEARANCE_DEPTH_CM,
@@ -12,10 +13,13 @@ from aisi.analysis.rect_groupwork_adaptive_prototype import (
     _satisfies_prototype_hard_constraints,
     _compatible_option_combinations, _group_options, _fit_option_to_roi,
     _select_local_options, _materialize_candidate, _source_movement_candidate_key,
+    _polygons_overlap_with_positive_area,
+    _rounded_outer_singleton_strip,
     enumerate_pair_partitions,
     solve_rect_groupwork_prototype,
 )
 from aisi.core.models import ROI, SceneState, TableState, TargetStructure
+from aisi.core.table_geometry import table_world_footprint
 from aisi.generation.layout_synthesizer import synthesize_layout
 from aisi.input.scene_loader import build_scene_state_from_json
 
@@ -62,6 +66,41 @@ def _legacy_id_template_distances(scene: SceneState) -> list[float]:
 
 
 class RectGroupworkAdaptivePrototypeTests(unittest.TestCase):
+    def test_local_strip_cache_includes_dimensions_direction_and_effective_radius(self):
+        strip=_rounded_outer_singleton_strip
+        original=strip(160.,60.,outer_direction=1.)
+        self.assertIs(strip(160.,60.,outer_direction=1.),original)
+        self.assertNotEqual(strip(170.,60.,outer_direction=1.),original)
+        self.assertNotEqual(strip(160.,60.,outer_direction=-1.),original)
+        with patch('aisi.analysis.rect_groupwork_adaptive_prototype.SINGLETON_OUTER_CORNER_RADIUS_CM',12.):
+            self.assertNotEqual(strip(160.,60.,outer_direction=1.),original)
+        self.assertEqual(strip(160.,60.,outer_direction=1.),original)
+
+    def test_polygon_fast_path_matches_full_sat_at_contacts_and_rotations(self):
+        overlap=_polygons_overlap_with_positive_area
+        first=table_world_footprint(TableState('a',0,0,0,160,80,table_type='rect'),(0,0),0)
+        pairs=[(first,table_world_footprint(TableState('b',x,y,angle,160,80,table_type='rect'),(x,y),angle))
+               for angle in (0,17,37,90,175)
+               for x,y in ((0,0),(160,0),(160-1e-6,0),(160+1e-6,0),
+                           (160-1e-9,0),(160+1e-9,0),(0,80),(0,80+1e-9),(350,300))]
+        state=_scene(2);group=tuple(state.tables)
+        option=_fit_option_to_roi(state,_group_options(group,pair_index=0,refined=False)[0])
+        curved=_group_clearance_regions(state,option.targets,(tuple(t.table_id for t in group),))[0][1][0]
+        pairs.extend((first,tuple((x+shift,y) for x,y in curved)) for shift in (-500,0,500))
+        # Force the old SAT path independently of bounding boxes.
+        overlap.cache_clear()
+        with patch('aisi.analysis.rect_groupwork_adaptive_prototype.footprint_bounds',
+                   return_value=(-math.inf,-math.inf,math.inf,math.inf)):
+            expected=[overlap(a,b) for a,b in pairs]
+        overlap.cache_clear()
+        self.assertEqual([overlap(a,b) for a,b in pairs],expected)
+        a,b=pairs[-1];before=overlap.cache_info().hits
+        self.assertEqual(overlap(a,b),expected[-1])
+        self.assertGreater(overlap.cache_info().hits,before)
+        # A changed polygon must not reuse a formerly negative entry.
+        self.assertFalse(overlap(first,tuple((x+1000,y) for x,y in first)))
+        self.assertTrue(overlap(first,first))
+
     def test_early_compatibility_preserves_all_canonical_candidates_and_order(self):
         geometry_cache={};compatibility_cache={};valid_count=0;invalid_count=0
         for count in (2,3,4,5):

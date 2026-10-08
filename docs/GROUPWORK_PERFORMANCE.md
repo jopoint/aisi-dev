@@ -93,3 +93,49 @@ Der Regressionstest enthält die unveränderliche Source-Fixture und prüft
 Geometrie, Bewegungswege, Wiederholung und Scene Order. Für Zeitvergleiche
 frische Prozesse und gleiche Quellen verwenden; instrumentierte Profilzeiten
 nicht mit normalen Laufzeiten mischen.
+
+## Zweite Optimierungsstufe
+
+Am 2026-10-08 den verbleibenden Aufwand des Standes `8a0856b` gemessen.
+Im instrumentierten `14/4`-Lauf: 80.769 Polygonprüfungen und 448 vollständige
+Entzerrungs-Kandidaten. Die nachträgliche Entzerrung macht etwa ein Viertel der
+Profilzeit aus; Polygon-SAT bleibt der größte geometrische Einzelposten.
+
+Zusätzlich umgesetzt:
+
+- Solange Konturkonflikte bestehen, bleibt die Entzerrung vollständig. Nach ihrer
+  Lösung werden Kandidaten mit strikt schlechterem gerundetem Source-Weg vor
+  der Chair-/Flächenrekonstruktion verworfen. Gleiche Wege bleiben für den
+  bestehenden Abstand-Tie-Break erhalten; Score und Rundung sind unverändert.
+- `footprint_bounds` aus der kanonischen Geometrie schließt eindeutig getrennte
+  Hüllrechtecke vor SAT aus. Der Abstand muss mehr als `1e-7` betragen; Kontakte
+  und mögliche Überschneidungen behalten die vollständige bisherige Prüfung.
+- Bis zu 4.096 Ergebnisse des reinen Polygonprädikats wiederverwenden. Schlüssel
+  sind beide vollständigen unveränderlichen Polygone, einschließlich aller
+  Koordinaten. Veränderte Formen/Posen erhalten keine alten Ergebnisse.
+- Bis zu 64 lokale abgerundete Streifen wiederverwenden. Breite, Tiefe,
+  Richtung und effektiver Radius sind Bestandteil des Schlüssels. Die gleiche
+  kanonische Streifengenerierung liefert unveränderte Tupel.
+
+Die beiden neuen reinen Geometriecaches sind prozessweit und begrenzt;
+Scene-/Chair-Caches der ersten Stufe bleiben auf einen Generierungsaufruf
+begrenzt. Keine Tracking-Quantisierung und keine Änderung fachlicher Regeln.
+
+37 fokussierte Tests bestanden (36 im gemeinsamen Lauf, zusätzlicher
+Radius-/Formcachetest separat). Direkter Vergleich mit erzwungenem vollständigem
+SAT umfasst Rotationen, Berührung, minimale Überschneidung/Trennung und eine
+gekrümmte Pair-Ellipse. Änderungen an Polygonen, Streifenmaßen, Richtung und
+Radius werden separat geprüft. Der Source-Singleton-Test bestätigt außerdem,
+dass sicher schlechtere Wege keine Chair-Rekonstruktion auslösen.
+12/12 Vergleichspläne einschließlich aller Chairs/Flächen exakt erhalten;
+Wiederholung und umgekehrte Scene Order erneut geprüft. Keine Live-Ausgabe.
+
+Direkter Cold-Vergleich mit separaten frischen Prozessen und identischer `14/4`-
+Quelle: **9,6 s (`8a0856b`) → 5,6 s**, rund **42 % weniger Zeit** bzw. **1,7×**
+schneller als die erste Optimierungsstufe. Identische Wiederholung rund 0,75 ms.
+Der neue Polygoncache liefert im konkreten Lauf 43.350 Treffer bei 16.109
+Misses; maximal 4.096 Einträge. Ergebnis einschließlich sämtlicher Chairs und
+Sitzflächen exakt gleich. Keine allgemeine obere Laufzeitgrenze daraus ableiten.
+Quelle und Messbericht: `performance_next/benchmark.json` unter dem bisherigen
+lokalen Debug-Verzeichnis; Integrationsbericht daneben.
+Live-Laufzeit nach manuellem Sender-Neuladen weiterhin separat prüfen.
