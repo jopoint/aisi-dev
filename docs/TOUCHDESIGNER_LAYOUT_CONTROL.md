@@ -51,7 +51,12 @@ Ein lokaler strukturgetreuer Mock prüft die Floor-/Kamerareferenzen, unverände
 Parameter des vorhandenen Renderers, leere Lichtauswahl und Ablehnung einer
 zweiten Erstellung. Diese Checks ersetzen kein TD-Rendering.
 
-Der Helfer wurde noch nicht im laufenden Projekt ausgeführt. Nach Ausführung
+Der erste Live-Aufbau wurde bei `composite_control` abgebrochen: TOPs unterstützen
+`setInput` hier nicht. Der Helfer ist auf das im Repository verwendete
+`inputConnectors[index].connect(source)` korrigiert; der Fehlerpfad entfernt
+ausschließlich den neu angelegten Kontroll-COMP. Der frühere Mock belegte nur
+die Struktur und konnte die falsche API nicht erkennen. Erneute Live-Ausführung
+und sichtbare Bestätigung stehen aus. Nach erfolgreicher Ausführung
 `floor_tabletop_control` (Container COMP) bzw. `out_control` (Out TOP) ansehen:
 Floor-Ziele und Chairs, blaue Source-Rechtecke und Tabletop-Motion-Pfeile müssen
 raumgleich erscheinen. Keine physische Projektionskorrektheit behauptet.

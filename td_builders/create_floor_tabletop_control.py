@@ -83,10 +83,11 @@ def create_control(resolve, symbols):
         overlay.nodeX = 0; overlay.nodeY = -100
         composite = comp.create(symbols['compositeTOP'], 'composite_control')
         composite.par.operand = 'add'
-        composite.setInput(0, select); composite.setInput(1, overlay)
+        composite.inputConnectors[0].connect(select)
+        composite.inputConnectors[1].connect(overlay)
         composite.nodeX = 220; composite.nodeY = 100
         output = comp.create(symbols['outTOP'], 'out_control')
-        output.setInput(0, composite)
+        output.inputConnectors[0].connect(composite)
         output.nodeX = 440; output.nodeY = 100
         comp.par.top = output.path
         comp.par.topfill = 'best'
