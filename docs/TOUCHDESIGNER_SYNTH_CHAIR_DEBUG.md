@@ -9,7 +9,7 @@ und senden `aisi.app.sim_scene_to_osc` an `127.0.0.1:9000`.
 Damit bedienen alte und neue Python-Synthese dieselben `/table/...`-Channels.
 Alten Sender PID 40517 mit SIGINT beendet; anschließend genau eine
 Layout-Senderinstanz (PID 94900) verifiziert. TD-Graph und Einstellungen
-unverändert; keine Datei gespeichert. Visuelle Beruhigung noch zu bestätigen.
+unverändert; keine Datei gespeichert. Johannes bestätigt anschließend das ruhige Bild.
 Beim Neuladen zuerst die bisherige Senderinstanz beenden.
 
 Stand: 2026-10-07
