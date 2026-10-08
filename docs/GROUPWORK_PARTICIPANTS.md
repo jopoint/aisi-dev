@@ -145,3 +145,44 @@ Bericht und Vergleichsplot:
 `data/aisi/debug/groupwork_participant_preview_2026-10-08/pair_priority/`.
 Die aktuelle Live-Quelldatei wurde zusätzlich offline für `15/2` geprüft und
 als reproduzierbare Quelle gespeichert. Kein Senderneustart, kein TD-Zugriff.
+
+## Überlappende Bodenkonturen und Verteilung
+
+Johannes' Stichprobe mit 14 Personen/vier Gruppen wurde aus der aktuellen
+Quelldatei offline reproduziert. Die oberen physischen 160 × 80 cm Tische
+waren knapp getrennt, ihre bestehenden 170 × 90 cm Bodenkonturen überlappten.
+Der zusätzliche Rand von 5 cm wird jetzt über die kanonische Footprint-Funktion
+als Darstellungsrechteck geprüft. Keine Änderung an TD, Study oder Raumkalibrierung.
+Die interne Pair-Seam bleibt 8 cm; übergreifende Konturränder innerhalb desselben
+Pairs sind dabei bewusst erlaubt. Zwischen getrennten Clustern und Parktischen
+werden Konturüberschneidungen ausdrücklich abgelehnt.
+
+Die gewählte physisch gültige Konfiguration wird anschließend ohne Rollenwechsel
+räumlich verbessert: vorhandene source-relative Verschiebungsoptionen in
+abnehmenden Schritten, bei gedrängten Reihen zusätzlich gemeinsame starre
+Ausweichbewegungen ganzer Cluster mit der vorhandenen ROI-Anpassung.
+Jeder Kandidat muss Chair-Kreise, physische ROI, Sitz-/Bewegungsflächen und
+Teilnehmergruppenzuordnung erhalten; am Ende müssen auch Konturkonflikte
+vollständig beseitigt sein. Erst danach wird das Ergebnis gecacht.
+Die Konturen sind keine vergrößerten physischen Tische und ändern keine
+physische Kapazitätsregel. Ein global optimaler Inselabstand wird nicht behauptet.
+
+Lokaler Vorher-/Nachher-Plot und reproduzierbare Quelle:
+`data/aisi/debug/groupwork_participant_preview_2026-10-08/floor_contour_fix/`.
+Die separate Laufzeitoptimierung folgt erst nach dieser Geometriekorrektur;
+Johannes beobachtet 10–20 Sekunden. Kein Sender neu gestartet.
+
+17 fokussierte Groupwork-Tests bestanden. Der neue Regressionstest weist nach,
+dass zwei physisch getrennte Rect-Tische mit 162 cm Mittenabstand trotzdem
+überlappende 170-cm-Bodenkonturen haben und ausdrücklich abgelehnt werden.
+Auch fünf Singletons, Counts/Identitäten, Pair-Seam, Source Scene Order,
+Stärke 0 und positive Teilstärken bestanden. In der reproduzierten `14/4`-Szene
+bleiben die vorhandenen Cluster-/Gruppen-/Tischbindungen erhalten; der kleinste
+Abstand der Bodenkonturen zwischen Teilnehmergruppen steigt auf rund 62 cm.
+Keine globale Optimalitätsaussage und noch kein Nachweis im laufenden TD-Projekt.
+
+12/12 Integrationsfälle mit gespeichertem Editor-/Live-Input bestanden,
+inklusive Counts 3/5/7/10/15 und Gruppen 1/2/5, deterministischer Wiederholung
+und umgekehrter Scene Order. Bericht: `floor_contour_fix/integration/validation.json`.
+Cold-Laufzeit der konkreten `14/4`-Reproduktion lag offline bei etwa 52 Sekunden;
+die priorisierte Laufzeitoptimierung ist damit weiterhin ausdrücklich offen.

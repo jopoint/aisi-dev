@@ -223,6 +223,9 @@ nutzbare Stirnseiten bleiben vor verdichteten Längsseiten bevorzugt. Die opt-in
 Vorschau/OSC-Anbindung ist im Code ergänzt; Stärke 0 ohne Chairs/Reparatur,
 positive Teilstärken mit Blend-before-repair und gebundenen Rollen. Über 15
 Chairs werden im Adapter als technische Ausgabegrenze abgelehnt.
+Getrennte Cluster werden zusätzlich auf überlappende 170 × 90 cm
+Bodenkonturen geprüft und anschließend ohne Rollenwechsel räumlich entzerrt.
+Die physische Geometrie und Pair-Seam bleiben unverändert.
 Die laufende Anwendung wurde nicht neu geladen; Live-Prüfung bleibt offen. Details: D008b und
 [Groupwork-Handoff](GROUPWORK_PARTICIPANTS.md).
 

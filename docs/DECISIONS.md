@@ -178,6 +178,14 @@ abgelöst und bleibt nur als explizite Offline-Vergleichsoption verfügbar.
 `2 + 2 + 1` gilt weiterhin als Sitzregel, wenn fünf Personen tatsächlich einen
 Einzel-Tisch nutzen müssen; bei verfügbaren passenden Tischen wird nun ein Pair
 versucht. Stirnseiten werden weiterhin vor verdichteten Längsseiten belegt.
+Zusätzliche Darstellungskorrektur: getrennte Cluster und Parktische dürfen
+auch mit ihren bestehenden 170 × 90 cm Bodenkonturen nicht überlappen.
+Die physischen Rect-Footprints bleiben 160 × 80 cm; Sitzflächen und physische
+ROI-Prüfung bleiben kanonisch. Innerhalb eines Pairs bleibt die 8-cm-Seam
+unverändert, einschließlich der bewusst übergreifenden 5-cm-Konturränder.
+Nach der Auswahl werden bestehende Cluster starr verschoben, um Konturkonflikte
+zu lösen und den kleinsten Abstand zwischen Teilnehmergruppen zu verbessern.
+Kein neuer Slotplan, keine neue Tischpermutation, keine Änderung der TD-Konturen.
 Die opt-in Vorschau ist an den bestehenden OSC-Adapter angebunden; über 15
 Teilnehmende werden dort wegen der technischen TD-Slots ausdrücklich abgelehnt.
 Das Offline-Modell behält seine separate geometrische Kapazität.

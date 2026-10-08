@@ -18,11 +18,31 @@ from aisi.analysis.rect_groupwork_adaptive_prototype import (
     SEAT_CLEARANCE_DEPTH_CM, PAIR_SEAM_CM, _pair_clearance_ellipse,
     _polygons_overlap_with_positive_area, singleton_end_clearance_regions,
     singleton_long_side_clearance_regions,
-    solve_rect_groupwork_prototype, _singleton_options, _fit_option_to_roi,
+    solve_rect_groupwork_prototype, _singleton_options, _fit_option_to_roi, _polygon_distance, _GroupOption,
 )
 from aisi.generation.adaptive_layout_v1 import ActivityParameters, LayoutConstraintError, evenly_distribute
 
 CHAIR_RADIUS_CM = 25.0
+# Existing Study-style floor contours are 170 x 90 around physical 160 x 80.
+FLOOR_CONTOUR_PADDING_CM = 5.0
+
+
+def floor_contour_footprint(table, target):
+    geometry = resolve_table_state_geometry(table)
+    envelope = replace(table, table_type=None,
+        width=geometry.nominal_width+2*FLOOR_CONTOUR_PADDING_CM,
+        height=geometry.nominal_depth+2*FLOOR_CONTOUR_PADDING_CM)
+    return table_world_footprint(envelope,(target.target_x,target.target_y),target.target_rot_deg)
+
+
+def intergroup_floor_gap(state, plan):
+    by_id = {t.table_id:t for t in state.tables}
+    groups = {tid:c.group_id for c in plan.clusters for tid in c.table_ids}
+    polygons = {t.table_id:floor_contour_footprint(by_id[t.table_id],t) for t in plan.targets}
+    gaps = [_polygon_distance(polygons[a.table_id],polygons[b.table_id])
+            for a,b in combinations(plan.targets,2)
+            if a.table_id in groups and b.table_id in groups and groups[a.table_id] != groups[b.table_id]]
+    return min(gaps) if gaps else 0.0
 
 
 @dataclass(frozen=True)
@@ -123,7 +143,7 @@ def cluster_seating(state, targets, cluster, *, reserved_regions=()):
     raise LayoutConstraintError("Die belegten Stirnseiten-Sitzflächen liegen außerhalb der ROI.")
 
 
-def validate_groupwork_plan(state: SceneState, plan: GroupworkPlan):
+def validate_groupwork_plan(state: SceneState, plan: GroupworkPlan, *, check_floor_contours=True):
     """Validate complete targets, parked furniture, chairs and occupied movement zones."""
     by_id = {table.table_id: table for table in state.tables}
     if len(plan.targets) != len(by_id) or {t.table_id for t in plan.targets} != set(by_id):
@@ -142,6 +162,15 @@ def validate_groupwork_plan(state: SceneState, plan: GroupworkPlan):
     if any(not polygon_inside_roi(p,**roi) for p in footprints.values()) or any(
             _polygons_overlap_with_positive_area(a,b) for a,b in combinations(footprints.values(),2)):
         raise LayoutConstraintError("Groupwork-Tischkollision oder ROI-Verletzung.")
+    contours = {t.table_id:floor_contour_footprint(by_id[t.table_id],t) for t in plan.targets}
+    cluster_by_table = {tid:c.cluster_id for c in plan.clusters for tid in c.table_ids}
+    for a,b in combinations(plan.targets,2):
+        # The existing 8-cm pair seam deliberately lies inside two 5-cm
+        # visual margins. It remains a physical seam, not two social clusters.
+        same_cluster = (a.table_id in cluster_by_table and
+                        cluster_by_table[a.table_id] == cluster_by_table.get(b.table_id))
+        if check_floor_contours and not same_cluster and _polygons_overlap_with_positive_area(contours[a.table_id],contours[b.table_id]):
+            raise LayoutConstraintError("Groupwork-Bodenkonturen verschiedener Cluster überlappen.")
     for cluster in plan.clusters:
         if len(cluster.table_ids) == 2:
             members = {t.table_id:t for t in plan.targets}
@@ -253,7 +282,7 @@ def _attach_clusters(state, targets, islands, profile, sizes, bound_clusters=Non
                 seats,regions = cluster_seating(state,targets,cluster,
                     reserved_regions=tuple(r for rs in plan.regions.values() for r in rs))
                 plan.chairs.extend(seats);plan.regions[cluster.cluster_id] = regions
-            validate_groupwork_plan(state,plan)
+            validate_groupwork_plan(state,plan,check_floor_contours=False)
         except LayoutConstraintError:
             continue
         return plan
@@ -330,7 +359,7 @@ def _complete_parking(state, plan):
     plan.targets.extend(extra)
     plan.parked_table_ids = tuple(table.table_id for table in parked)
     try:
-        validate_groupwork_plan(state,plan)
+        validate_groupwork_plan(state,plan,check_floor_contours=False)
     except LayoutConstraintError:
         return None
     return plan
@@ -392,7 +421,7 @@ def _cached_plan(roi,key,participants,number_of_groups,policy):
                 best = (objective,plan);best_rank = rank
     if best is None:
         raise LayoutConstraintError("Keine gemeinsame Groupwork-Geometrie für Teilnehmergruppen, Chairs und Parktische gefunden.")
-    return best[1]
+    return _improve_floor_spacing(state,best[1])
 
 
 _transform_cache = OrderedDict()
@@ -444,5 +473,80 @@ def _transform_groupwork_plan(state, plan, strength):
     targets = {t.table_id:replace(t,source_rot_deg=originals[t.table_id].rot_deg) for t in result.targets}
     result.targets = [targets[t.table_id] for t in state.tables]
     result.parked_table_ids = plan.parked_table_ids
-    validate_groupwork_plan(state, result)
-    return result
+    return _improve_floor_spacing(state,result)
+
+
+def _improve_floor_spacing(state, plan):
+    """Move existing clusters rigidly; protect seating and table/group identities."""
+    by_id = {t.table_id:t for t in state.tables}
+    original = {t.table_id:t for t in plan.targets}
+    units = [c.table_ids for c in plan.clusters]+[(tid,) for tid in plan.parked_table_ids]
+
+    def score(candidate):
+        cluster_by_id = {tid:c.cluster_id for c in candidate.clusters for tid in c.table_ids}
+        polygons = {t.table_id:floor_contour_footprint(by_id[t.table_id],t) for t in candidate.targets}
+        overlaps = sum(_polygons_overlap_with_positive_area(polygons[a.table_id],polygons[b.table_id])
+            for a,b in combinations(candidate.targets,2)
+            if a.table_id not in cluster_by_id or cluster_by_id[a.table_id] != cluster_by_id.get(b.table_id))
+        movement = math.fsum(math.dist((t.target_x,t.target_y),
+            (original[t.table_id].target_x,original[t.table_id].target_y)) for t in candidate.targets)
+        return overlaps,-round(intergroup_floor_gap(state,candidate),6),movement
+
+    def rebuild(targets):
+        candidate=GroupworkPlan(targets,[],plan.clusters,plan.group_sizes,{},plan.parked_table_ids)
+        try:
+            for c in candidate.clusters:
+                chairs,regions=cluster_seating(state,targets,c,
+                    reserved_regions=tuple(r for rs in candidate.regions.values() for r in rs))
+                candidate.chairs.extend(chairs);candidate.regions[c.cluster_id]=regions
+            validate_groupwork_plan(state,candidate,check_floor_contours=False)
+            return candidate
+        except LayoutConstraintError:
+            return None
+
+    best=deepcopy(plan);best_score=score(best)
+    if best_score[0]:
+        # Escape a crowded row together: displace one island and push islands
+        # ahead outwards, clipping each whole island with the existing ROI fit.
+        # This retains topology and derives positions from the current poses.
+        for ids in units:
+            anchor=next(t for t in plan.targets if t.table_id==ids[0])
+            source=replace(by_id[ids[0]],x=anchor.target_x,y=anchor.target_y,rot_deg=anchor.target_rot_deg)
+            for option in _singleton_options(source,refined=True,expanded=True):
+                dx=option.targets[0].target_x-anchor.target_x;dy=option.targets[0].target_y-anchor.target_y
+                distance=math.hypot(dx,dy)
+                if distance<1e-9:continue
+                translated=[]
+                for island in units:
+                    members=[t for t in plan.targets if t.table_id in island]
+                    cx=sum(t.target_x for t in members)/len(members);cy=sum(t.target_y for t in members)/len(members)
+                    mx,my=(dx,dy) if island==ids else (0.,0.)
+                    if island!=ids and (cx-anchor.target_x)*dx+(cy-anchor.target_y)*dy>1e-8:
+                        side=1 if (cx-anchor.target_x)*(-dy)+(cy-anchor.target_y)*dx>=0 else -1
+                        mx=3*(dx-side*dy);my=3*(dy+side*dx)
+                    moved=tuple(replace(t,target_x=t.target_x+mx,target_y=t.target_y+my) for t in members)
+                    translated.extend(_fit_option_to_roi(state,_GroupOption(moved,tuple(island),None,True)).targets)
+                targets_by_id={t.table_id:t for t in translated}
+                candidate=rebuild([targets_by_id[t.table_id] for t in plan.targets])
+                if candidate is not None and score(candidate)<best_score:
+                    best=candidate;best_score=score(candidate)
+    # Reuse existing source-relative translation candidates at decreasing
+    # scales. No new fixed room slots or table permutation are introduced.
+    for scale in (1.,.5,.25,.125):
+        for _ in range(2):
+            changed=False
+            for ids in units:
+                anchor=next(t for t in best.targets if t.table_id==ids[0])
+                source=replace(by_id[ids[0]],x=anchor.target_x,y=anchor.target_y,rot_deg=anchor.target_rot_deg)
+                for option in _singleton_options(source,refined=True,expanded=True):
+                    delta=(scale*(option.targets[0].target_x-anchor.target_x),
+                           scale*(option.targets[0].target_y-anchor.target_y))
+                    if abs(delta[0])+abs(delta[1])<1e-9:continue
+                    targets=[replace(t,target_x=t.target_x+delta[0],target_y=t.target_y+delta[1])
+                             if t.table_id in ids else t for t in best.targets]
+                    candidate=rebuild(targets)
+                    if candidate is not None and score(candidate)<best_score:
+                        best=candidate;best_score=score(candidate);changed=True
+            if not changed:break
+    validate_groupwork_plan(state,best)
+    return best

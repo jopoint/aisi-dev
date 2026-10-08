@@ -136,6 +136,22 @@ class GroupworkPlanningTests(unittest.TestCase):
         self.assertEqual([len(c.table_ids) for c in fallback.clusters],[1])
         self.assertEqual(Counter(c['seat_kind'] for c in fallback.chairs),{'regular_long':4,'regular_end':1})
 
+    def test_padded_floor_contours_reject_physically_separate_singletons(self):
+        state=SceneState(ROI(0,0,500,500),[
+            TableState('a',160,250,0,160,80,table_type='rect'),
+            TableState('b',322,250,0,160,80,table_type='rect')],'groupwork')
+        targets=[TableTarget(t.table_id,t.x,t.y,target_rot_deg=0) for t in state.tables]
+        clusters=tuple(ParticipantCluster(f'cluster_{i}',f'group_{i}',(t.table_id,),2)
+                       for i,t in enumerate(state.tables))
+        plan=GroupworkPlan(targets,[],clusters,(2,2),{})
+        for c in clusters:
+            seats,regions=cluster_seating(state,targets,c)
+            plan.chairs.extend(seats);plan.regions[c.cluster_id]=regions
+        # Physical 160-cm widths are separate, but 170-cm floor contours overlap.
+        self.assertEqual(evaluate_hard_constraints(state,targets,clearance_depth_factor=None).overlap_violations,0)
+        with self.assertRaisesRegex(LayoutConstraintError,'Bodenkonturen'):
+            validate_groupwork_plan(state,plan)
+
     def test_invalid_requests_are_rejected_before_search(self):
         state=editor_state()
         for people,groups in ((0,1),(3,0),(3,4),(10,6),(41,1),(3.5,1)):
