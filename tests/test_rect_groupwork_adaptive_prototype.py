@@ -121,6 +121,34 @@ class RectGroupworkAdaptivePrototypeTests(unittest.TestCase):
         self.assertGreater(valid_count,0)
         self.assertGreater(invalid_count,0)
 
+    def test_disjoint_region_pruning_matches_exhaustive_geometry_and_keeps_cache_modes_separate(self):
+        # Tables/foreign seat zones are clear, but their two seat zones overlap.
+        state=SceneState(ROI(0,0,500,500),[
+            TableState('a',250,150,0,160,80,table_type='rect'),
+            TableState('b',250,330,0,160,80,table_type='rect')],'groupwork')
+        partition=tuple((t,) for t in state.tables)
+        options=[_group_options(group,pair_index=i,refined=True)
+                 for i,group in enumerate(partition)]
+        geometry_cache={};compatibility_cache={}
+        ordinary=list(_compatible_option_combinations(state,options,geometry_cache,compatibility_cache))
+        expected=[]
+        for choice in itertools.product(*options):
+            candidate=_materialize_candidate(state,partition,choice,True)
+            if candidate is None:
+                continue
+            regions=_group_clearance_regions(state,candidate.table_targets,candidate.groups)
+            if not any(_polygons_overlap_with_positive_area(a,b)
+                       for (_,first),(_,second) in itertools.combinations(regions,2)
+                       for a in first for b in second):
+                expected.append(choice)
+        actual=list(_compatible_option_combinations(state,options,geometry_cache,compatibility_cache,
+                                                    disjoint_regions=True))
+        self.assertEqual(actual,expected)
+        self.assertGreater(len(ordinary),len(actual))
+        self.assertGreater(len(actual),0)
+        self.assertEqual(ordinary,list(_compatible_option_combinations(state,options,
+                                     geometry_cache,compatibility_cache)))
+
     def test_filtered_source_search_keeps_exhaustive_best_including_rejections(self):
         state=_scene(3);candidates=[]
         def collect(candidate):

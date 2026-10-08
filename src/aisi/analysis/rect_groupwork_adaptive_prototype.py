@@ -76,6 +76,7 @@ def solve_rect_groupwork_prototype(
     movement_budget_cm: float | None = None,
     cluster_sizes: tuple[int, ...] | None = None,
     candidate_filter: Callable[[PrototypeResult], bool] | None = None,
+    disjoint_regions: bool = False,
 ) -> PrototypeResult:
     """Return the best local Rect Groupwork candidate for counts two through five.
 
@@ -85,7 +86,7 @@ def solve_rect_groupwork_prototype(
     or geometric ordering.
     """
     cache_key = _solver_cache_key(scene_state, selection, movement_budget_cm)
-    cache_key += (cluster_sizes,)
+    cache_key += (cluster_sizes, disjoint_regions)
     cached = _result_cache.get(cache_key) if candidate_filter is None else None
     if cached is not None:
         return cached
@@ -122,8 +123,8 @@ def solve_rect_groupwork_prototype(
                 for index, group in enumerate(partition)
             ]
             combinations = (_compatible_option_combinations(scene_state, option_sets,
-                                option_geometry, option_compatibility)
-                            if candidate_filter is not None else itertools.product(*option_sets))
+                                option_geometry, option_compatibility,disjoint_regions=disjoint_regions)
+                            if candidate_filter is not None or disjoint_regions else itertools.product(*option_sets))
             for selected_options in combinations:
                 if filtered_best_key is not None:
                     selected = {t.table_id:t for option in selected_options for t in option.targets}
@@ -278,7 +279,7 @@ def singleton_end_clearance_regions(target: TableTarget, table: TableState):
     )
 
 
-def _compatible_option_combinations(scene_state, option_sets, geometry_cache, compatibility_cache):
+def _compatible_option_combinations(scene_state, option_sets, geometry_cache, compatibility_cache, *, disjoint_regions=False):
     """Discard only canonically invalid combinations; retain product order.
 
     Caches belong to one solve, so geometry never survives a changed source,
@@ -304,20 +305,31 @@ def _compatible_option_combinations(scene_state, option_sets, geometry_cache, co
         prepared_sets.append(prepared)
 
     def compatible(first, second):
-        key = first[1],second[1]
+        key = first[1],second[1],disjoint_regions
         if key not in compatibility_cache:
             first_tables,first_regions = geometry_cache[key[0]]
             second_tables,second_regions = geometry_cache[key[1]]
+            checks = ((first_tables,second_tables),
+                      (first_regions,second_tables),(second_regions,first_tables))
+            if disjoint_regions:
+                checks += ((first_regions,second_regions),)
             compatibility_cache[key] = not any(
                 _polygons_overlap_with_positive_area(a,b)
-                for first_polygons,second_polygons in ((first_tables,second_tables),
-                    (first_regions,second_tables),(second_regions,first_tables))
+                for first_polygons,second_polygons in checks
                 for a in first_polygons for b in second_polygons)
         return compatibility_cache[key]
 
-    for choice in itertools.product(*prepared_sets):
-        if all(compatible(a,b) for a,b in itertools.combinations(choice,2)):
-            yield tuple(item[0] for item in choice)
+    def extend(prefix, index):
+        if index == len(prepared_sets):
+            yield tuple(item[0] for item in prefix)
+            return
+        for item in prepared_sets[index]:
+            # Preserve product order while discarding an impossible prefix
+            # before enumerating any of its remaining suffix combinations.
+            if all(compatible(previous,item) for previous in prefix):
+                yield from extend((*prefix,item),index+1)
+
+    yield from extend((),0)
 
 
 def _group_options(group: tuple[TableState, ...], *, pair_index: int, refined: bool,

@@ -359,3 +359,14 @@ Prüfdaten: `data/aisi/debug/groupwork_participant_preview_2026-10-08/pair_fallb
 Die Zusatzsuche kann Laufzeit kosten; eine allgemeine Laufzeitgrenze bleibt offen.
 Keine OSC-Pakete versendet, kein Sender neu gestartet, kein TD-Projekt verändert
 oder gespeichert. Live-Nachweis nach manuellem Neuladen und physische Prüfung offen.
+
+## Laufzeitnachtrag zum Pair-Fallback
+
+Die neue `10/4`-Winkelsuche wurde ohne Ergebnisänderung beschleunigt:
+31,9 → 5,9 s im frischen Offline-Prozess. Kanonische Sitzflächenkonflikte werden
+früher erkannt, unmögliche Teilkombinationen vor dem Aufbau weiterer Kandidaten
+verworfen. 46 Tests bestanden; zwölf Integrationspläne und die beiden
+`10/4`-/`10/5`-Vergleichspläne vollständig exakt erhalten. Fachliche Prioritäten,
+Pair-/Parkregeln und Source-Zuordnung bleiben unverändert.
+Details und Messgrenzen: [Laufzeit-Handoff](GROUPWORK_PERFORMANCE.md).
+Live-Laufzeit nach manuellem Neuladen noch offen.

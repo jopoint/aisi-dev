@@ -347,7 +347,7 @@ def _solve_profile(active_state, profile, sizes, bound_clusters=None, seating_ca
         return _attach_clusters(active_state,candidate.table_targets,candidate.groups,profile,sizes,bound_clusters,seating_cache) is not None
     try:
         result = solve_rect_groupwork_prototype(active_state,selection='source_movement',
-                    cluster_sizes=cluster_sizes,candidate_filter=accept)
+                    cluster_sizes=cluster_sizes,candidate_filter=accept,disjoint_regions=True)
     except ValueError:
         plan = _repair_singleton_profile(active_state,profile,sizes,bound_clusters)
         if plan is not None or not angle_fallback or cluster_sizes != (1,1,1,2):

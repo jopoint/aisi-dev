@@ -247,6 +247,9 @@ begrenzte Chair-Prüfcaches beschleunigt; Vergleichspläne bleiben exakt gleich.
 Die zweite Stufe ergänzt sichere Weggrenzen in der Entzerrung sowie kanonische
 Hüllrechteck-Vorprüfung und begrenzte, vollständig koordinatenabhängige
 Geometriecaches.
+Die dritte Stufe zieht im Teilnehmerpfad Sitzflächenkonflikte vor und bricht
+unmögliche Teilkombinationen vor weiteren Anhängen ab. Konkreter `10/4`-Fallback
+31,9 → 5,9 s offline, vollständiger Plan unverändert; 46 Tests bestanden.
 Siehe [Laufzeit-Handoff](GROUPWORK_PERFORMANCE.md). Details: D008b und
 [Groupwork-Handoff](GROUPWORK_PARTICIPANTS.md).
 

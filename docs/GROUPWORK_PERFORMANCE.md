@@ -139,3 +139,48 @@ Sitzflächen exakt gleich. Keine allgemeine obere Laufzeitgrenze daraus ableiten
 Quelle und Messbericht: `performance_next/benchmark.json` unter dem bisherigen
 lokalen Debug-Verzeichnis; Integrationsbericht daneben.
 Live-Laufzeit nach manuellem Sender-Neuladen weiterhin separat prüfen.
+
+## Dritte Stufe: Pair-Fallback bei 10/4
+
+Nach dem neuen Pair-Fallback benötigt die eingefrorene `10/4`-Quelle im frischen
+Prozess **31,9 s** (`a5e98f7`). Fast die gesamte Zeit entsteht im Suchkern;
+Parken und nachträgliche Entzerrung sind in dieser Szene nur kleine Anteile.
+Der vorhandene frühe Kompatibilitätstest prüft Tabellen gegen fremde Sitzflächen,
+aber Überschneidungen zweier Sitzflächen werden bisher erst bei der vollständigen
+Chair-/Gruppenzuordnung verworfen. Unmögliche Kombinationen laufen dadurch weit
+in die Suche hinein.
+
+Gezielte Änderungen:
+
+- Im Teilnehmerpfad `disjoint_regions=True`: bereits kanonisch vorbereitete
+  Längsstreifen/Pair-Ellipsen verschiedener Cluster früh auf positive Überlappung
+  prüfen. Dies zieht eine bestehende harte Endbedingung vor; zusätzliche
+  Stirnseiten, Chairs und alle übrigen Bedingungen bleiben in der Endprüfung.
+  Table-only Aufrufe behalten standardmäßig ihr bisheriges Verhalten.
+- Kombinationen in ursprünglicher Produktreihenfolge schrittweise aufbauen.
+  Sobald ein Teil der Kombination unvereinbar ist, keine weiteren Anhänge dieses
+  Teils enumerieren. Reihenfolge aller weiterhin möglichen Kandidaten bleibt gleich.
+- Der Kompatibilitäts- und Solver-Cache unterscheiden den Prüfmodus ausdrücklich;
+  keine Übernahme eines Ergebnisses aus dem weniger strengen Modus.
+
+Direkter frischer Lauf derselben Quelle nach Änderung: **5,9 s**, rund **81 %
+weniger Zeit**, **5,4× schneller**. Beide Prozesse verwenden wenige Zeitmessungen
+um größere Suchschritte; kein cProfile, keine OSC-Ausgabe. Der vollständige
+`10/4`-Plan ist exakt gleich: Tischposen, ursprüngliche Source-Winkel,
+Cluster-/Gruppenzuordnung, Chairs und Sitzflächen. Keine Quantisierung,
+veränderten Suchbudgets oder fachlichen Regeln. Eine allgemeine Zeitobergrenze
+oder Live-/Raumlaufzeit wird daraus nicht abgeleitet.
+
+46 fokussierte Tests bestanden: 18 Suchkern-, 22 Teilnehmer- und sechs
+Vorschautests. Frühe Suche gegenüber vollständiger kanonischer Enumeration
+inklusive Reihenfolge geprüft; neue Regression für überlappende Sitzflächen
+bei kollisionsfreien Tischen und Wiederverwendung der Caches in beiden Modi.
+Zwölf Integrationspläne sowie `10/4` und `10/5` vollständig exakt gegenüber dem
+Stand vor dieser Optimierung erhalten. Determinismus, Scene Order, Pair-Seam,
+Parkabstand, Teilstärken und OSC-Adapter weiterhin durch die Tests abgedeckt.
+
+Lokale Messwerte und eingefrorene Prüfdaten:
+`data/aisi/debug/groupwork_participant_preview_2026-10-08/pair_fallback_performance/`.
+Manuelles Neuladen des bestehenden Senders und Live-Zeitmessung bleiben offen.
+Kein Sender gestartet, keine OSC-Pakete versendet, keine TD-Fernsteuerung und
+keine `.toe`-Speicherung. Physische Prüfung bleibt separat offen.
