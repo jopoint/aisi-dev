@@ -89,6 +89,11 @@ Synthetische Chairs sind bisher nur für Input umgesetzt. Nächster Implementier
 - [ ] Define presentation/audience roles only if required by the format.
 - [ ] Determine Discussion capacity from its geometry rather than copying the Input limit of `15`.
 
+## Kontrollansicht für Layout-Stichproben
+
+- [x] Manueller Helfer für `comp_layout_proposal/floor_tabletop_control` vorbereitet: Floor inkl. optionaler Chairs + bestehende blaue Tabletop-Source-Konturen + Tabletop-Motion-Pfeile. Syntax/Struktur offline geprüft, keine bestehenden Ausgaben geändert. [Anleitung](docs/TOUCHDESIGNER_LAYOUT_CONTROL.md).
+- [ ] Helfer im TD-Textport ausführen und raumgleiche Überlagerung im Operator-Viewer prüfen; noch kein Live-Aufbau oder Speichern erfolgt.
+
 ## NEXT — Manual layout validation
 
 - [ ] Rect Groupwork: complete interactive Room Editor and TouchDesigner validation.
