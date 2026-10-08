@@ -14,8 +14,10 @@ exec(open('/Users/Johannes/dev/Promotion_Prototypen/AISI/td_builders/create_floo
 
 Der Helfer prüft zuerst die vorhandenen Operatoren und erzeugt ausschließlich
 `/project1/comp_layout_proposal/floor_tabletop_control` (Container COMP).
-Ein bereits vorhandener gleichnamiger COMP wird erhalten und ausdrücklich
-abgelehnt. Bei Aufbaufehlern wird nur der neu angelegte COMP zurückgenommen.
+Bei einem vorhandenen Kontroll-COMP aktualisiert derselbe Aufruf ausschließlich
+die Geometrieauswahl seines `render_source_and_tabletop_motion` (Render TOP).
+Alle Nodes und übrigen Einstellungen bleiben erhalten. Bei Aufbaufehlern wird
+nur der neu angelegte COMP zurückgenommen.
 Die Operatortypen werden auch aus TD-Builtins aufgelöst, damit der manuelle
 `exec`-Aufruf nicht ohne Ausgabe übersprungen wird.
 
@@ -26,8 +28,9 @@ Interne Operatoren:
 - `render_source_and_tabletop_motion` (Render TOP) übernimmt die bestehenden
   Floor-Render-Einstellungen und dieselbe Kamera. Es rendert ausschließlich
   vorhandene `table_source_geo` und `table_motion_line_tabletop_geo`
-  (Geometry COMPs) der aktiven Rect-Items. Die dynamische Auswahl folgt neuen
-  Instanzen; Template, Chairs und Tabletop-Zielkonturen werden nicht zusätzlich
+  (Geometry COMPs) der aktiven Rect-Items. Die Auswahl referenziert ausdrücklich
+  die fünf unterstützten Slots `item1` bis `item5`; fehlende Slots werden
+  übersprungen, später angelegte wieder berücksichtigt. Template, Chairs und Tabletop-Zielkonturen werden nicht zusätzlich
   gerendert. Die vorhandenen Materialien, Geometrien und Sichtbarkeiten bleiben
   unverändert. Kamera und Lichter werden als absolute Referenzen aufgelöst.
 - `composite_control` (Composite TOP) addiert Floor und diesen Overlay-Render.
@@ -46,7 +49,13 @@ Hintergrund ist ein [Background TOP des Container COMPs](https://docs.derivative
 ## Prüfung und Stand
 
 Syntax und dynamische Auswahl offline geprüft: nur Rect-Source-/Motion-Geometrien,
-keine Targets/Templates; neu hinzukommende Items werden berücksichtigt.
+keine Targets/Templates; fehlende und später angelegte Slots werden berücksichtigt.
+Die frühere Suche über alle direkten Kinder wurde durch die fünf konkreten
+Item-Pfade ersetzt. Das vermeidet eine unnötig breite Referenz auf das gesamte
+Layout-Netzwerk. Ob dadurch die vielen sichtbaren Referenzlinien verschwinden,
+ist noch live zu prüfen; notwendige Referenzen bleiben bestehen.
+Die Aktualisierung am vorhandenen Renderer und ihr Rücknahmezustand wurden
+ebenfalls offline geprüft.
 Ein lokaler strukturgetreuer Mock prüft die Floor-/Kamerareferenzen, unveränderte
 Parameter des vorhandenen Renderers, leere Lichtauswahl und Ablehnung einer
 zweiten Erstellung. Diese Checks ersetzen kein TD-Rendering.
@@ -55,9 +64,18 @@ Der erste Live-Aufbau wurde bei `composite_control` abgebrochen: TOPs unterstüt
 `setInput` hier nicht. Der Helfer ist auf das im Repository verwendete
 `inputConnectors[index].connect(source)` korrigiert; der Fehlerpfad entfernt
 ausschließlich den neu angelegten Kontroll-COMP. Der frühere Mock belegte nur
-die Struktur und konnte die falsche API nicht erkennen. Erneute Live-Ausführung
-und sichtbare Bestätigung stehen aus. Nach erfolgreicher Ausführung
+die Struktur und konnte die falsche API nicht erkennen. Johannes' Screenshot
+zeigt inzwischen den angelegten Kontroll-COMP. Die kombinierte Bildausgabe und
+die Reduktion der Referenzlinien sind noch nicht bestätigt. Nach Ausführung
 `floor_tabletop_control` (Container COMP) bzw. `out_control` (Out TOP) ansehen:
 Floor-Ziele und Chairs, blaue Source-Rechtecke und Tabletop-Motion-Pfeile müssen
 raumgleich erscheinen. Keine physische Projektionskorrektheit behauptet.
 Rücknahme: ausschließlich den neuen `floor_tabletop_control`-COMP löschen.
+Nur die letzte Änderung der Geometrieauswahl lässt sich im selben Textport
+zurücknehmen:
+
+```python
+_node, _expr, _mode = _aisi_control_geometry_backup
+_node.par.geometry.expr = _expr
+_node.par.geometry.mode = _mode
+```

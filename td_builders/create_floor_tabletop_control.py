@@ -13,14 +13,26 @@ ROLES = ('table_source_geo', 'table_motion_line_tabletop_geo')
 
 
 def geometry_expression():
-    """Select live Rect replicas; never include the template or target geos."""
+    """Resolve the five supported table slots directly, without a child scan."""
+    slots = ', '.join('op(%r)' % (LAYOUT_PATH+'/item%d' % index) for index in range(1,6))
     return (
-        "' '.join(geo.path for item in op(%r).children "
-        "if item.name.startswith('item') and item.name[4:].isdigit() "
-        "and item.par.Tabletype.eval() == 'rect' "
+        "' '.join(geo.path for item in (%s) "
+        "if item is not None and item.par.Tabletype.eval() == 'rect' "
         "for name in %r for geo in [item.op(name)] if geo is not None)"
-        % (LAYOUT_PATH, ROLES)
+        % (slots, ROLES)
     )
+
+
+def update_control_selection(resolve):
+    """Update only this viewer's selection; preserve its nodes and settings."""
+    comp = resolve(LAYOUT_PATH+'/'+CONTROL_NAME)
+    overlay = comp.op('render_source_and_tabletop_motion') if comp is not None else None
+    if overlay is None:
+        raise RuntimeError('Bestehender Kontroll-Renderer fehlt; nichts geändert.')
+    previous = (overlay, overlay.par.geometry.expr, overlay.par.geometry.mode)
+    overlay.par.geometry.expr = geometry_expression()
+    return previous, {'control': comp.path, 'updated': overlay.path,
+                      'table_slots': 5, 'selection': 'explicit_item_paths', 'saved': False}
 
 
 def create_control(resolve, symbols):
@@ -33,8 +45,8 @@ def create_control(resolve, symbols):
     renderer = layout.op('render_floor')
     if floor is None or renderer is None:
         raise RuntimeError('Bestehender Floor-TOP oder render_floor fehlt.')
-    items = [n for n in layout.children if n.name.startswith('item') and n.name[4:].isdigit()
-             and n.par.Tabletype.eval() == 'rect']
+    items = [layout.op('item%d' % i) for i in range(1,6)]
+    items = [n for n in items if n is not None and n.par.Tabletype.eval() == 'rect']
     if not items or any(item.op(role) is None for item in items for role in ROLES):
         raise RuntimeError('Rect-Instanzen mit Source- und Tabletop-Motion-Geometrie fehlen.')
     camera_value = renderer.par.camera.eval()
@@ -117,9 +129,12 @@ if callable(_resolve):
                 ('containerCOMP', 'selectTOP', 'compositeTOP', 'outTOP')}
     if any(value is None for value in _symbols.values()):
         raise RuntimeError('TouchDesigner-Operatortypen fehlen; bitte im TD-Textport ausführen.')
-    _report = create_control(_resolve, _symbols)
+    if _resolve(LAYOUT_PATH+'/'+CONTROL_NAME) is None:
+        _report = create_control(_resolve, _symbols)
+    else:
+        _aisi_control_geometry_backup, _report = update_control_selection(_resolve)
     print(json.dumps(_report, indent=2))
     print('Kontrolle: floor_tabletop_control (Container COMP) → out_control (Out TOP).')
-    print('Keine .toe gespeichert. Keine bestehende Ausgabe geändert.')
+    print('Keine .toe gespeichert. Keine Projektorausgabe geändert.')
 elif __name__ == '__main__':
     raise RuntimeError('Dieses Skript im TouchDesigner-Textport ausführen.')

@@ -92,7 +92,8 @@ Synthetische Chairs sind bisher nur für Input umgesetzt. Nächster Implementier
 ## Kontrollansicht für Layout-Stichproben
 
 - [x] Manueller Helfer für `comp_layout_proposal/floor_tabletop_control` vorbereitet: Floor inkl. optionaler Chairs + bestehende blaue Tabletop-Source-Konturen + Tabletop-Motion-Pfeile. Syntax/Struktur offline geprüft, keine bestehenden Ausgaben geändert. [Anleitung](docs/TOUCHDESIGNER_LAYOUT_CONTROL.md).
-- [ ] Helfer im TD-Textport ausführen und raumgleiche Überlagerung im Operator-Viewer prüfen; noch kein Live-Aufbau oder Speichern erfolgt.
+- [x] Kontroll-COMP laut Johannes' Screenshot angelegt. Geometrieauswahl auf konkrete Slots `item1` bis `item5` begrenzt; Aktualisierung bestehender Kontrollansicht offline geprüft.
+- [ ] Helfer erneut im TD-Textport ausführen: Reduktion der Referenzlinien und raumgleiche Überlagerung im Operator-Viewer prüfen. Keine automatische Speicherung.
 
 ## NEXT — Manual layout validation
 
