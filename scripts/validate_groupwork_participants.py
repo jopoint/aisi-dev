@@ -45,6 +45,7 @@ def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--fixtures',type=Path,help='Gespeicherter validation.json-Bericht als Quelle')
+    parser.add_argument('--policy', choices=('group_capacity','few_tables','regular_seats'), default='group_capacity')
     args=parser.parse_args();args.output.mkdir(parents=True,exist_ok=True)
     root=Path(__file__).resolve().parents[1]
     sources={'editor':scene_payload(make_default_tables(),chairs=[],persons=[]),
@@ -55,8 +56,8 @@ def main():
     records=[];examples=[];started=time.monotonic()
     for name,raw in sources.items():
         state=build_scene_state_from_dict(_normalize_scene_for_aisi(raw),learning_format='groupwork')
-        for people,groups,policy in ((5,1,'few_tables'),(5,1,'regular_seats'),(7,2,'few_tables'),
-                                    (10,2,'few_tables'),(15,5,'few_tables')):
+        for people,groups in ((3,1),(5,1),(7,2),(10,2),(15,2),(15,5)):
+            policy = args.policy
             try:
                 plan=plan_participant_groupwork(state,people,groups,table_policy=policy)
             except LayoutConstraintError as exc:
@@ -71,8 +72,8 @@ def main():
             assert plan.targets==list(reversed(reversed_plan.targets))
             assert plan.chairs==reversed_plan.chairs and plan.clusters==reversed_plan.clusters
             records.append(dict(source=name,participants=people,groups=groups,policy=policy,passed=True,plan=asdict(plan)))
-            label={'few_tables':'wenige Tische','regular_seats':'Längsseiten bevorzugt'}[policy]
-            if name=='editor' and (people==5 or people==10):examples.append((state,plan,f'{people} Personen · {groups} Gruppen · {label}'))
+            label={'group_capacity':'Einzeltisch bis drei, danach Pair','few_tables':'wenige Tische','regular_seats':'Längsseiten bevorzugt'}[policy]
+            if name=='editor' and (people,groups) in ((3,1),(5,1),(15,2)):examples.append((state,plan,f'{people} Personen · {groups} Gruppen · {label}'))
             print(name,people,groups,policy,'bestanden',round(time.monotonic()-started,1),'s',flush=True)
     fig,axes=plt.subplots(1,len(examples),figsize=(6*len(examples),6))
     for ax,(state,plan,title) in zip(axes,examples):plot(ax,state,plan,title)

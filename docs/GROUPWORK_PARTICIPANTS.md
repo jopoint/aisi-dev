@@ -78,9 +78,16 @@ Die Tischwahl ist in zwei überprüfbaren Varianten vorbereitet:
   regulären Längsseitenplätzen nutzen; die drei Personen eines Singletons sitzen
   dabei über beide Längsseiten verteilt, nicht verdichtet an einer Seite.
 
-Johannes bestätigt `few_tables`: fünf Personen bevorzugt am Einzel-Rect mit
-`2 + 2 + 1`. Diese Priorität ist der Standard des Modells und der opt-in Vorschau.
-`regular_seats` bleibt als explizite Offline-Vergleichsoption verfügbar.
+Johannes aktualisiert die Tischwahl nach der Live-Stichprobe: drei Personen
+optimal am Einzel-Tisch; bei mehr Personen pro Gruppe zuerst ein Pair versuchen.
+Standard ist jetzt `group_capacity`: überbelegte Singletons vermeiden,
+größeren Gruppen ein Pair geben, dann geringe Verdichtung, wenige Tische und
+wenige Stirnseitenplätze. Es gilt weiterhin die vollständige Geometrieprüfung.
+Drei ist keine harte Kapazitätsgrenze: Wenn kein Pair verfügbar oder passend ist,
+bleibt ein geometrisch gültiger Singleton eine nachrangige Alternative.
+Die frühere Standardwahl `few_tables` sowie `regular_seats` bleiben explizite
+Offline-Vergleichsoptionen. `2 + 2 + 1` gilt für fünf Personen am tatsächlichen
+Singleton weiterhin, die neue Tischwahl versucht jedoch zuerst ein Pair.
 
 ## Vorschau und OSC
 
@@ -109,8 +116,8 @@ Keine neuen Netzwerkpakete, keine Aussage zur physischen Darstellung.
 
 Die laufende Anwendung wurde nicht neu geladen und kein OSC-Paket ins laufende
 TD-Projekt gesendet. Nächster Block: interaktive Groupwork-Einzelprüfung mit
-bestehendem Sender nach manuellem Neuladen, insbesondere fünf Personen/eine Gruppe
-bei 100 %, dann Count-/Gruppenwechsel und Teilstärken. Physische Gruppenerkennbarkeit
+bestehendem Sender nach manuellem Neuladen, insbesondere fünf Personen/eine Gruppe als Pair
+und 15 Personen/zwei Gruppen mit genutzten Zusatztischen bei 100 %, dann Count-/Gruppenwechsel und Teilstärken. Physische Gruppenerkennbarkeit
 und Projektion bleiben separat offen. Input, Discussion, Study, Tracking,
 Kalibrierung und Projektorkonfiguration bleiben unverändert.
 
@@ -123,3 +130,18 @@ Sitzgeometrietests erneut bestanden (Singleton-Counts 1–8 bei vier Winkeln,
 Sieben-Personen-Clusterbeispiel und Identität der Clusterpartitionen). Zusätzlich
 Pair-Counts 4–8 vollständig geprüft: vier reguläre Längsseitenplätze, danach
 bis zu vier Stirnseitenplätze, keine verdichtete Längsseite. Raumprüfung offen.
+
+## Nachweis der aktualisierten Tischwahl
+
+16 fokussierte Groupwork-Tests bestanden, einschließlich der neuen
+Singleton-/Pair-Auswahl, nachrangigem Einzel-Tisch bei fehlenden weiteren
+Tischen, Teilstärken mit gebundenen Rollen und lokalem OSC-Adapter.
+12/12 Offline-Fälle bestanden: Editor und gespeicherte Live-Quelle,
+`3/1`, `5/1`, `7/2`, `10/2`, `15/2`, `15/5`, jeweils bei 100 %,
+mit deterministischer Wiederholung und umgekehrter Scene Order.
+Bei `15/2` werden zwei Pairs für Gruppen mit acht und sieben Personen genutzt;
+ein Tisch bleibt geparkt, keine verdichtete Längsseite erforderlich.
+Bericht und Vergleichsplot:
+`data/aisi/debug/groupwork_participant_preview_2026-10-08/pair_priority/`.
+Die aktuelle Live-Quelldatei wurde zusätzlich offline für `15/2` geprüft und
+als reproduzierbare Quelle gespeichert. Kein Senderneustart, kein TD-Zugriff.

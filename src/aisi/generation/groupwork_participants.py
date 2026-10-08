@@ -218,7 +218,17 @@ def _profile_key(profile, policy):
     dense = sum(max(0, count-(6 if size == 1 else 8)) for _,size,count in profile)
     ends = sum(min(max(0,count-4),2 if size == 1 else 4) for _,size,count in profile)
     tables = sum(size for _,size,_ in profile)
-    rank = (dense,ends,tables) if policy == 'regular_seats' else (tables,dense,ends)
+    if policy == 'group_capacity':
+        # Three is the preferred singleton occupancy, not a hard capacity.
+        # Larger social groups should first receive a pair when it fits.
+        singleton_excess = sum(max(0,count-3) for _,size,count in profile if size == 1)
+        group_totals = {g:sum(count for owner,_,count in profile if owner == g)
+                        for g,_,_ in profile}
+        missing_pair = sum(total > 3 and not any(owner == g and size == 2
+                           for owner,size,_ in profile) for g,total in group_totals.items())
+        rank = (singleton_excess,missing_pair,dense,tables,ends)
+    else:
+        rank = (dense,ends,tables) if policy == 'regular_seats' else (tables,dense,ends)
     return rank, max(count for _,_,count in profile), profile
 
 
@@ -326,12 +336,12 @@ def _complete_parking(state, plan):
     return plan
 
 
-def plan_participant_groupwork(state, participants, number_of_groups, *, table_policy="few_tables"):
+def plan_participant_groupwork(state, participants, number_of_groups, *, table_policy="group_capacity"):
     """Offline full-strength plan; policy explicitly resolves table-use preference."""
     if type(participants) is not int or type(number_of_groups) is not int:
         raise LayoutConstraintError("Teilnehmerzahl und Gruppenzahl müssen ganze Zahlen sein.")
     ActivityParameters(participants,number_of_groups).validate('groupwork')
-    if table_policy not in ('regular_seats','few_tables'):
+    if table_policy not in ('regular_seats','few_tables','group_capacity'):
         raise LayoutConstraintError("Unbekannte Groupwork-Tischpräferenz.")
     if not 1 <= len(state.tables) <= 5 or any(t.table_type != 'rect' for t in state.tables):
         raise LayoutConstraintError("Teilnehmendenbasierte Groupwork-Planung benötigt ein bis fünf Rect-Tische.")

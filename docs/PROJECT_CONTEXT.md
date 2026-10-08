@@ -216,8 +216,10 @@ Die bisherigen Insel-`groups` des Geometriegenerators sind keine vollständige
 Teilnehmergruppenzuordnung. Reguläre Stirnseitenplätze erhalten Vorrang vor
 verdichteten Längsseitenplätzen; zusätzliche kanonische Stirnseitenstreifen
 werden im neuen Offline-Modell bei Belegung geprüft. 65 fokussierte Tests und
-zehn Integrationsfälle bestanden. Johannes bestätigt wenige Tische vor
-Sitzplatzpräferenz (`few_tables`, fünf Personen mit `2 + 2 + 1`). Die opt-in
+zehn Integrationsfälle bestanden. Johannes aktualisiert die Tischwahl nach
+der Live-Stichprobe: drei Personen optimal am Einzel-Tisch, darüber bevorzugt
+ein Pair, sofern passend. Standard `group_capacity` ersetzt `few_tables`;
+nutzbare Stirnseiten bleiben vor verdichteten Längsseiten bevorzugt. Die opt-in
 Vorschau/OSC-Anbindung ist im Code ergänzt; Stärke 0 ohne Chairs/Reparatur,
 positive Teilstärken mit Blend-before-repair und gebundenen Rollen. Über 15
 Chairs werden im Adapter als technische Ausgabegrenze abgelehnt.

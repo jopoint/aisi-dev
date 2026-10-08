@@ -121,6 +121,21 @@ class GroupworkPlanningTests(unittest.TestCase):
         self.assertEqual(sum(len(c.table_ids) for c in preferred.clusters),2)
         self.assertTrue(all(c['seat_kind']=='regular_long' for c in preferred.chairs))
 
+    def test_default_prefers_three_per_singleton_and_pairs_for_larger_groups(self):
+        state=editor_state()
+        for people,groups,expected_sizes in ((3,1,[1]),(4,1,[2]),(5,1,[2]),(15,2,[2,2])):
+            with self.subTest(people=people,groups=groups):
+                plan=plan_participant_groupwork(state,people,groups)
+                validate_groupwork_plan(state,plan)
+                self.assertEqual(sorted(len(c.table_ids) for c in plan.clusters),expected_sizes)
+                self.assertTrue(all(c.participants<=3 for c in plan.clusters if len(c.table_ids)==1))
+                self.assertFalse(any(c['seat_kind']=='dense_long' for c in plan.chairs))
+        # Three remains an optimum: a single available table may still seat
+        # five, using ends before density rather than inventing a hard limit.
+        fallback=plan_participant_groupwork(single_state(),5,1)
+        self.assertEqual([len(c.table_ids) for c in fallback.clusters],[1])
+        self.assertEqual(Counter(c['seat_kind'] for c in fallback.chairs),{'regular_long':4,'regular_end':1})
+
     def test_invalid_requests_are_rejected_before_search(self):
         state=editor_state()
         for people,groups in ((0,1),(3,0),(3,4),(10,6),(41,1),(3.5,1)):

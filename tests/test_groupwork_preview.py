@@ -21,10 +21,10 @@ class GroupworkPreviewTests(unittest.TestCase):
         self.scene = scene_payload(make_default_tables(), chairs=[], persons=[])
         self.parameters = dict(adaptive_layout_preview=True, participants=5, number_of_groups=1)
 
-    def test_default_is_one_table_two_two_one_and_scene_order(self):
+    def test_default_adds_pair_above_three_and_keeps_scene_order(self):
         layout = compute_synthetic_layout(self.scene, 'groupwork', 1., self.parameters)
-        self.assertEqual(len(layout.active_table_ids), 1)
-        self.assertEqual(len(layout.parked_table_ids), 4)
+        self.assertEqual(len(layout.active_table_ids), 2)
+        self.assertEqual(len(layout.parked_table_ids), 3)
         self.assertEqual(Counter(c['seat_kind'] for c in layout.chairs), {'regular_long':4,'regular_end':1})
         other = deepcopy(self.scene); other['tables'].reverse()
         reversed_layout = compute_synthetic_layout(other, 'groupwork', 1., self.parameters)

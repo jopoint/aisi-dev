@@ -166,10 +166,18 @@ vollständige Chair-Kreisprüfung umgesetzt. Räumliche Zuordnung vorläufig
 relativ geprüft: Verbindungskanten zwischen Clustern derselben Gruppe müssen
 kürzer als sämtliche gruppenübergreifenden Clusterzentrum-Abstände sein.
 Das ersetzt keinen visuellen oder physischen Nachweis eindeutiger Gruppenzugehörigkeit.
-Tischwahl bestätigt durch Johannes: möglichst wenige Tische (`few_tables`),
-danach reguläre Längsseiten vor Stirnseiten vor Verdichtung. Fünf Personen
-nutzen bevorzugt einen Einzel-Rect mit `2 + 2 + 1`; zusätzliche Tische nur,
-wenn die vollständige Geometrie oder Kapazität sie erfordert.
+Tischwahl aktualisiert nach Johannes' Live-Stichprobe: optimal drei Personen
+an einem einzelnen Tisch. Bei mehr als drei Personen pro Teilnehmergruppe
+zuerst versuchen, einen weiteren Tisch zu einem Pair dazuzustellen.
+Die neue Standardpriorität `group_capacity` vermeidet zuerst Einzel-Cluster
+mit mehr als drei Personen, bevorzugt für größere Gruppen ein Pair, dann
+geringe Verdichtung, wenige Tische und wenige Stirnseitenplätze.
+Geometrisch unpassende Pairs werden nicht ausgegeben; drei bleibt ein Optimum,
+keine harte Kapazitätsgrenze. Die frühere Standardwahl `few_tables` ist damit
+abgelöst und bleibt nur als explizite Offline-Vergleichsoption verfügbar.
+`2 + 2 + 1` gilt weiterhin als Sitzregel, wenn fünf Personen tatsächlich einen
+Einzel-Tisch nutzen müssen; bei verfügbaren passenden Tischen wird nun ein Pair
+versucht. Stirnseiten werden weiterhin vor verdichteten Längsseiten belegt.
 Die opt-in Vorschau ist an den bestehenden OSC-Adapter angebunden; über 15
 Teilnehmende werden dort wegen der technischen TD-Slots ausdrücklich abgelehnt.
 Das Offline-Modell behält seine separate geometrische Kapazität.
