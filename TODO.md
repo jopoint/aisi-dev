@@ -66,7 +66,7 @@ aufgeschobene Raumprüfung sind getrennt von der bestandenen Offline-Prüfung.
 
 ## NEXT — Extend participant-based planning to other formats
 
-Synthetische Chairs sind für Input und Groupwork umgesetzt. Die aktuelle Groupwork-Stichprobe `10/4` ist laut Johannes visuell passend. Der gemeinsame Groupwork-Offline-Abschlusscheck ist bestanden (130/130 Fälle). Die neue Konturreparatur für `13/4`–`15/4` benötigt noch eine Live-Stichprobe; danach folgt die Chair-Implementierung für Discussion. Der gemeinsame Formatwechsel-Check folgt nach den Einzelvalidierungen. Physische Raumprüfungen bleiben separat offen.
+Synthetische Chairs sind für Input und Groupwork umgesetzt. Die aktuelle Groupwork-Stichprobe `10/4` ist laut Johannes visuell passend. Der gemeinsame Groupwork-Offline-Abschlusscheck ist bestanden (130/130 Fälle). Johannes bestätigt am 2026-10-09 einen guten Gesamteindruck von Groupwork. Die Rückmeldung ist qualitativ; konkrete Counts und eine vollständige interaktive Einzelvalidierung sind damit nicht zusätzlich nachgewiesen. Nächster Entwicklungsblock ist die Chair-Implementierung für Discussion. Der gemeinsame Formatwechsel-Check folgt nach den Einzelvalidierungen. Physische Raumprüfungen bleiben separat offen.
 
 ### Groupwork
 
