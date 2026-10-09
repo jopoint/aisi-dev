@@ -96,6 +96,8 @@ Synthetische Chairs sind für Input und Groupwork umgesetzt. Die aktuelle Groupw
 
 ### Discussion
 
+- [ ] Chair-Größe nach visuellem Vergleich entscheiden: drei Plätze pro Tisch gewünscht, eigene Tischkantenberührung vorläufig erlaubt. 50-cm-Kreise überschreiten die aktuelle Rundung bei 52-cm-Mittelpunktabstand um rund 0,51 cm; 45-cm-Kreise passen. Noch keine Größen-/Ringänderung umgesetzt. [Vergleich](docs/DISCUSSION_CHAIRS.md).
+
 - [ ] Derive Chairs from the outward seating sides of the inward-facing ring tables.
 - [ ] Define presentation/audience roles only if required by the format.
 - [ ] Determine Discussion capacity from its geometry rather than copying the Input limit of `15`.
