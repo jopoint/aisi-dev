@@ -441,7 +441,7 @@ def prepare_scene_output(
         targets = layout.table_targets
         # The explicitly enabled participant preview owns its review chairs.  The
         # normal pipeline continues to pass through the scene's chair source.
-        if layout_mode in {"input", "groupwork"}:
+        if layout_mode in {"input", "groupwork", "discussion"}:
             chairs = layout.chairs
     else:
         # Keep the established function boundary intact for normal layout

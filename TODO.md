@@ -66,7 +66,7 @@ aufgeschobene Raumprüfung sind getrennt von der bestandenen Offline-Prüfung.
 
 ## NEXT — Extend participant-based planning to other formats
 
-Synthetische Chairs sind für Input und Groupwork umgesetzt. Die aktuelle Groupwork-Stichprobe `10/4` ist laut Johannes visuell passend. Der gemeinsame Groupwork-Offline-Abschlusscheck ist bestanden (130/130 Fälle). Johannes bestätigt am 2026-10-09 einen guten Gesamteindruck von Groupwork. Die Rückmeldung ist qualitativ; konkrete Counts und eine vollständige interaktive Einzelvalidierung sind damit nicht zusätzlich nachgewiesen. Nächster Entwicklungsblock ist die Chair-Implementierung für Discussion. Der gemeinsame Formatwechsel-Check folgt nach den Einzelvalidierungen. Physische Raumprüfungen bleiben separat offen.
+Synthetische Chairs sind für Input und Groupwork umgesetzt. Die aktuelle Groupwork-Stichprobe `10/4` ist laut Johannes visuell passend. Der gemeinsame Groupwork-Offline-Abschlusscheck ist bestanden (130/130 Fälle). Johannes bestätigt am 2026-10-09 einen guten Gesamteindruck von Groupwork. Die Rückmeldung ist qualitativ; konkrete Counts und eine vollständige interaktive Einzelvalidierung sind damit nicht zusätzlich nachgewiesen. Discussion-Chairs sind inzwischen offline implementiert und geprüft; die interaktive Einzelvalidierung ist als Nächstes offen. Der gemeinsame Formatwechsel-Check folgt nach den Einzelvalidierungen. Physische Raumprüfungen bleiben separat offen.
 
 ### Groupwork
 
@@ -96,11 +96,12 @@ Synthetische Chairs sind für Input und Groupwork umgesetzt. Die aktuelle Groupw
 
 ### Discussion
 
-- [ ] Chair-Größe nach visuellem Vergleich entscheiden: drei Plätze pro Tisch gewünscht, eigene Tischkantenberührung vorläufig erlaubt. 50-cm-Kreise überschreiten die aktuelle Rundung bei 52-cm-Mittelpunktabstand um rund 0,51 cm; 45-cm-Kreise passen. Noch keine Größen-/Ringänderung umgesetzt. [Vergleich](docs/DISCUSSION_CHAIRS.md).
-
-- [ ] Derive Chairs from the outward seating sides of the inward-facing ring tables.
-- [ ] Define presentation/audience roles only if required by the format.
-- [ ] Determine Discussion capacity from its geometry rather than copying the Input limit of `15`.
+- [x] Johannes bestätigt am 2026-10-09 die bisherigen 50-cm-Chairs: bis zu drei pro Tisch; reine Berührung der eigenen Tischkante vorläufig erlaubt. Der rund 0,51 cm große Überstand an Sitzflächenrundungen ist akzeptiert. [Details](docs/DISCUSSION_CHAIRS.md).
+- [x] Synthetische Chairs aus der äußeren Längsseite des nach innen gerichteten Rect-Rings ableiten; Teilnehmer gleichmäßig auf alle Tische verteilen. Opt-in-Vorschau mit bestehendem OSC-Vertrag integriert.
+- [x] Kapazität geometrisch auf drei Personen pro Rect-Tisch begrenzen, maximal 15 bei fünf Tischen. Strikte gemeinsame ROI-/Kollisionsprüfung; gemeinsame Phase/Mittelpunkt berücksichtigen volle Chair-Kreise.
+- [x] Offline: 90 gemeinsame Geometriefälle aus zwei Ausgangsszenen; Counts, Identität/Scene Order, Determinismus, Größen-/Kapazitätsablehnung und OSC-Ausgabe ohne Netzwerk geprüft.
+- [ ] Discussion mit Chairs interaktiv bei 100 % im Room Editor, Learning-Format-Interface und TouchDesigner prüfen; eigene Tischberührung und geringe Rundungsüberschreitung dabei beurteilen.
+- [ ] Präsentations-/Publikumsrollen nur definieren, falls das Format sie benötigt.
 
 ## Kontrollansicht für Layout-Stichproben
 

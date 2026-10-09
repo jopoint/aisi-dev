@@ -261,6 +261,10 @@ Status: **Accepted**
 - Jeder Rect-Discussion-Tisch erhält zwei außen abgerundete Längsseiten-Sitz-/Bewegungsflächen mit `50 cm` Tiefe.
 - Diese Flächen müssen im fertigen `100-%`-Ziel vollständig in der ROI liegen und dürfen dort keinen anderen Tisch blockieren.
 - Für Count 5 darf der gemeinsame Mittelpunkt geringfügig von der ROI-Mitte abweichen, damit Ring und Flächen passen.
+- Johannes bestätigt am 2026-10-09 für die synthetische Chair-Vorschau: 50 cm Durchmesser beibehalten, bis zu drei Chairs auf der äußeren Längsseite pro Tisch, maximal 15 an fünf Rect-Tischen. Teilnehmer werden gleichmäßig verteilt; alle Tische bleiben aktiv.
+- Reine Berührung der eigenen Tischkante ist vorläufig zulässig. Der visuell geprüfte Rundungsüberstand von rund 0,51 cm wird toleriert, ausschließlich an den abgerundeten Sitzflächenecken. Gerade Flächengrenzen, vollständige Chair-Kreise innerhalb der ROI und fremde Tisch-/Chair-Kollisionen bleiben strikt.
+- Die bestehende gemeinsame Ringrotation/Mittelpunktanpassung berücksichtigt bei Bedarf zusätzliche volle Chair-Grenzen. Keine zweite Slotpermutation; Source-Reihenfolge und Identitäten bleiben erhalten.
+- Physische Beurteilung dieser beiden tolerierten Berührungen bleibt offen; dies ist keine Projektions- oder Raumfreigabe.
 
 ## D010 — Scout Groupwork semantics
 

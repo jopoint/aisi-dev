@@ -470,6 +470,7 @@ def _layout_rect_groupwork_templates(
 def _layout_rect_discussion_templates(
     scene_state: SceneState,
     tables: list[TableState],
+    *, candidate_filter=None, candidate_bounds=None,
 ) -> tuple[list[TableTarget], list[str]]:
     """Arrange rect tables on a regular inward-facing polygon around the ROI center."""
     center = scene_state.roi.center
@@ -512,6 +513,7 @@ def _layout_rect_discussion_templates(
             scene_state,
             ordered_tables,
             radius,
+            **({"candidate_filter":candidate_filter, "candidate_bounds":candidate_bounds} if candidate_filter is not None else {}),
         )
     else:
         phase_strategy = "rect_discussion_ring_phase=continuous_minimax_motion"
@@ -684,6 +686,7 @@ def _rect_discussion_clearance_constrained_center_and_phase(
     scene_state: SceneState,
     tables: list[TableState],
     radius: float,
+    *, candidate_filter=None, candidate_bounds=None,
 ) -> tuple[tuple[float, float], float]:
     """Fit five inward-facing singleton zones while retaining one common center.
 
@@ -710,6 +713,8 @@ def _rect_discussion_clearance_constrained_center_and_phase(
                 clearance_depth_cm=DISCUSSION_SEAT_CLEARANCE_DEPTH_CM,
             )
         ]
+        if candidate_bounds is not None:
+            regions.append(candidate_bounds(relative_targets))
         min_x = min(x for region in regions for x, _ in region)
         max_x = max(x for region in regions for x, _ in region)
         min_y = min(y for region in regions for _, y in region)
@@ -726,6 +731,8 @@ def _rect_discussion_clearance_constrained_center_and_phase(
         )
         targets = _rect_discussion_ring_targets(tables, center, radius, phase)
         if not _rect_discussion_singleton_clearances_valid(scene_state, targets):
+            continue
+        if candidate_filter is not None and not candidate_filter(targets):
             continue
         distances = [
             math.hypot(table.x - target.target_x, table.y - target.target_y)

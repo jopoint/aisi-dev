@@ -721,6 +721,34 @@ def compute_synthetic_layout(
             active_table_ids=tuple(t.table_id for t in state.tables if t.table_id in active),
             parked_table_ids=plan.parked_table_ids,
         )
+    if preview_enabled and learning_format == "discussion":
+        from aisi.generation.discussion_chairs import plan_discussion_chairs
+        from aisi.generation.adaptive_layout_v1 import LayoutConstraintError
+        from aisi.input.scene_loader import build_scene_state_from_dict
+        from aisi.core.models import TableTarget
+        participants=parameters.get("participants",4)
+        if type(participants) is not int or participants<1:
+            raise LayoutConstraintError("Discussion benötigt eine positive ganzzahlige Teilnehmerzahl.")
+        if participants>15:
+            raise LayoutConstraintError("Discussion-Ausgabe überschreitet die technischen 15 TD-Chair-Slots; keine Kürzung.")
+        strength=float(transformation_strength)
+        if not math.isfinite(strength):
+            raise LayoutConstraintError("Ungültige Transformationsstärke.")
+        strength=max(0.,min(1.,strength))
+        state=build_scene_state_from_dict(_normalize_scene_for_aisi(scene),learning_format="discussion")
+        if strength==0.:
+            return SyntheticLayoutOutput(table_targets=[dict(x_cm=t.x,y_cm=t.y,rotation_deg=t.rot_deg) for t in state.tables],chairs=[])
+        if strength<1.:
+            # Retain the existing blend-before-repair path; reject clearly if
+            # its partial poses cannot accommodate the requested outside chairs.
+            poses=_compute_with_aisi_pipeline(scene,"discussion",strength)
+            targets=[TableTarget(t.table_id,p["x_cm"],p["y_cm"],source_rot_deg=t.rot_deg,target_rot_deg=p["rotation_deg"])
+                     for t,p in zip(state.tables,poses)]
+            plan=plan_discussion_chairs(state,participants,targets)
+        else:
+            plan=plan_discussion_chairs(state,participants)
+        return SyntheticLayoutOutput(table_targets=[dict(x_cm=t.target_x,y_cm=t.target_y,rotation_deg=t.target_rot_deg)
+            for t in plan.targets],chairs=plan.chairs,active_table_ids=tuple(t.table_id for t in state.tables),parked_table_ids=())
     if preview_enabled and learning_format == "input":
         table_plan = _participant_aware_input_preview(scene, transformation_strength, parameters)
         chairs = plan_synthetic_input_chairs(scene, table_plan, int(parameters.get("participants", 4)))
