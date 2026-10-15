@@ -125,7 +125,10 @@ Der Chair-Durchmesser bleibt bei 50 cm.
 
 Die physischen Tische liegen exakt aneinander. Die 170 × 90 cm großen Floor-Konturen
 reichen jedoch je 5 cm über die gemeinsame Kante hinaus. Dafür ist eine lokale,
-rücknehmbare Konturbegrenzung vorbereitet; noch nicht im laufenden Graph angewendet.
+rücknehmbare Konturbegrenzung umgesetzt und von Johannes live angewandt. Die
+erste Fassung ließ die Innenkante verschwinden; das vorbereitete Update ergänzt
+eine gemeinsame gestrichelte Trennlinie, damit beide Tischobjekte erkennbar bleiben.
+Dieses Update ist noch manuell anzuwenden.
 [Textport-Anleitung und Offline-Nachweis](TOUCHDESIGNER_JOINED_FLOOR_CONTOURS.md).
 
 ## Offene Prüfung

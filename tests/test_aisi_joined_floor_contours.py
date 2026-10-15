@@ -9,7 +9,7 @@ from aisi.core.table_geometry import table_world_footprint
 from aisi.analysis.rect_groupwork_adaptive_prototype import _polygons_overlap_with_positive_area
 from td_builders.aisi_study_visual_style import (
     rect_floor_join_side, joined_rect_floor_segments, floor_join_side_for_geo,
-    shared_callback_source, TD_UNITS_PER_CM,
+    shared_callback_source, TD_UNITS_PER_CM, joined_rect_seam_segments,
 )
 from td_builders.study_target_floor import rect_target_floor_dash_segments
 from td_builders import repair_aisi_joined_floor_contours as repair
@@ -119,7 +119,7 @@ class JoinedFloorTests(unittest.TestCase):
             a=list(polygons(segments,(0,0),angle));b=list(polygons(segments,center,angle))
             self.assertTrue(any(_polygons_overlap_with_positive_area(x,y) for x in a for y in b))
             left=joined_rect_floor_segments(segments,1);right=joined_rect_floor_segments(segments,-1)
-            self.assertEqual((len(left),len(right)),(8,8))
+            self.assertEqual((len(left),len(right)),(12,12))
             a=list(polygons(left,(0,0),angle));b=list(polygons(right,center,angle))
             self.assertFalse(any(_polygons_overlap_with_positive_area(x,y) for x in a for y in b))
         self.assertEqual(joined_rect_floor_segments(segments,0),segments)
@@ -169,7 +169,7 @@ class JoinedFloorTests(unittest.TestCase):
             a=Painter();b=Painter();old['paint'](a,role);namespace['paint'](b,role)
             self.assertEqual([[p.point.P for p in poly] for poly in a.points],[[p.point.P for p in poly] for poly in b.points])
         painter=Painter();painter.par=NS(Joiningside=parameter(1))
-        namespace['paint'](painter,'target_floor');self.assertEqual(len(painter.points),8)
+        namespace['paint'](painter,'target_floor');self.assertEqual(len(painter.points),12)
         namespace['paint'](painter,'target_tabletop');self.assertEqual(len(painter.points),12)
 
     def test_manual_helper_is_idempotent_and_reversible(self):
@@ -182,6 +182,34 @@ class JoinedFloorTests(unittest.TestCase):
         repair.restore_joined_floor_contours(scene.resolve)
         self.assertEqual(scene.style.text,original)
         self.assertTrue(all(not item.script.customPages for item in scene.items))
+
+    def test_upgrade_from_hidden_seam_keeps_the_original_backup(self):
+        scene=Scene();original=scene.style.text
+        repair.repair_joined_floor_contours(scene.resolve,'offline')
+        scene.style.text=shared_callback_source(shared_seam=False)
+        result=repair.repair_joined_floor_contours(scene.resolve,'offline')
+        self.assertTrue(result['shared_separator'])
+        self.assertEqual(scene.style.text,shared_callback_source())
+        self.assertEqual(scene.fetch(repair.BACKUP_KEY,None)['text'],original)
+        repair.restore_joined_floor_contours(scene.resolve)
+        self.assertEqual(scene.style.text,original)
+        scene=Scene();repair.repair_joined_floor_contours(scene.resolve,'offline')
+        previous=shared_callback_source(shared_seam=False);scene.style.text=previous
+        scene.items[1].script.par.Joiningside.eval=lambda:99
+        with self.assertRaises(ValueError):repair.repair_joined_floor_contours(scene.resolve,'offline')
+        self.assertEqual(scene.style.text,previous)
+
+    def test_shared_separator_is_one_full_stroke_from_two_nonoverlapping_halves(self):
+        parts=rect_target_floor_dash_segments()
+        first=joined_rect_seam_segments(parts,1)
+        second=joined_rect_seam_segments(parts,-1)
+        self.assertEqual((len(first),len(second)),(4,4))
+        for a,b in zip(first,second):
+            self.assertAlmostEqual(a.width_td,b.width_td)
+            self.assertAlmostEqual(a.x_td,b.x_td)
+            self.assertAlmostEqual(a.depth_td+b.depth_td,2.5*TD_UNITS_PER_CM)
+            self.assertAlmostEqual(a.y_td+a.depth_td/2,40*TD_UNITS_PER_CM)
+            self.assertAlmostEqual(b.y_td-b.depth_td/2+80*TD_UNITS_PER_CM,40*TD_UNITS_PER_CM)
 
     def test_preflight_and_partial_failure_preserve_original(self):
         scene=Scene();original=scene.style.text

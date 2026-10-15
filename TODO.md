@@ -101,7 +101,8 @@ Synthetische Chairs sind für Input und Groupwork umgesetzt. Die aktuelle Groupw
 - [x] Pentagon-Belegung am 2026-10-15 angepasst: 13–15 Personen mit zehn Längsseitenplätzen und drei bis fünf Zwischenplätzen; höchstens zwei direkt je Längsseite. Kanonische Stirnkanten, volle Zwischenflächen und ROI-/Kollisionsprüfung wiederverwendet.
 
 - [x] Überkreuzte Floor-Naht der Zweiergruppe offline auf die 5-cm-Konturzugabe je Tisch zurückgeführt. Rücknehmbarer Textport-Helfer vorbereitet und mit zehn Tests / 30 Fällen geprüft; keine Tischposen geändert. [Anleitung](docs/TOUCHDESIGNER_JOINED_FLOOR_CONTOURS.md).
-- [ ] Floor-Naht-Helfer im aktuellen TD-Graph ausführen und 6→7→6 sowie Moduswechsel visuell bestätigen; keine automatische Speicherung.
+- [x] Erste Floor-Naht-Korrektur von Johannes live ausgeführt: blendete die Innenkante aus, wodurch die Zweiergruppe wie ein Tisch wirkte. Update mit einer gemeinsamen gestrichelten Trennlinie vorbereitet; zwölf Tests einschließlich direktem Upgrade und Rücknahme bestanden.
+- [ ] Aktualisierten Floor-Naht-Helfer erneut im TD-Graph ausführen, zwei erkennbare Tische sowie 6→7→6 und Moduswechsel bestätigen; keine automatische Speicherung.
 
 - [x] Eckplätze am 2026-10-15 ergänzt: 9–12 Personen mit acht Längsseitenplätzen und ein bis vier zusätzlichen Eckplätzen; höchstens zwei direkt je Längsseite, bei zehn gegenüberliegende Ecken zuerst.
 - [x] Teilnehmerstaffelung nach Johannes am 2026-10-15 umgesetzt: 1–4 Zweier-Tischgruppe mit gegenüberliegenden Längsplätzen; 5–6 zusätzliche Stirnplätze; 7–12 Vier-Tisch-Rechteck; 13–15 Pentagon. [Details](docs/DISCUSSION_CHAIRS.md).

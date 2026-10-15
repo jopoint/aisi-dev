@@ -44,6 +44,18 @@ def rect_floor_join_side(pose, others):
     return sides[0] if len(sides)==1 else 0
 
 
+def joined_rect_seam_segments(segments, side):
+    """Each table draws half of the same dashed physical shared edge."""
+    if side not in (-1,1):
+        return ()
+    thickness = OUTLINE_THICKNESS_CM*TD_UNITS_PER_CM
+    half_stroke = thickness/2
+    seam = side*RECT_DEPTH_CM/2*TD_UNITS_PER_CM
+    return tuple(type(segment)(segment.width_td,half_stroke,segment.x_td,
+                 seam-side*half_stroke/2) for segment in segments
+                 if abs(segment.depth_td-thickness)<1e-12 and side*segment.y_td>0)
+
+
 def joined_rect_floor_segments(segments, side):
     """Clip the padded floor bars at an exact physical shared long edge."""
     if side not in (-1,1):
@@ -59,6 +71,7 @@ def joined_rect_floor_segments(segments, side):
             lower = max(lower,seam)
         if upper-lower>1e-12:
             result.append(type(segment)(segment.width_td,upper-lower,segment.x_td,(upper+lower)/2))
+    result.extend(joined_rect_seam_segments(segments, side))
     return tuple(result)
 
 
@@ -100,7 +113,7 @@ def floor_join_side_for_geo(geo, resolve=None):
                 others.append(candidate)
     return rect_floor_join_side(pose,others)
 
-def shared_callback_source(*, join_aware=True):
+def shared_callback_source(*, join_aware=True, shared_seam=True):
     """Selbstständiger DAT-Code; keine Dateisystemimporte im gespeicherten Graph."""
     header = (
         "from collections import namedtuple\n"
@@ -130,9 +143,13 @@ def paint(scriptOp, role):
 '''
     if not join_aware:
         return header + functions + dispatch
+    clip_source = inspect.getsource(joined_rect_floor_segments)
+    if not shared_seam:
+        clip_source = clip_source.replace('    result.extend(joined_rect_seam_segments(segments, side))\n', '')
     dependencies = ('import math\n' + f'RECT_DEPTH_CM = {RECT_DEPTH_CM!r}\n'
         + inspect.getsource(rect_floor_join_side) + '\n'
-        + inspect.getsource(joined_rect_floor_segments) + '\n'
+        + (inspect.getsource(joined_rect_seam_segments) + '\n' if shared_seam else '')
+        + clip_source + '\n'
         + inspect.getsource(floor_join_side_for_geo))
     dispatch = dispatch.replace('    for segment in segments:',
         "    if role == 'target_floor':\n"

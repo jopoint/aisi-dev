@@ -63,7 +63,8 @@ def restore_joined_floor_contours(resolve):
                 raise ValueError('Parameterseite wurde inzwischen verändert: '+path)
             page_paths.append(path)
     library = _library()
-    if style.text.strip() not in (backup['text'].strip(),library.shared_callback_source().strip()):
+    if style.text.strip() not in (backup['text'].strip(),library.shared_callback_source().strip(),
+                                 library.shared_callback_source(shared_seam=False).strip()):
         raise ValueError('Style-DAT wurde inzwischen verändert; keine Rücknahme überschreibt ihn.')
     style.text = backup['text']
     for path in page_paths:
@@ -81,7 +82,8 @@ def repair_joined_floor_contours(resolve,project_name):
         raise ValueError('Bekannter AISI-Style-DAT fehlt.')
     old = library.shared_callback_source(join_aware=False)
     new = library.shared_callback_source()
-    if style.text.strip() not in (old.strip(),new.strip()):
+    clipped = library.shared_callback_source(shared_seam=False)
+    if style.text.strip() not in (old.strip(),clipped.strip(),new.strip()):
         raise ValueError('Style-DAT weicht vom bekannten Stand ab; nichts verändert.')
     compile(new,STYLE,'exec')
     scripts = _targets(layout)  # Alle Ziele vor der ersten Änderung prüfen.
@@ -98,6 +100,7 @@ def repair_joined_floor_contours(resolve,project_name):
         if layout.fetch(BACKUP_KEY,None) is not None:
             raise ValueError('Unvollständige frühere Reparatur; zuerst restore_joined_floor_contours(op).')
         layout.store(BACKUP_KEY,{'text':style.text,'scripts':[s.path for s in missing]})
+    previous_text = style.text
     try:
         style.text = new
         for script in missing:
@@ -120,11 +123,13 @@ def repair_joined_floor_contours(resolve,project_name):
                 if binding is not None:
                     binding.expr = EXPRESSION
             restore_joined_floor_contours(resolve)
+        else:
+            style.text = previous_text
         raise
     return {'project':project_name,'join_sides':joins,'bound_contours':len(scripts),
             'physical_rect_cm':[library.RECT_WIDTH_CM,library.RECT_DEPTH_CM],
             'floor_rect_cm':[library.FLOOR_TARGET_WIDTH_CM,library.FLOOR_TARGET_DEPTH_CM],
-            'forced_cook':False,'saved':False}
+            'shared_separator':True,'forced_cook':False,'saved':False}
 
 
 try:
@@ -135,6 +140,6 @@ except NameError:
         raise RuntimeError('Im TouchDesigner-Python-Textport ausführen.')
 else:
     print(json.dumps(repair_joined_floor_contours(_td_resolve,_td_project_name),indent=2))
-    print('Nur AISI-Floor-Naht korrigiert. Kein Force-Cook, nichts gespeichert. '
+    print('AISI-Floor: gemeinsame gestrichelte Trennkante sichtbar. Kein Force-Cook, nichts gespeichert. '
           'Jetzt Zweiergruppe und Wechsel zum Viererring visuell prüfen.')
     print('Rücknahme: restore_joined_floor_contours(op)')
