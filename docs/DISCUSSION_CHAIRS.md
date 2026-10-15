@@ -1,64 +1,96 @@
 # Discussion-Chairs
 
-Stand: 2026-10-15. Die synthetische Opt-in-Vorschau ist implementiert und offline
-geprüft. Johannes bestätigt nach dem Größenvergleich den bisherigen Durchmesser
-von 50 cm. Drei Chairs pro Rect-Tisch sind zulässig, damit fünf Tische maximal
-15 Personen aufnehmen. Alle Tische bleiben aktiv; Teilnehmer werden möglichst
-gleichmäßig verteilt. Zusätzliche Präsentationsrollen sind nicht eingeführt.
+Stand: 2026-10-15. Die Opt-in-Teilnehmervorschau verwendet die von Johannes
+gewünschte Staffelung statt eines stets vollständigen Fünf-Tisch-Rings.
 
-Chairs liegen auf der äußeren Längsseite des nach innen gerichteten Tischrings.
-Bei drei Chairs beträgt ihr Mittelpunktabstand 52 cm und der Abstand zwischen
-Kreisen 2 cm. Die bestehende kanonische Sitzfläche ist 50 cm tief und an den
-äußeren Ecken mit 30 cm gerundet. Johannes akzeptiert den geplotteten Überstand
-von rund 0,51 cm an diesen Rundungen. Die Prüfung erlaubt maximal 0,51 cm,
-ausschließlich dort: Die geraden Begrenzungen bleiben für den vollen Kreis
-verbindlich. Reine Tangenz an der eigenen Tischkante ist vorläufig erlaubt;
-Überlappung mit dem Tisch sowie fremde Tisch-/Chair-Berührungen bleiben verboten.
+| Personen | Aktive Tische | Belegung |
+| --- | --- | --- |
+| 1–4 | Zwei, mit gemeinsamer Längskante | Äußere Längsseiten, bei vier `2 + 2` gegenüber |
+| 5 | Dieselbe Zweiergruppe | Vier Längsplätze und ein gemeinsamer Stirnplatz |
+| 6 | Dieselbe Zweiergruppe | Vier Längsplätze und je ein Stirnplatz an beiden Enden |
+| 7–12 | Vier als nach innen gerichtetes Rechteck | Gleichmäßig auf äußere Längsseiten, bei zwölf drei je Tisch |
+| 13–15 | Fünf als nach innen gerichtetes Pentagon | Gleichmäßig auf äußere Längsseiten |
 
-Die volle Tisch- und Chair-Geometrie muss innerhalb der ROI bleiben. Beide
-bestehenden Sitz-/Bewegungsflächen dürfen keine fremden Tische blockieren.
-Die gemeinsame Fünf-Tisch-Phasen-/Mittelpunktsuche berücksichtigt bei Bedarf
-zusätzlich die vollen Chair-Außenkanten. Tischradius, Flächenform, Koordinaten
-und Source-Winkelreihenfolge bleiben erhalten. Ausgabe erfolgt in Scene Order;
-kein zweiter globaler Slottausch. Begrenzte Caches liefern unabhängige Kopien.
+Überzählige Tische werden mit einer Längsseite an den ROI-Rand geschoben.
+Sie halten mindestens 60 cm Abstand zu aktiven Tischen und blockieren keine
+Sitz-/Bewegungsflächen oder Chair-Kreise. Alle Tisch-IDs bleiben vorhanden;
+Ausgabe erfolgt in ursprünglicher Scene Order. Die aktive Auswahl und Parkwege
+werden gemeinsam nach Gesamtbewegung bewertet. Innerhalb einer Teilnehmerstufe
+bleiben Tischidentitäten und Posen stabil: Geplant wird einmal mit der
+Maximalbelegung 6, 12 beziehungsweise 15, danach ändern sich nur die Chairs. Die aktive Source-Winkelreihenfolge
+im Vierer-/Fünferring bleibt gebunden; kein nachträglicher globaler Slottausch.
 
-Aktivierung über `adaptive_layout_preview=True` und ganzzahlige positive
-`participants`. Ohne explizite Teilnehmerzahl gilt seit 2026-10-15 die
-Standardbelegung von zwei Personen pro Tisch (`2 × Tischanzahl`, also zehn
-bei fünf Tischen). Explizite Teilnehmerzahlen, auch aus dem Interface, werden
-weiterhin übernommen; drei pro Tisch bleiben die maximale Belegung. Anfragen über `3 × Tischanzahl` beziehungsweise 15 werden
-explizit abgelehnt, ohne Kürzung oder Rückfall auf ein anderes Layout.
-Bei Stärke 0 bleiben Source-Posen exakt und Chairs ausgeblendet. Teilstärken
-verwenden die bestehende Blend-/Repair-Tischsynthese; ungeeignete gemeinsame
-Chair-Geometrie wird ausdrücklich abgelehnt. Für die virtuelle Prüfung 100 %
-verwenden. Normaler Modus und isoliertes Tracking behalten ihre bisherigen Wege.
+Aktivierung: `adaptive_layout_preview=True`, optional ganzzahlige positive
+`participants`. Ohne Count gilt weiterhin `2 × verfügbare Tischanzahl`;
+anschließend bestimmt die Tabelle oben die benötigte Topologie. Beispielsweise
+führt der Standard zehn bei fünf verfügbaren Tischen zu vier aktiven Tischen
+mit `3 + 3 + 2 + 2` und einem Parktisch. Explizite Interface-Counts bleiben
+maßgeblich. Zu wenige Tische für eine Stufe oder mehr als 15 Personen führen
+zur ausdrücklichen Ablehnung, ohne Kürzung oder Rückfall auf ein anderes Layout.
+
+## Gemeinsame Geometrie
+
+Der bestehende Chair-Durchmesser bleibt 50 cm. Die Zweiergruppe teilt exakt
+eine Längskante, ohne positive Tischüberlappung. Die äußeren Sitzflächen sind
+kanonische, 50 cm tiefe Streifen. Gemeinsame Stirnflächen werden mit derselben
+Geometriefunktion über beide Tischhälften erzeugt. Ein Stirn-Chair darf beide
+Tischhälften rein tangieren. Zwischen den verbundenen Tischen liegt keine
+Sitz-/Bewegungsfläche. Vierer-/Fünferringe behalten beide bestehenden
+Längsseiten-Sitz-/Bewegungsstreifen; Chairs liegen außen.
+
+Bei drei Chairs auf einer Längsseite beträgt der Mittelpunktabstand 52 cm,
+mit 2 cm zwischen den Kreisen. Johannes akzeptiert den geplotteten Überstand
+von maximal 0,51 cm ausschließlich an den abgerundeten Sitzflächenecken.
+Gerade Flächengrenzen, vollständige Tisch-/Chair-ROI und fremde Tisch-/Chair-
+Kollisionen bleiben strikt. Die eigene Tischkante darf vorläufig tangiert werden.
+
+Für die Ringstufen werden bestehende Synthese-/Ringfunktionen wiederverwendet.
+Bei vier aktiven und einem Parktisch prüft die begrenzte Suche zusätzlich
+Rotationen in 15°-Schritten mit gemeinsamem Mittelpunktversatz; der bisherige
+bewegungsoptimierte Ring bleibt ebenfalls Kandidat. Alle Kandidaten durchlaufen
+die gemeinsame Geometrieprüfung. Der Fünferring nutzt die bestehende feinere
+Phasen-/Mittelpunktsuche einschließlich Chair-Grenzen. Die Parkplanung nutzt
+den vorhandenen kompakten Parkhelfer. Begrenzte Caches liefern unabhängige
+Ergebniskopien; gleiche Parkgeometrie innerhalb einer Suche wird wiederverwendet.
+
+Stärke 0 erhält exakte Source-Posen ohne Chairs. Teilstärken blenden die bereits
+gebundenen aktiven/geparkten Rollen entlang des kürzesten Rotationswegs und
+prüfen die gemeinsame Geometrie. Ungültige Teilposen werden ausdrücklich
+abgelehnt; kein Rollenwechsel als Reparatur. Für die Zielprüfung 100 % verwenden.
+Der normale Modus ohne Opt-in und isoliertes Tracking behalten ihre bisherigen Wege.
 
 ## Offline-Nachweis
 
-- 90 gemeinsame Fälle: Editor- und aktuelle Live-Ausgangsszene, ein bis fünf
-  Rect-Tische, jeweils alle Teilnehmerzahlen von 1 bis `3 × Tischanzahl`.
-- 35 fokussierte Tests: Discussion-Chairs, bestehende Rect-Templates,
-  Input-Geometrie und Groupwork-Vorschau. Counts, kapazitive Ablehnung,
-  Identität/Scene Order, Determinismus, Cache-Isolation, Tangenz versus
-  Durchdringung, Rundungsgrenzen und lokale OSC-Aufzeichnung eingeschlossen.
-- Bestehende OSC-Chair-Adressen und Float-Radius 25 cm beibehalten;
-  ausgeblendete Chairs mit Radius 0. Kein Netzwerkversand im Check.
-- Lokale Plots und eingefrorene Prüfquellen:
-  `data/aisi/debug/discussion_chairs_validation_2026-10-09/`.
+- 30 Fälle: Editor- und aktuelle Live-Ausgangsszene, jeweils fünf Rect-Tische
+  und alle Teilnehmerzahlen 1–15. Quellen beim Lauf lokal eingefroren.
+- Gemeinsame ROI-/Kollisionsprüfung einschließlich Parktischen, 60-cm-Abstand,
+  Übergänge 6→7 und 12→13, deterministische Wiederholung und umgekehrte Scene Order.
+- 37 fokussierte Tests: Discussion-Chairs, unveränderte Rect-Templates,
+  Input-Geometrie und Groupwork-Vorschau. Auch fehlende Tische, Kapazität,
+  Tangenz versus Durchdringung, Cache-Kopien, Stärke 0 und Teilstärken geprüft.
+- OSC-Ausgabe lokal aufgezeichnet, ohne Netzwerkversand. Bestehende Adressen,
+  Chair-Radius 25 als Float, Tischanzahl und Source-/Target-Reihenfolge beibehalten.
+- Kontrollplots mit 4, 6, 12 und 15 Personen für beide Ausgangsszenen visuell geprüft.
+  Lokale Artefakte: `data/aisi/debug/discussion_participants_2026-10-15/`.
 
-Der Größenvergleich ist weiterhin reproduzierbar:
+Reproduktion:
 
 ```sh
-PYTHONPATH=src .venv/bin/python scripts/plot_discussion_chair_fit.py \
-  --output data/aisi/debug/discussion_chair_fit_2026-10-09
+MPLCONFIGDIR=/tmp/aisi-mpl PYTHONPATH=src .venv/bin/python \
+  scripts/validate_discussion_participants.py \
+  --scene data/aisi/scenes/simulated/live_scene.json \
+  --output data/aisi/debug/discussion_participants_2026-10-15
 ```
 
-Die 45-cm-Alternative ist verworfen; die bestehende Größe bleibt erhalten.
-PNG/SVG/PDF und Prüfberichte bleiben lokale Debug-Artefakte.
+Der frühere 90-Fälle-Nachweis vom 2026-10-09 betraf den vorherigen festen Ring.
+Der Größenvergleich bleibt über `scripts/plot_discussion_chair_fit.py`
+reproduzierbar; die 45-cm-Alternative wurde verworfen.
 
 ## Offene Prüfung
 
 Discussion-Chairs bei 100 % einzeln in Room Editor, Learning-Format-Interface
-und TouchDesigner prüfen; anschließend kurzer Formatwechsel-Check.
-Tischkantentangenz und Rundungsüberstand physisch beurteilen. Keine automatische
-TD-Änderung oder Speicherung und keine physische Projektionsvalidierung erfolgt.
+und TouchDesigner prüfen, besonders 4/5/6 Personen, beide Topologieübergänge
+und die Parktische. Anschließend kurzer Formatwechsel-Check. Eigene
+Tischkantentangenz und Rundungsüberstand physisch beurteilen.
+Keine TD-Fernsteuerung, automatische Speicherung oder physische
+Projektionsvalidierung erfolgt.

@@ -288,19 +288,19 @@ Current state:
 
 ### Discussion
 
-Discussion uses a centered inward-facing ring with source-order-preserving assignment and movement-aware global ring rotation.
+Stand der teilnehmerabhängigen Opt-in-Chair-Vorschau: 2026-10-15.
 
-Current state:
-
-- Standardbelegung seit 2026-10-15: ohne explizite Teilnehmerzahl zwei Personen pro Tisch; explizite Counts und maximale Kapazität bleiben erhalten.
-- Opt-in-Chair-Vorschau am 2026-10-09 implementiert: äußere Längsseite, 50 cm Durchmesser, maximal drei pro Rect-Tisch beziehungsweise 15 insgesamt. Teilnehmer werden gleichmäßig auf alle aktiven Tische verteilt.
-- Gemeinsame Geometrieprüfung mit kanonischen Funktionen: volle Chair-/Tisch-ROI, Tisch-/Chair-Kollisionen, beide bestehenden 50-cm-Sitz-/Bewegungsflächen. Nur eigene Tischkantentangenz und bis 0,51 cm Rundungsüberstand sind vorläufig akzeptiert.
-- Bestehende Fünf-Tisch-Phasen-/Mittelpunktsuche berücksichtigt bei Bedarf zusätzlich Chair-Außenkanten; deterministische Ergebnisse werden begrenzt zwischengespeichert. 90 Offline-Fälle und lokale OSC-Aufzeichnung bestanden; interaktive Chair-Validierung noch offen.
-- Bei Stärke 0 exakte Source-Posen ohne Chairs; Teilstärken verwenden die bestehende Tischsynthese und lehnen nicht passende Chair-Belegungen explizit ab.
-- Rect Discussion seating/movement surfaces are applied at full target state;
-- counts `1–5` have been virtually checked for ROI and collision safety;
-- the productive pipeline and TouchDesigner simulation have been accepted;
-- physical room validation remains open.
+- 1–4 Personen: zwei an den Längskanten zusammengeschobene Rect-Tische, bis zu zwei gegenüberliegende Plätze je äußerer Längsseite. 5–6: zusätzliche gemeinsame Stirnplätze, bei fünf nur ein Ende.
+- 7–12: nach innen gerichtetes Vier-Tisch-Rechteck, bei zwölf drei Chairs je Tisch. 13–15: Fünf-Tisch-Pentagon.
+- Tischidentitäten und Posen bleiben innerhalb jeder Teilnehmerstufe stabil; nur die Chair-Belegung ändert sich. Die jeweilige Maximalbelegung 6/12/15 wird vorgeplant und begrenzt zwischengespeichert.
+- Überzählige Tische werden mit einer Längsseite am ROI-Rand geparkt, mindestens 60 cm von aktiven Tischen entfernt; alle Tischidentitäten und die ursprüngliche Scene Order bleiben erhalten. Die Auswahl berücksichtigt den Gesamtbewegungsweg.
+- Chair-Radius 25 cm; kanonische Sitzflächen 50 cm tief. Nur gemeinsame Tischkante der Zweiergruppe, eigene Kantentangenz und höchstens 0,51 cm Rundungsüberstand sind zugelassen. Vollständige ROI- und Fremdkollisionsprüfung einschließlich Parktischen.
+- Ohne expliziten Count bleibt `2 × verfügbare Tischanzahl` der Standardwert; die aktive Topologie folgt anschließend der Teilnehmerstufe. Bei zu wenigen Tischen oder mehr als 15 Personen klare Ablehnung.
+- Bisherige Ring-/Geometriefunktionen und kompakte Parkplanung werden wiederverwendet. Begrenzte Ergebnis-Caches und Wiederverwendung identischer Parkgeometrie innerhalb einer Suche; kein Netzwerkversand in Offline-Checks.
+- Stärke 0: exakte Source-Posen ohne Chairs. Teilstärken: gebundene Rollen blenden und gemeinsame Geometrie prüfen, bei Verletzung ausdrücklich ablehnen. Keine neue Slotzuordnung als Reparatur.
+- Offline: 30 Fälle aus zwei Ausgangsszenen, alle Counts 1–15; Übergänge, Parkabstände, Identität/Scene Order, Determinismus und lokale OSC-Ausgabe geprüft. Kontrollplots und eingefrorene Quellen lokal unter `data/aisi/debug/discussion_participants_2026-10-15/`.
+- 37 fokussierte Tests für Discussion, bestehende Rect-Templates, Input-Geometrie und Groupwork-Vorschau bestanden. Interaktive Chair-Einzelvalidierung und physische Prüfung bleiben offen.
+- Der bisherige Tischring ohne Opt-in-Vorschau bleibt unverändert; seine frühere virtuelle Bestätigung gilt nicht automatisch für die neuen Chair-Stufen.
 
 ## 8. Study state
 

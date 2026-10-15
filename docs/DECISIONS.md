@@ -254,18 +254,27 @@ Status: **Accepted**
 
 Status: **Accepted**
 
-- Discussion verwendet einen zentrierten, nach innen gerichteten Ring.
-- Die absolute globale Ringrotation ist semantisch nicht relevant.
-- Die Source-Winkelreihenfolge bleibt erhalten und stabilisiert Slotbindung sowie Teilbewegungspfade.
-- Die freie globale Ringrotation minimiert lexikographisch maximale, dann gesamte Bewegung; Count 5 bleibt auf clearance-zulässige Phasen beschränkt.
-- Jeder Rect-Discussion-Tisch erhält zwei außen abgerundete Längsseiten-Sitz-/Bewegungsflächen mit `50 cm` Tiefe.
-- Diese Flächen müssen im fertigen `100-%`-Ziel vollständig in der ROI liegen und dürfen dort keinen anderen Tisch blockieren.
-- Für Count 5 darf der gemeinsame Mittelpunkt geringfügig von der ROI-Mitte abweichen, damit Ring und Flächen passen.
-- Johannes bestätigt am 2026-10-09 für die synthetische Chair-Vorschau: 50 cm Durchmesser beibehalten, bis zu drei Chairs auf der äußeren Längsseite pro Tisch, maximal 15 an fünf Rect-Tischen. Teilnehmer werden gleichmäßig verteilt; alle Tische bleiben aktiv.
-- Standardbelegung laut Johannes am 2026-10-15: zwei Personen pro Tisch. Ohne explizite Teilnehmerzahl setzt die Discussion-Vorschau `2 × Tischanzahl`; ausdrücklich gesetzte Teilnehmerzahlen bleiben maßgeblich, bis zu drei pro Tisch.
-- Reine Berührung der eigenen Tischkante ist vorläufig zulässig. Der visuell geprüfte Rundungsüberstand von rund 0,51 cm wird toleriert, ausschließlich an den abgerundeten Sitzflächenecken. Gerade Flächengrenzen, vollständige Chair-Kreise innerhalb der ROI und fremde Tisch-/Chair-Kollisionen bleiben strikt.
-- Die bestehende gemeinsame Ringrotation/Mittelpunktanpassung berücksichtigt bei Bedarf zusätzliche volle Chair-Grenzen. Keine zweite Slotpermutation; Source-Reihenfolge und Identitäten bleiben erhalten.
-- Physische Beurteilung dieser beiden tolerierten Berührungen bleibt offen; dies ist keine Projektions- oder Raumfreigabe.
+Johannes präzisiert die teilnehmerabhängige Chair-Vorschau am 2026-10-15:
+
+- `1–4` Personen: zwei Rect-Tische mit gemeinsamer Längskante. Bis zu zwei Plätze an jeder äußeren Längsseite, bei vier Personen sitzen `2 + 2` gegenüber.
+- `5–6` Personen: dieselbe Zweiergruppe mit vier Längsseitenplätzen und zusätzlich einem gemeinsamen Stirnplatz je Ende; bei fünf nur an einem Ende.
+- `7–12` Personen: vier Tische als nach innen gerichtetes Rechteck. Chairs gleichmäßig auf die äußeren Längsseiten verteilen; bei zwölf drei pro Tisch.
+- `13–15` Personen: fünf Tische als nach innen gerichtetes Pentagon.
+- Überzählige Tische werden mit einer Längsseite an den ROI-Rand geparkt, außerhalb der Sitz-/Bewegungsflächen und mit mindestens 60 cm Abstand zu aktiven Tischen. Aktive/geparkte Auswahl und Gesamtbewegungsweg werden gemeinsam bewertet.
+- Innerhalb jeder Stufe bleiben Tischidentitäten und Posen stabil; die maximale Stufenbelegung 6/12/15 wird vorgeplant, danach ändern sich nur die Chairs.
+- Fehlende Tische für eine Teilnehmerstufe führen zur ausdrücklichen Ablehnung; kein Rückfall auf eine andere Topologie. Die Kapazität ist höchstens 15 Personen, drei pro Tisch einschließlich der gemeinsamen Stirnplätze an der Zweiergruppe.
+- Ohne explizite Teilnehmerzahl bleibt der Standard `2 × verfügbare Tischanzahl`. Danach bestimmt die Teilnehmerstufe die aktiven Tische; explizite Interface-Counts bleiben maßgeblich.
+
+Geometrie und Bindung:
+
+- Chair-Durchmesser bleibt 50 cm. Reine Tangenz an der eigenen Tischkante ist vorläufig zulässig; gemeinsame Stirnplätze dürfen beide Hälften der Zweiergruppe tangieren.
+- Die Zweiergruppe darf ausschließlich ihre gemeinsame Tischlängskante teilen; positive Tischüberlappung ist verboten. Dort liegt keine Sitz-/Bewegungsfläche zwischen den Tischen.
+- Kanonische äußere Sitz-/Bewegungsstreifen sind 50 cm tief. Gemeinsame Stirnflächen werden aus derselben kanonischen Geometrie über beide Tischhälften abgeleitet. Die Vierer-/Fünferringe behalten beide bestehenden Längsseitenflächen.
+- Johannes akzeptiert den visuell geprüften Überstand von rund 0,51 cm ausschließlich an den abgerundeten Sitzflächenecken. Gerade Grenzen, volle Chair-/Tisch-ROI und fremde Tisch-/Chair-Kollisionen bleiben strikt.
+- Die absolute globale Ringrotation ist semantisch frei. Die aktive Source-Winkelreihenfolge bleibt erhalten; danach kein zweiter Slottausch. Gemeinsame Rotation und geringe Verschiebung berücksichtigen Sitzflächen, Chair-Außenkanten und Parktische.
+- Ausgabe kehrt in ursprüngliche Scene Order zurück. Bei Stärke 0 exakte Source-Posen ohne Chairs. Teilstärken blenden die gebundenen Rollen und werden bei ungültiger gemeinsamer Geometrie explizit abgelehnt; Zielprüfung bei 100 %.
+- Diese Staffelung betrifft die Opt-in-Teilnehmervorschau. Der bestehende Tischring ohne Chair-Vorschau bleibt unverändert.
+- Interaktive Chair- und physische Raum-/Projektionsvalidierung bleiben offen, einschließlich eigener Tischkantentangenz und Rundungsüberstand.
 
 ## D010 — Scout Groupwork semantics
 
