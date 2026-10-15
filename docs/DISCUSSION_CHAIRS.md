@@ -1,6 +1,6 @@
 # Discussion-Chairs
 
-Stand: 2026-10-09. Die synthetische Opt-in-Vorschau ist implementiert und offline
+Stand: 2026-10-15. Die synthetische Opt-in-Vorschau ist implementiert und offline
 geprüft. Johannes bestätigt nach dem Größenvergleich den bisherigen Durchmesser
 von 50 cm. Drei Chairs pro Rect-Tisch sind zulässig, damit fünf Tische maximal
 15 Personen aufnehmen. Alle Tische bleiben aktiv; Teilnehmer werden möglichst
@@ -23,7 +23,10 @@ und Source-Winkelreihenfolge bleiben erhalten. Ausgabe erfolgt in Scene Order;
 kein zweiter globaler Slottausch. Begrenzte Caches liefern unabhängige Kopien.
 
 Aktivierung über `adaptive_layout_preview=True` und ganzzahlige positive
-`participants`. Anfragen über `3 × Tischanzahl` beziehungsweise 15 werden
+`participants`. Ohne explizite Teilnehmerzahl gilt seit 2026-10-15 die
+Standardbelegung von zwei Personen pro Tisch (`2 × Tischanzahl`, also zehn
+bei fünf Tischen). Explizite Teilnehmerzahlen, auch aus dem Interface, werden
+weiterhin übernommen; drei pro Tisch bleiben die maximale Belegung. Anfragen über `3 × Tischanzahl` beziehungsweise 15 werden
 explizit abgelehnt, ohne Kürzung oder Rückfall auf ein anderes Layout.
 Bei Stärke 0 bleiben Source-Posen exakt und Chairs ausgeblendet. Teilstärken
 verwenden die bestehende Blend-/Repair-Tischsynthese; ungeeignete gemeinsame

@@ -1,3 +1,4 @@
+from collections import Counter
 from copy import deepcopy
 from dataclasses import replace
 import unittest
@@ -56,6 +57,15 @@ class DiscussionChairTests(unittest.TestCase):
         for count in (0,-1,True,2.5,'3',16):
             with self.subTest(count=count),self.assertRaises(LayoutConstraintError):
                 compute_synthetic_layout(scene(),'discussion',1.,{'participants':count,'adaptive_layout_preview':True})
+
+    def test_default_is_two_chairs_per_table_and_explicit_counts_override(self):
+        for n in range(1,6):
+            with self.subTest(tables=n):
+                default=compute_synthetic_layout(scene(n),'discussion',1.,{'adaptive_layout_preview':True})
+                self.assertEqual(len(default.chairs),2*n)
+                self.assertEqual(set(Counter(c['table_id'] for c in default.chairs).values()),{2})
+        explicit=compute_synthetic_layout(scene(),'discussion',1.,{'participants':15,'adaptive_layout_preview':True})
+        self.assertEqual(set(Counter(c['table_id'] for c in explicit.chairs).values()),{3})
 
     def test_adapter_and_zero_strength(self):
         raw=scene()

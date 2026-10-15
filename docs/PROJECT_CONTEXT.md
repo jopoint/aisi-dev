@@ -292,6 +292,7 @@ Discussion uses a centered inward-facing ring with source-order-preserving assig
 
 Current state:
 
+- Standardbelegung seit 2026-10-15: ohne explizite Teilnehmerzahl zwei Personen pro Tisch; explizite Counts und maximale Kapazität bleiben erhalten.
 - Opt-in-Chair-Vorschau am 2026-10-09 implementiert: äußere Längsseite, 50 cm Durchmesser, maximal drei pro Rect-Tisch beziehungsweise 15 insgesamt. Teilnehmer werden gleichmäßig auf alle aktiven Tische verteilt.
 - Gemeinsame Geometrieprüfung mit kanonischen Funktionen: volle Chair-/Tisch-ROI, Tisch-/Chair-Kollisionen, beide bestehenden 50-cm-Sitz-/Bewegungsflächen. Nur eigene Tischkantentangenz und bis 0,51 cm Rundungsüberstand sind vorläufig akzeptiert.
 - Bestehende Fünf-Tisch-Phasen-/Mittelpunktsuche berücksichtigt bei Bedarf zusätzlich Chair-Außenkanten; deterministische Ergebnisse werden begrenzt zwischengespeichert. 90 Offline-Fälle und lokale OSC-Aufzeichnung bestanden; interaktive Chair-Validierung noch offen.

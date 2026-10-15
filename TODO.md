@@ -96,6 +96,8 @@ Synthetische Chairs sind für Input und Groupwork umgesetzt. Die aktuelle Groupw
 
 ### Discussion
 
+- [x] Standardbelegung am 2026-10-15 auf zwei Personen pro Tisch gesetzt, sofern keine Teilnehmerzahl explizit angegeben ist; maximal drei bleiben möglich.
+
 - [x] Johannes bestätigt am 2026-10-09 die bisherigen 50-cm-Chairs: bis zu drei pro Tisch; reine Berührung der eigenen Tischkante vorläufig erlaubt. Der rund 0,51 cm große Überstand an Sitzflächenrundungen ist akzeptiert. [Details](docs/DISCUSSION_CHAIRS.md).
 - [x] Synthetische Chairs aus der äußeren Längsseite des nach innen gerichteten Rect-Rings ableiten; Teilnehmer gleichmäßig auf alle Tische verteilen. Opt-in-Vorschau mit bestehendem OSC-Vertrag integriert.
 - [x] Kapazität geometrisch auf drei Personen pro Rect-Tisch begrenzen, maximal 15 bei fünf Tischen. Strikte gemeinsame ROI-/Kollisionsprüfung; gemeinsame Phase/Mittelpunkt berücksichtigen volle Chair-Kreise.

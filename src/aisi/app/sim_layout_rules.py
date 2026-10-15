@@ -726,7 +726,8 @@ def compute_synthetic_layout(
         from aisi.generation.adaptive_layout_v1 import LayoutConstraintError
         from aisi.input.scene_loader import build_scene_state_from_dict
         from aisi.core.models import TableTarget
-        participants=parameters.get("participants",4)
+        state=build_scene_state_from_dict(_normalize_scene_for_aisi(scene),learning_format="discussion")
+        participants=parameters.get("participants",2*len(state.tables))
         if type(participants) is not int or participants<1:
             raise LayoutConstraintError("Discussion benötigt eine positive ganzzahlige Teilnehmerzahl.")
         if participants>15:
@@ -735,7 +736,6 @@ def compute_synthetic_layout(
         if not math.isfinite(strength):
             raise LayoutConstraintError("Ungültige Transformationsstärke.")
         strength=max(0.,min(1.,strength))
-        state=build_scene_state_from_dict(_normalize_scene_for_aisi(scene),learning_format="discussion")
         if strength==0.:
             return SyntheticLayoutOutput(table_targets=[dict(x_cm=t.x,y_cm=t.y,rotation_deg=t.rot_deg) for t in state.tables],chairs=[])
         if strength<1.:
