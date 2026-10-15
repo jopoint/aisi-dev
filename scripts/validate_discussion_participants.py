@@ -4,6 +4,7 @@ from collections import Counter
 from copy import deepcopy
 from dataclasses import replace
 import json
+import math
 from pathlib import Path
 import time
 
@@ -47,6 +48,11 @@ def check_source(name, raw, output):
         if required in (4,5):
             assert kinds['regular_long']==min(count,2*required)
             assert kinds['regular_corner']==max(0,count-2*required) and kinds['dense_long']==0
+        if required==5:
+            center=(math.fsum(t.target_x for t in plan.targets)/5,
+                    math.fsum(t.target_y for t in plan.targets)/5)
+            radii=[math.dist((c['x_cm'],c['y_cm']),center) for c in chairs]
+            assert max(radii)-min(radii)<1e-6
         records.append(dict(participants=count,active=list(plan.active_table_ids),
             parked=list(plan.parked_table_ids),seat_kinds=dict(kinds),seconds=time.monotonic()-start))
         if count in (4,6,12,15): examples[count]=deepcopy(plan)
@@ -63,6 +69,11 @@ def check_source(name, raw, output):
             corner=chair['seat_kind']=='regular_corner'
             ax.add_patch(Circle((chair['x_cm'],chair['y_cm']),25,
                 facecolor='#bca7e8' if corner else '#f3c383',edgecolor='#673da0' if corner else '#b76516'))
+        if count==15:
+            center=(math.fsum(t.target_x for t in plan.targets)/5,
+                    math.fsum(t.target_y for t in plan.targets)/5)
+            radius=math.dist((plan.chairs[0]['x_cm'],plan.chairs[0]['y_cm']),center)
+            ax.add_patch(Circle(center,radius,fill=False,edgecolor='#b6a500',lw=1.2,linestyle='--'))
         ax.set(xlim=(0,500),ylim=(500,0),aspect='equal',xlabel='X [cm]',ylabel='Y [cm]',
             title=f'{count} Personen · {len(plan.active_table_ids)} aktive Tische')
     fig.suptitle(f'Discussion · Teilnehmerstufen · {name}\nViolett: Eckplätze · Schraffiert: geparkte Tische',fontsize=14)

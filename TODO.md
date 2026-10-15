@@ -96,6 +96,8 @@ Synthetische Chairs sind für Input und Groupwork umgesetzt. Die aktuelle Groupw
 
 ### Discussion
 
+- [x] Pentagon-Zwischenplätze auf Johannes’ Wunsch radial nach außen verschoben: alle Chair-Mittelpunkte liegen auf dem Kreis der regulären Längsplätze, nominal rund 26,5 cm zusätzliche Verschiebung. Vollständige Sitzflächen werden mitverschoben und erneut auf ROI/Kollisionen geprüft; 22 Tests und 30 Offline-Fälle bestanden.
+
 - [x] Pentagon-Belegung am 2026-10-15 angepasst: 13–15 Personen mit zehn Längsseitenplätzen und drei bis fünf Zwischenplätzen; höchstens zwei direkt je Längsseite. Kanonische Stirnkanten, volle Zwischenflächen und ROI-/Kollisionsprüfung wiederverwendet.
 
 - [x] Überkreuzte Floor-Naht der Zweiergruppe offline auf die 5-cm-Konturzugabe je Tisch zurückgeführt. Rücknehmbarer Textport-Helfer vorbereitet und mit zehn Tests / 30 Fällen geprüft; keine Tischposen geändert. [Anleitung](docs/TOUCHDESIGNER_JOINED_FLOOR_CONTOURS.md).

@@ -74,6 +74,12 @@ def _ring_geometry(state, targets):
     by_id = {t.table_id:t for t in state.tables}
     cx = math.fsum(t.target_x for t in targets)/len(targets)
     cy = math.fsum(t.target_y for t in targets)/len(targets)
+    long_radius = None
+    if len(targets)==5:
+        # Regular long-side seats define the shared visual chair circle.
+        long_radius = math.fsum(math.hypot(row[0]+sign*tangent[0]*g.nominal_width/4-cx,
+            row[1]+sign*tangent[1]*g.nominal_width/4-cy)
+            for _,_,row,tangent,g in geometry.values() for sign in (-1,1))/(2*len(targets))
     ordered = sorted(targets,key=lambda t:math.atan2(t.target_y-cy,t.target_x-cx))
     # Anchor to identity so common rotation never changes the corner roles.
     start = min(range(len(ordered)),key=lambda i:ordered[i].table_id)
@@ -88,7 +94,7 @@ def _ring_geometry(state, targets):
         va,vb = max(a,key=support),max(b,key=support)
         if len(targets)==5:
             # Pentagon gaps widen towards the outside. Their short-end centers
-            # define the free mouth without pushing the seat beyond the ROI.
+            # define the free mouth before the radial chair-circle alignment.
             def facing_end_center(polygon,target,neighbor):
                 angle=math.radians(target.target_rot_deg)
                 tangent=(math.cos(angle),math.sin(angle))
@@ -107,6 +113,16 @@ def _ring_geometry(state, targets):
         if normal[0]*outward[0]+normal[1]*outward[1]<0:
             normal = (-normal[0],-normal[1])
         edge = ((va[0]+vb[0])/2,(va[1]+vb[1])/2)
+        if long_radius is not None:
+            half_strip = DISCUSSION_SEAT_CLEARANCE_DEPTH_CM/2
+            base = (edge[0]+normal[0]*half_strip-cx,edge[1]+normal[1]*half_strip-cy)
+            projection = base[0]*normal[0]+base[1]*normal[1]
+            discriminant = projection**2+long_radius**2-base[0]**2-base[1]**2
+            if discriminant<0:
+                raise LayoutConstraintError('Zwischenplatz kann den gemeinsamen Chair-Kreis nicht erreichen.')
+            outward_shift = max(0.,-projection+math.sqrt(discriminant))
+            edge = (edge[0]+normal[0]*outward_shift,edge[1]+normal[1]*outward_shift)
+
         rotation = math.degrees(math.atan2(tangent[1],tangent[0]))
         depth = resolve_table_state_geometry(by_id[first.table_id]).nominal_depth
         proxy = replace(by_id[first.table_id],table_type=None,width=width,height=depth)

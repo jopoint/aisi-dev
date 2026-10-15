@@ -109,6 +109,10 @@ class DiscussionChairTests(unittest.TestCase):
                 self.assertEqual(len(gap_keys),len(set(gap_keys)))
                 self.assertEqual(len(p.active_table_ids),5)
                 self.assertFalse(p.parked_table_ids)
+                center=(math.fsum(t.target_x for t in p.targets)/5,
+                        math.fsum(t.target_y for t in p.targets)/5)
+                radii=[math.dist((c['x_cm'],c['y_cm']),center) for c in p.chairs]
+                self.assertLess(max(radii)-min(radii),1e-6)
                 validate_discussion_chairs(s,p)
                 if poses is not None:self.assertEqual(p.targets,poses)
                 poses=p.targets

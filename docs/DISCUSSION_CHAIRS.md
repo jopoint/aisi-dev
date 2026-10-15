@@ -55,9 +55,15 @@ Discussion-Vorschau verwendet.
 Im Pentagon bleiben zwei reguläre Plätze je äußerer Längsseite. Die übrigen
 drei bis fünf Personen sitzen zwischen Nachbartischen. Die Zwischenflächen
 werden aus den Mittelpunkten der einander zugewandten kanonischen Stirnkanten
-und demselben nach außen gerichteten 50-cm-Streifen erzeugt. Diese Öffnung liegt
-näher am Ringzentrum als die äußere Verbindung der Tisch-Eckpunkte und hält die
-volle Sitzfläche in der ROI. Bei 15 Personen sind alle fünf Zwischenplätze
+und demselben nach außen gerichteten 50-cm-Streifen erzeugt. Diese Öffnung definiert zunächst die freie Sitzfläche. Auf Johannes’ Wunsch
+werden Zwischen-Chair und vollständige Sitzfläche anschließend gemeinsam nach
+außen verschoben, bis der Chair-Mittelpunkt auf dem Kreis der regulären
+Längsseiten-Chairs liegt. Dessen Radius wird aus der kanonischen Sitzgeometrie
+abgeleitet; nominal rund 225,5 cm bei rund 26,5 cm zusätzlicher Verschiebung.
+Die bestehende Phasen-/Mittelpunktsuche prüft die mitverschobenen Flächen und
+vollen Chair-Kreise erneut innerhalb der ROI. Gegenüber dem vorherigen Ziel
+benötigt die aktuelle Live-Ausgangsszene dafür eine gemeinsame Anpassung von
+höchstens 3,2 cm Tischverschiebung und 1° Drehung. Bei 15 Personen sind alle fünf Zwischenplätze
 belegt; bei 13/14 werden die Plätze zunächst über den Ring verteilt. Identitäten,
 Tischposen und die zehn Längsplätze bleiben innerhalb 13–15 stabil.
 
@@ -87,6 +93,8 @@ Der normale Modus ohne Opt-in und isoliertes Tracking behalten ihre bisherigen W
 
 - 30 Fälle: Editor- und aktuelle Live-Ausgangsszene, jeweils fünf Rect-Tische
   und alle Teilnehmerzahlen 1–15. Quellen beim Lauf lokal eingefroren.
+  Für 13–15 zusätzlich identischer Mittelpunktabstand aller Chair-Kreise zum
+  Ringzentrum geprüft (Abweichung kleiner als 0,000001 cm).
 - Gemeinsame ROI-/Kollisionsprüfung einschließlich Parktischen, 60-cm-Abstand,
   Übergänge 6→7 und 12→13, deterministische Wiederholung und umgekehrte Scene Order.
 - 22 fokussierte Tests zu Eck-/Zwischenplätzen: Discussion-Chairs und unveränderte
@@ -95,8 +103,9 @@ Der normale Modus ohne Opt-in und isoliertes Tracking behalten ihre bisherigen W
 - OSC-Ausgabe lokal aufgezeichnet, ohne Netzwerkversand. Bestehende Adressen,
   Chair-Radius 25 als Float, Tischanzahl und Source-/Target-Reihenfolge beibehalten.
 - Kontrollplots mit 4, 6, 12 und 15 Personen für beide Ausgangsszenen visuell geprüft;
-  Eck-/Zwischenplätze violett hervorgehoben.
-  Lokale Artefakte: `data/aisi/debug/discussion_pentagon_gaps_2026-10-15/`.
+  Eck-/Zwischenplätze violett hervorgehoben, gemeinsamer Pentagon-Chair-Kreis
+  gelb gestrichelt eingezeichnet.
+  Lokale Artefakte: `data/aisi/debug/discussion_pentagon_chair_circle_2026-10-15/`.
 
 Reproduktion:
 
@@ -104,7 +113,7 @@ Reproduktion:
 MPLCONFIGDIR=/tmp/aisi-mpl PYTHONPATH=src .venv/bin/python \
   scripts/validate_discussion_participants.py \
   --scene data/aisi/scenes/simulated/live_scene.json \
-  --output data/aisi/debug/discussion_pentagon_gaps_2026-10-15
+  --output data/aisi/debug/discussion_pentagon_chair_circle_2026-10-15
 ```
 
 Der frühere 90-Fälle-Nachweis vom 2026-10-09 betraf den vorherigen festen Ring.
