@@ -1,3 +1,4 @@
+from unittest.mock import patch
 """Floor-Naht: kanonische Geometrie, Modussperren und rücknehmbarer TD-Helfer."""
 import math
 from types import SimpleNamespace as NS
@@ -13,6 +14,7 @@ from td_builders.aisi_study_visual_style import (
 )
 from td_builders.study_target_floor import rect_target_floor_dash_segments
 from td_builders import repair_aisi_joined_floor_contours as repair
+from td_builders.restore_aisi_joined_floor_contours import restore_original_floor_contours
 
 
 def parameter(value):
@@ -179,7 +181,8 @@ class JoinedFloorTests(unittest.TestCase):
         self.assertEqual([row['side'] for row in result['join_sides']],[1,-1])
         repair.repair_joined_floor_contours(scene.resolve,'offline')
         self.assertTrue(all(len(item.script.customPages)==1 for item in scene.items))
-        repair.restore_joined_floor_contours(scene.resolve)
+        with patch('builtins.op', side_effect=AssertionError('Keine Reparatur starten'), create=True):
+            restore_original_floor_contours(scene.resolve)
         self.assertEqual(scene.style.text,original)
         self.assertTrue(all(not item.script.customPages for item in scene.items))
 

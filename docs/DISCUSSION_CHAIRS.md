@@ -5,7 +5,7 @@ gewünschte Staffelung statt eines stets vollständigen Fünf-Tisch-Rings.
 
 | Personen | Aktive Tische | Belegung |
 | --- | --- | --- |
-| 1–4 | Zwei, mit gemeinsamer Längskante | Äußere Längsseiten, bei vier `2 + 2` gegenüber |
+| 1–4 | Zwei, mit 10 cm Spalt an den Längskanten | Äußere Längsseiten, bei vier `2 + 2` gegenüber |
 | 5 | Dieselbe Zweiergruppe | Vier Längsplätze und ein gemeinsamer Stirnplatz |
 | 6 | Dieselbe Zweiergruppe | Vier Längsplätze und je ein Stirnplatz an beiden Enden |
 | 7–8 | Vier als nach innen gerichtetes Rechteck | Höchstens zwei direkt je äußerer Längsseite |
@@ -31,10 +31,10 @@ zur ausdrücklichen Ablehnung, ohne Kürzung oder Rückfall auf ein anderes Layo
 
 ## Gemeinsame Geometrie
 
-Der bestehende Chair-Durchmesser bleibt 50 cm. Die Zweiergruppe teilt exakt
-eine Längskante, ohne positive Tischüberlappung. Die äußeren Sitzflächen sind
+Der bestehende Chair-Durchmesser bleibt 50 cm. Die Zweiergruppe hält 10 cm Spalt
+zwischen parallelen Längskanten (90 cm Mittelpunktabstand), ohne Tischüberlappung. Die äußeren Sitzflächen sind
 kanonische, 50 cm tiefe Streifen. Gemeinsame Stirnflächen werden mit derselben
-Geometriefunktion über beide Tischhälften erzeugt. Ein Stirn-Chair darf beide
+Geometriefunktion über beide Tischhälften und den Spalt erzeugt (170 cm Gesamtbreite). Ein Stirn-Chair darf beide
 Tischhälften rein tangieren. Zwischen den verbundenen Tischen liegt keine
 Sitz-/Bewegungsfläche. Vierer-/Fünferringe behalten beide bestehenden
 Längsseiten-Sitz-/Bewegungsstreifen; Chairs liegen außen.
@@ -123,13 +123,12 @@ Der Chair-Durchmesser bleibt bei 50 cm.
 
 ## Floor-Naht der Zweiergruppe
 
-Die physischen Tische liegen exakt aneinander. Die 170 × 90 cm großen Floor-Konturen
-reichen jedoch je 5 cm über die gemeinsame Kante hinaus. Dafür ist eine lokale,
-rücknehmbare Konturbegrenzung umgesetzt und von Johannes live angewandt. Die
-erste Fassung ließ die Innenkante verschwinden; das vorbereitete Update ergänzt
-eine gemeinsame gestrichelte Trennlinie, damit beide Tischobjekte erkennbar bleiben.
-Dieses Update ist noch manuell anzuwenden.
-[Textport-Anleitung und Offline-Nachweis](TOUCHDESIGNER_JOINED_FLOOR_CONTOURS.md).
+31 fokussierte Tests und ein erneuter Offline-Lauf mit 30 Fällen bestanden.
+Johannes ersetzt am 2026-10-15 die Konturbeschneidung durch einen physischen
+Spalt von 10 cm. Die ursprünglichen 170 × 90 cm Floor-Konturen bleiben vollständig;
+ihre Außenkanten treffen sich im Spalt. Die bereits angewandte Naht-Reparatur ist
+manuell zurückzunehmen. Danach Sender neu starten und neu generieren.
+[Textport-Anleitung](TOUCHDESIGNER_JOINED_FLOOR_CONTOURS.md).
 
 ## Offene Prüfung
 

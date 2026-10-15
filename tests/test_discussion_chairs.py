@@ -13,6 +13,9 @@ from aisi.generation.discussion_chairs import (
     plan_discussion_chairs, validate_discussion_chairs, transform_discussion_plan,
 )
 from aisi.generation.adaptive_layout_v1 import LayoutConstraintError
+from aisi.core.table_geometry import table_world_footprint
+from aisi.analysis.rect_groupwork_adaptive_prototype import _polygon_distance
+from td_builders.study_target_floor import FLOOR_TARGET_WIDTH_CM, FLOOR_TARGET_DEPTH_CM
 
 
 def scene(n=5):
@@ -48,7 +51,7 @@ class DiscussionChairTests(unittest.TestCase):
                 p.chairs[0]['x_cm']=-999
                 self.assertNotEqual(p.chairs,plan_discussion_chairs(s,count).chairs)
 
-    def test_pair_has_shared_long_edge_opposite_rows_and_then_end_seats(self):
+    def test_pair_has_ten_cm_gap_opposite_rows_and_then_end_seats(self):
         s=state(scene())
         for count in range(1,7):
             p=plan_discussion_chairs(s,count)
@@ -56,7 +59,15 @@ class DiscussionChairTests(unittest.TestCase):
             a,b=active;angle=math.radians(a.target_rot_deg)
             delta=(b.target_x-a.target_x,b.target_y-a.target_y)
             self.assertAlmostEqual(delta[0]*math.cos(angle)+delta[1]*math.sin(angle),0.)
-            self.assertAlmostEqual(math.dist((a.target_x,a.target_y),(b.target_x,b.target_y)),80.)
+            self.assertAlmostEqual(math.dist((a.target_x,a.target_y),(b.target_x,b.target_y)),90.)
+            by_id={t.table_id:t for t in s.tables}
+            physical=[table_world_footprint(by_id[t.table_id],(t.target_x,t.target_y),t.target_rot_deg)
+                      for t in active]
+            self.assertAlmostEqual(_polygon_distance(*physical),10.)
+            padded=[table_world_footprint(replace(by_id[t.table_id],table_type=None,
+                    width=FLOOR_TARGET_WIDTH_CM,height=FLOOR_TARGET_DEPTH_CM),
+                    (t.target_x,t.target_y),t.target_rot_deg) for t in active]
+            self.assertAlmostEqual(_polygon_distance(*padded),0.)
             kinds=Counter(c['seat_kind'] for c in p.chairs)
             self.assertEqual(kinds['regular_long'],min(count,4))
             self.assertEqual(kinds['regular_end'],max(0,count-4))

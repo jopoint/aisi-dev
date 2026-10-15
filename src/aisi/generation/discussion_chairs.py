@@ -24,6 +24,7 @@ from aisi.generation.layout_synthesizer import (
 
 CHAIR_RADIUS_CM = 25.
 PARK_ACTIVE_CLEARANCE_CM = 60.
+PAIR_GAP_CM = 10.
 # Johannes akzeptiert den geplotteten 0,51-cm-Überstand an den Rundungen.
 ROUNDED_CORNER_TOLERANCE_CM = .51
 
@@ -271,7 +272,7 @@ def _required_tables(participants):
 
 
 def _pair_geometry(state, targets, participants):
-    """One shared long edge, outward rows and optional shared short-end seats."""
+    """Parallel long edges with a 10 cm gap and shared short-end seats."""
     by_id = {t.table_id: t for t in state.tables}
     first, second = sorted(targets, key=lambda t: t.table_id)
     g = resolve_table_state_geometry(by_id[first.table_id])
@@ -282,14 +283,14 @@ def _pair_geometry(state, targets, participants):
     parallel = abs((second.target_rot_deg-first.target_rot_deg+90) % 180-90) < 1e-7
     along = delta[0]*tangent[0]+delta[1]*tangent[1]
     across = delta[0]*normal[0]+delta[1]*normal[1]
-    if not parallel or abs(along)>1e-7 or abs(abs(across)-g.nominal_depth)>1e-7:
-        raise LayoutConstraintError('Discussion-Zweiergruppe benötigt eine gemeinsame Längskante.')
+    if not parallel or abs(along)>1e-7 or abs(abs(across)-(g.nominal_depth+PAIR_GAP_CM))>1e-7:
+        raise LayoutConstraintError('Discussion-Zweiergruppe benötigt 10 cm Abstand zwischen den Längskanten.')
     geometry = _seating_geometry(state, targets)
     # Ends span both joined tables. Use the canonical strip on a rotated
     # combined-table proxy, rather than two overlapping half-width seat zones.
     center = ((first.target_x+second.target_x)/2, (first.target_y+second.target_y)/2)
     proxy = replace(by_id[first.table_id], table_type=None,
-                    width=2*g.nominal_depth, height=g.nominal_width)
+                    width=2*g.nominal_depth+PAIR_GAP_CM, height=g.nominal_width)
     proxy_target = replace(first, target_x=center[0], target_y=center[1],
                            target_rot_deg=first.target_rot_deg+90)
     for index, sign in enumerate((-1., 1.)):
@@ -300,7 +301,7 @@ def _pair_geometry(state, targets, participants):
             seat_direction=direction, clearance_depth_cm=DISCUSSION_SEAT_CLEARANCE_DEPTH_CM)
         distance = g.nominal_width/2+DISCUSSION_SEAT_CLEARANCE_DEPTH_CM/2
         row = (center[0]+direction[0]*distance, center[1]+direction[1]*distance)
-        strip = replace(proxy, width=2*g.nominal_depth, height=DISCUSSION_SEAT_CLEARANCE_DEPTH_CM)
+        strip = replace(proxy, width=2*g.nominal_depth+PAIR_GAP_CM, height=DISCUSSION_SEAT_CLEARANCE_DEPTH_CM)
         rectangle = table_world_footprint(strip, row, proxy_target.target_rot_deg)
         geometry[f'end:{index}'] = (region, rectangle, row, normal, g)
     return geometry
@@ -443,8 +444,8 @@ def _pair_candidates(state,participants):
     g = resolve_table_state_geometry(tables[0]); cx,cy = state.roi.center
     for rotation in (0.,90.):
         angle = math.radians(rotation); normal = (-math.sin(angle),math.cos(angle))
-        targets = [TableTarget(t.table_id,cx+sign*normal[0]*g.nominal_depth/2,
-                   cy+sign*normal[1]*g.nominal_depth/2,t.rot_deg,rotation)
+        targets = [TableTarget(t.table_id,cx+sign*normal[0]*(g.nominal_depth+PAIR_GAP_CM)/2,
+                   cy+sign*normal[1]*(g.nominal_depth+PAIR_GAP_CM)/2,t.rot_deg,rotation)
                    for t,sign in zip(tables,(-1.,1.))]
         yield _assemble_pair(state,targets,participants)
         swapped = [replace(targets[1],table_id=tables[0].table_id,source_rot_deg=tables[0].rot_deg),

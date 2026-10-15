@@ -102,13 +102,14 @@ Synthetische Chairs sind für Input und Groupwork umgesetzt. Die aktuelle Groupw
 
 - [x] Überkreuzte Floor-Naht der Zweiergruppe offline auf die 5-cm-Konturzugabe je Tisch zurückgeführt. Rücknehmbarer Textport-Helfer vorbereitet und mit zehn Tests / 30 Fällen geprüft; keine Tischposen geändert. [Anleitung](docs/TOUCHDESIGNER_JOINED_FLOOR_CONTOURS.md).
 - [x] Erste Floor-Naht-Korrektur von Johannes live ausgeführt: blendete die Innenkante aus, wodurch die Zweiergruppe wie ein Tisch wirkte. Update mit einer gemeinsamen gestrichelten Trennlinie vorbereitet; zwölf Tests einschließlich direktem Upgrade und Rücknahme bestanden.
-- [ ] Aktualisierten Floor-Naht-Helfer erneut im TD-Graph ausführen, zwei erkennbare Tische sowie 6→7→6 und Moduswechsel bestätigen; keine automatische Speicherung.
+- [x] Auf Johannes’ Wunsch stattdessen 10 cm Spalt zwischen den Längskanten der Zweiergruppe umgesetzt; vollständige ursprüngliche Floor-Konturen, gemeinsame Stirnflächen auf 170 cm erweitert. Vorbereitete Trennlinien-Korrektur damit abgelöst. 31 fokussierte Tests und 30 Offline-Fälle bestanden.
+- [ ] TD-Kontur-Reparatur manuell zurücknehmen, Sender neu starten und Discussion neu generieren; 10-cm-Spalt, ursprüngliche Konturen und 6→7→6 visuell bestätigen. Keine automatische Speicherung.
 
 - [x] Eckplätze am 2026-10-15 ergänzt: 9–12 Personen mit acht Längsseitenplätzen und ein bis vier zusätzlichen Eckplätzen; höchstens zwei direkt je Längsseite, bei zehn gegenüberliegende Ecken zuerst.
 - [x] Teilnehmerstaffelung nach Johannes am 2026-10-15 umgesetzt: 1–4 Zweier-Tischgruppe mit gegenüberliegenden Längsplätzen; 5–6 zusätzliche Stirnplätze; 7–12 Vier-Tisch-Rechteck; 13–15 Pentagon. [Details](docs/DISCUSSION_CHAIRS.md).
 - [x] Überzählige Tische am ROI-Rand parken, mindestens 60 cm von aktiven Tischen und außerhalb der Sitz-/Bewegungsflächen. Aktive/geparkte Auswahl gemeinsam nach Gesamtweg bewerten; alle IDs und Scene Order erhalten.
 - [x] Standard-Count ohne explizite Teilnehmerzahl bleibt zwei Personen je verfügbarem Tisch; aktive Topologie folgt dem Count. Fehlende Tische für die Stufe und Counts über 15 klar ablehnen.
-- [x] 50-cm-Chairs beibehalten; eigene Kantentangenz und 0,51 cm Rundungsüberstand vorläufig akzeptiert. Nur die beiden Tische der Zweiergruppe teilen eine Längskante; gemeinsame Stirnplätze tangieren beide Tischhälften.
+- [x] 50-cm-Chairs beibehalten; eigene Kantentangenz und 0,51 cm Rundungsüberstand vorläufig akzeptiert. Die beiden Tische der Zweiergruppe halten jetzt 10 cm Spalt; gemeinsame Stirnplätze bleiben mittig vor beiden Tischhälften.
 - [x] Offline-Abschluss der neuen Staffelung: 30 Fälle aus zwei Ausgangsszenen für Counts 1–15, aktuell 22 fokussierte Discussion-/Rect-Template-Tests einschließlich Pentagon-Zwischenplätzen; Kontrollplots erstellt. Der frühere 90-Fälle-Nachweis vom 2026-10-09 betraf den vorherigen festen Ring.
 - [ ] Discussion mit Chairs interaktiv bei 100 % im Room Editor, Learning-Format-Interface und TouchDesigner prüfen, insbesondere 4/5/6, Eckplätze bei 9–12, Zwischenplätze bei 13–15, 6→7, 12→13 und geparkte Tische; Berührungen und Rundungsüberstand dabei beurteilen.
 - [ ] Präsentations-/Publikumsrollen nur definieren, falls das Format sie benötigt.

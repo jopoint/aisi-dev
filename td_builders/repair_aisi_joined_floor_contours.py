@@ -132,14 +132,15 @@ def repair_joined_floor_contours(resolve,project_name):
             'shared_separator':True,'forced_cook':False,'saved':False}
 
 
-try:
-    _td_resolve = op
-    _td_project_name = project.name
-except NameError:
-    if __name__=='__main__':
-        raise RuntimeError('Im TouchDesigner-Python-Textport ausführen.')
-else:
-    print(json.dumps(repair_joined_floor_contours(_td_resolve,_td_project_name),indent=2))
-    print('AISI-Floor: gemeinsame gestrichelte Trennkante sichtbar. Kein Force-Cook, nichts gespeichert. '
-          'Jetzt Zweiergruppe und Wechsel zum Viererring visuell prüfen.')
-    print('Rücknahme: restore_joined_floor_contours(op)')
+if not globals().get('_AISI_RESTORE_ONLY', False):
+    try:
+        _td_resolve = op
+        _td_project_name = project.name
+    except NameError:
+        if __name__=='__main__':
+            raise RuntimeError('Im TouchDesigner-Python-Textport ausführen.')
+    else:
+        print(json.dumps(repair_joined_floor_contours(_td_resolve,_td_project_name),indent=2))
+        print('AISI-Floor: gemeinsame gestrichelte Trennkante sichtbar. Kein Force-Cook, nichts gespeichert. '
+              'Jetzt Zweiergruppe und Wechsel zum Viererring visuell prüfen.')
+        print('Rücknahme: restore_joined_floor_contours(op)')
