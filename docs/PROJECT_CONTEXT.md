@@ -292,6 +292,7 @@ Stand der teilnehmerabhängigen Opt-in-Chair-Vorschau: 2026-10-15.
 
 - 1–4 Personen: zwei an den Längskanten zusammengeschobene Rect-Tische, bis zu zwei gegenüberliegende Plätze je äußerer Längsseite. 5–6: zusätzliche gemeinsame Stirnplätze, bei fünf nur ein Ende.
 - 7–12: nach innen gerichtetes Vier-Tisch-Rechteck, maximal zwei Chairs je äußerer Längsseite. Für 9–12 zusätzliche äußere Eckplätze zwischen Nachbartischen, bei zwölf acht Längs- plus vier Eckplätze. 13–15: Fünf-Tisch-Pentagon.
+- Die Zweiergruppe ist physisch exakt anliegend; überkreuzte Floor-Linien stammen offline nachweisbar aus 170 × 90 cm Konturen um 160 × 80 cm Tische. Lokaler, rücknehmbarer Textport-Helfer für die gemeinsame Naht vorbereitet; zehn Tests und 30 Fälle bestanden. Anwendung im aktuellen Graph noch offen. [Anleitung](TOUCHDESIGNER_JOINED_FLOOR_CONTOURS.md).
 - Eckflächen aus kanonischen Kontur-Stützpunkten und bestehenden 50-cm-Streifen abgeleitet, vollständig für ROI und Parkplanung reserviert. Maximal ein Chair je Ecke, bei zehn zunächst gegenüberliegende Eckplätze.
 - Tischidentitäten und Posen bleiben innerhalb jeder Teilnehmerstufe stabil; nur die Chair-Belegung ändert sich. Die jeweilige Maximalbelegung 6/12/15 wird vorgeplant und begrenzt zwischengespeichert.
 - Überzählige Tische werden mit einer Längsseite am ROI-Rand geparkt, mindestens 60 cm von aktiven Tischen entfernt; alle Tischidentitäten und die ursprüngliche Scene Order bleiben erhalten. Die Auswahl berücksichtigt den Gesamtbewegungsweg.

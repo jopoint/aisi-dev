@@ -101,6 +101,13 @@ Der frühere 90-Fälle-Nachweis vom 2026-10-09 betraf den vorherigen festen Ring
 Der Größenvergleich bleibt über `scripts/plot_discussion_chair_fit.py`
 reproduzierbar; die 45-cm-Alternative wurde verworfen.
 
+## Floor-Naht der Zweiergruppe
+
+Die physischen Tische liegen exakt aneinander. Die 170 × 90 cm großen Floor-Konturen
+reichen jedoch je 5 cm über die gemeinsame Kante hinaus. Dafür ist eine lokale,
+rücknehmbare Konturbegrenzung vorbereitet; noch nicht im laufenden Graph angewendet.
+[Textport-Anleitung und Offline-Nachweis](TOUCHDESIGNER_JOINED_FLOOR_CONTOURS.md).
+
 ## Offene Prüfung
 
 Discussion-Chairs bei 100 % einzeln in Room Editor, Learning-Format-Interface

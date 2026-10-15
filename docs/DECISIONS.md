@@ -269,6 +269,7 @@ Geometrie und Bindung:
 
 - Chair-Durchmesser bleibt 50 cm. Reine Tangenz an der eigenen Tischkante ist vorläufig zulässig; gemeinsame Stirnplätze dürfen beide Hälften der Zweiergruppe tangieren.
 - Die Zweiergruppe darf ausschließlich ihre gemeinsame Tischlängskante teilen; positive Tischüberlappung ist verboten. Dort liegt keine Sitz-/Bewegungsfläche zwischen den Tischen.
+- Die 5-cm-Zugabe der AISI-Floor-Konturen wird an einer eindeutig erkannten gemeinsamen Rect-Längskante begrenzt. Dies ist eine lokale Darstellungskorrektur; physische Tischmaße und Posen bleiben erhalten. Manuelle TD-Anwendung steht noch aus.
 - Kanonische äußere Sitz-/Bewegungsstreifen sind 50 cm tief. Gemeinsame Stirnflächen werden aus derselben kanonischen Geometrie über beide Tischhälften abgeleitet. Die Vierer-/Fünferringe behalten beide bestehenden Längsseitenflächen.
 - Eck-Sitzflächen werden aus den äußeren Stützpunkten benachbarter kanonischer Tischkonturen und einem gleichartigen 50-cm-Streifen an ihrer virtuellen Verbindungskante abgeleitet. Jeder Eckplatz bleibt einem Tisch gebunden. Die vollständigen Eckflächen werden schon für die ganze Vier-Tisch-Stufe reserviert und in ROI-/Park-/Kollisionsprüfungen einbezogen. Reine Randberührung dieser Flächen an den beiden Stützpunkten ist erlaubt; Flächenüberlappung mit Tischen bleibt verboten.
 - Johannes akzeptiert den visuell geprüften Überstand von rund 0,51 cm ausschließlich an den abgerundeten Sitzflächenecken. Gerade Grenzen, volle Chair-/Tisch-ROI und fremde Tisch-/Chair-Kollisionen bleiben strikt.

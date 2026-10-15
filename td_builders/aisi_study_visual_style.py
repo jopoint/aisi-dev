@@ -1,8 +1,10 @@
 """Gemeinsame Rect-Gestaltung aus vorhandenen Study-Geometriefunktionen."""
 import inspect
+import math
 from td_builders.study_target_floor import (
     rect_target_dash_segments, OUTLINE_THICKNESS_CM, FLOOR_TARGET_WIDTH_CM,
     FLOOR_TARGET_DEPTH_CM, TABLETOP_INNER_WIDTH_CM, TABLETOP_INNER_DEPTH_CM,
+    RECT_DEPTH_CM, RECT_WIDTH_CM,
 )
 from td_builders.study_tabletop_brackets import rect_continuous_outline_segments, TD_UNITS_PER_CM
 
@@ -18,7 +20,87 @@ def floor_expression(previous):
     )
 
 
-def shared_callback_source():
+
+def rect_floor_join_side(pose, others):
+    """Find one exact shared long edge in rendered XY centimeters/yaw."""
+    x,y,rotation = pose
+    if not all(math.isfinite(value) for value in pose):
+        return 0
+    angle = math.radians(rotation)
+    tangent = (math.cos(angle),math.sin(angle))
+    normal = (-tangent[1],tangent[0])
+    sides = []
+    for ox,oy,other_rotation in others:
+        if not all(math.isfinite(value) for value in (ox,oy,other_rotation)):
+            continue
+        if abs((other_rotation-rotation+90)%180-90)>1e-5:
+            continue
+        dx,dy = ox-x,oy-y
+        along = dx*tangent[0]+dy*tangent[1]
+        across = dx*normal[0]+dy*normal[1]
+        if abs(along)<1e-5 and abs(abs(across)-RECT_DEPTH_CM)<1e-5:
+            sides.append(1 if across>0 else -1)
+    # Ambiguous, penetrating and separated tables keep their complete contour.
+    return sides[0] if len(sides)==1 else 0
+
+
+def joined_rect_floor_segments(segments, side):
+    """Clip the padded floor bars at an exact physical shared long edge."""
+    if side not in (-1,1):
+        return segments
+    seam = side*RECT_DEPTH_CM/2*TD_UNITS_PER_CM
+    result = []
+    for segment in segments:
+        lower = segment.y_td-segment.depth_td/2
+        upper = segment.y_td+segment.depth_td/2
+        if side>0:
+            upper = min(upper,seam)
+        else:
+            lower = max(lower,seam)
+        if upper-lower>1e-12:
+            result.append(type(segment)(segment.width_td,upper-lower,segment.x_td,(upper+lower)/2))
+    return tuple(result)
+
+
+def floor_join_side_for_geo(geo, resolve=None):
+    """Read existing AISI transforms; no new pose channels or saved state."""
+    if resolve is None:
+        resolve = op
+    raw = resolve('/project1/comp_io/null_osc_raw')
+    if raw is None or raw['study/mode'] is None or raw['study/mode'].eval()!=2:
+        return 0
+    count = raw['table/count']
+    if count is None or not 1<=count.eval()<=5 or int(count.eval())!=count.eval():
+        return 0
+    count = int(count.eval())
+    item = geo.parent()
+    if not item.name.startswith('item') or not item.name[4:].isdigit() or not 1<=int(item.name[4:])<=count:
+        return 0
+    def pose_for(candidate):
+        owner = candidate.parent()
+        if owner.par.Tabletype.eval()!='rect':
+            return None
+        if abs(candidate.par.sx.eval()-1)>1e-9 or abs(candidate.par.sy.eval()-1)>1e-9:
+            return None
+        return (float(candidate.par.tx.eval())/TD_UNITS_PER_CM,
+                float(candidate.par.ty.eval())/TD_UNITS_PER_CM,float(candidate.par.rz.eval()))
+    pose = pose_for(geo)
+    if pose is None:
+        return 0
+    others = []
+    for sibling in item.parent().children:
+        if sibling is item or not sibling.name.startswith('item') or not sibling.name[4:].isdigit():
+            continue
+        if not 1<=int(sibling.name[4:])<=count:
+            continue
+        other = sibling.op('table_target_floor_geo')
+        if other is not None:
+            candidate = pose_for(other)
+            if candidate is not None:
+                others.append(candidate)
+    return rect_floor_join_side(pose,others)
+
+def shared_callback_source(*, join_aware=True):
     """Selbstständiger DAT-Code; keine Dateisystemimporte im gespeicherten Graph."""
     header = (
         "from collections import namedtuple\n"
@@ -46,7 +128,19 @@ def paint(scriptOp, role):
         for index, (dx, dy) in enumerate([(-half_x, -half_y), (half_x, -half_y), (half_x, half_y), (-half_x, half_y)]):
             polygon[index].point.P = (segment.x_td + dx, segment.y_td + dy, 0)
 '''
-    return header + functions + dispatch
+    if not join_aware:
+        return header + functions + dispatch
+    dependencies = ('import math\n' + f'RECT_DEPTH_CM = {RECT_DEPTH_CM!r}\n'
+        + inspect.getsource(rect_floor_join_side) + '\n'
+        + inspect.getsource(joined_rect_floor_segments) + '\n'
+        + inspect.getsource(floor_join_side_for_geo))
+    dispatch = dispatch.replace('    for segment in segments:',
+        "    if role == 'target_floor':\n"
+        "        binding = getattr(scriptOp.par, 'Joiningside', None)\n"
+        "        if binding is not None:\n"
+        "            segments = joined_rect_floor_segments(segments, binding.eval())\n"
+        "    for segment in segments:")
+    return header + functions + dependencies + dispatch
 
 
 def adapted_callback(previous, role, shared_path):

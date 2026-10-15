@@ -96,6 +96,9 @@ Synthetische Chairs sind für Input und Groupwork umgesetzt. Die aktuelle Groupw
 
 ### Discussion
 
+- [x] Überkreuzte Floor-Naht der Zweiergruppe offline auf die 5-cm-Konturzugabe je Tisch zurückgeführt. Rücknehmbarer Textport-Helfer vorbereitet und mit zehn Tests / 30 Fällen geprüft; keine Tischposen geändert. [Anleitung](docs/TOUCHDESIGNER_JOINED_FLOOR_CONTOURS.md).
+- [ ] Floor-Naht-Helfer im aktuellen TD-Graph ausführen und 6→7→6 sowie Moduswechsel visuell bestätigen; keine automatische Speicherung.
+
 - [x] Eckplätze am 2026-10-15 ergänzt: 9–12 Personen mit acht Längsseitenplätzen und ein bis vier zusätzlichen Eckplätzen; höchstens zwei direkt je Längsseite, bei zehn gegenüberliegende Ecken zuerst.
 - [x] Teilnehmerstaffelung nach Johannes am 2026-10-15 umgesetzt: 1–4 Zweier-Tischgruppe mit gegenüberliegenden Längsplätzen; 5–6 zusätzliche Stirnplätze; 7–12 Vier-Tisch-Rechteck; 13–15 Pentagon. [Details](docs/DISCUSSION_CHAIRS.md).
 - [x] Überzählige Tische am ROI-Rand parken, mindestens 60 cm von aktiven Tischen und außerhalb der Sitz-/Bewegungsflächen. Aktive/geparkte Auswahl gemeinsam nach Gesamtweg bewerten; alle IDs und Scene Order erhalten.
