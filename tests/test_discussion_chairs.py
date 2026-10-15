@@ -66,6 +66,34 @@ class DiscussionChairTests(unittest.TestCase):
         p=plan_discussion_chairs(s,12)
         self.assertEqual(set(Counter(c['table_id'] for c in p.chairs).values()),{3})
 
+    def test_four_table_stage_uses_corner_seats_before_dense_long_sides(self):
+        s=state(scene())
+        for count in range(7,13):
+            with self.subTest(participants=count):
+                p=plan_discussion_chairs(s,count)
+                kinds=Counter(c['seat_kind'] for c in p.chairs)
+                self.assertEqual(kinds['regular_long'],min(count,8))
+                self.assertEqual(kinds['regular_corner'],max(0,count-8))
+                self.assertEqual(kinds['dense_long'],0)
+                self.assertTrue(all(n<=2 for n in Counter(c['table_id'] for c in p.chairs
+                    if c['seat_kind']=='regular_long').values()))
+                corners=[c for c in p.chairs if c['seat_kind']=='regular_corner']
+                self.assertEqual(len(set(c['region_id'] for c in corners)),len(corners))
+                validate_discussion_chairs(s,p)
+                if count==10:
+                    active=[t for t in p.targets if t.table_id in p.active_table_ids]
+                    center=(sum(t.target_x for t in active)/4,sum(t.target_y for t in active)/4)
+                    vectors=[(c['x_cm']-center[0],c['y_cm']-center[1]) for c in corners]
+                    self.assertLess(vectors[0][0]*vectors[1][0]+vectors[0][1]*vectors[1][1],0)
+        p=plan_discussion_chairs(s,12)
+        corner_index=next(i for i,c in enumerate(p.chairs) if c['seat_kind']=='regular_corner')
+        for change in ({'x_cm':-1},{'region_id':'unknown'},{'table_id':p.parked_table_ids[0]}):
+            bad=deepcopy(p);bad.chairs[corner_index].update(change)
+            with self.assertRaises(LayoutConstraintError): validate_discussion_chairs(s,bad)
+        corners=[i for i,c in enumerate(p.chairs) if c['seat_kind']=='regular_corner']
+        bad=deepcopy(p);bad.chairs[corners[1]]=dict(bad.chairs[corners[0]],seat_id='duplicate-corner')
+        with self.assertRaises(LayoutConstraintError): validate_discussion_chairs(s,bad)
+
     def test_tangency_corner_tolerance_and_collisions(self):
         s=state(scene())
         for count in (6,12,15):

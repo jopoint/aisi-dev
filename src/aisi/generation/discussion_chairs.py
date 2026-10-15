@@ -66,6 +66,48 @@ def _seating_geometry(state, targets):
     return result
 
 
+
+def _ring_geometry(state, targets):
+    geometry = _seating_geometry(state, targets)
+    if len(targets)!=4:
+        return geometry
+    by_id = {t.table_id:t for t in state.tables}
+    cx = math.fsum(t.target_x for t in targets)/4
+    cy = math.fsum(t.target_y for t in targets)/4
+    ordered = sorted(targets,key=lambda t:math.atan2(t.target_y-cy,t.target_x-cx))
+    # Anchor to identity so common rotation never changes the corner roles.
+    start = min(range(4),key=lambda i:ordered[i].table_id)
+    ordered = ordered[start:]+ordered[:start]
+    for first,second in zip(ordered,ordered[1:]+ordered[:1]):
+        a = table_world_footprint(by_id[first.table_id],(first.target_x,first.target_y),first.target_rot_deg)
+        b = table_world_footprint(by_id[second.table_id],(second.target_x,second.target_y),second.target_rot_deg)
+        outward = (first.target_x+second.target_x-2*cx,first.target_y+second.target_y-2*cy)
+        # The two outer supporting vertices bound the free corner between
+        # neighboring tables. Derive the seat strip from this canonical edge.
+        support = lambda p:p[0]*outward[0]+p[1]*outward[1]
+        va,vb = max(a,key=support),max(b,key=support)
+        width = math.dist(va,vb)
+        if width<=2*CHAIR_RADIUS_CM:
+            raise LayoutConstraintError('Discussion-Ecke bietet nicht genügend Sitzbreite.')
+        tangent = ((vb[0]-va[0])/width,(vb[1]-va[1])/width)
+        normal = (-tangent[1],tangent[0])
+        if normal[0]*outward[0]+normal[1]*outward[1]<0:
+            normal = (-normal[0],-normal[1])
+        edge = ((va[0]+vb[0])/2,(va[1]+vb[1])/2)
+        rotation = math.degrees(math.atan2(tangent[1],tangent[0]))
+        depth = resolve_table_state_geometry(by_id[first.table_id]).nominal_depth
+        proxy = replace(by_id[first.table_id],table_type=None,width=width,height=depth)
+        target = replace(first,target_x=edge[0]-normal[0]*depth/2,
+            target_y=edge[1]-normal[1]*depth/2,target_rot_deg=rotation)
+        region = single_long_side_clearance_region(target,proxy,seat_direction=normal,
+            clearance_depth_cm=DISCUSSION_SEAT_CLEARANCE_DEPTH_CM)
+        row = (edge[0]+normal[0]*DISCUSSION_SEAT_CLEARANCE_DEPTH_CM/2,
+               edge[1]+normal[1]*DISCUSSION_SEAT_CLEARANCE_DEPTH_CM/2)
+        strip = replace(proxy,height=DISCUSSION_SEAT_CLEARANCE_DEPTH_CM)
+        rectangle = table_world_footprint(strip,row,rotation)
+        geometry[f'corner:{first.table_id}'] = (region,rectangle,row,tangent,resolve_table_state_geometry(proxy))
+    return geometry
+
 def _validate_ring_chairs(state, plan):
     by_id={t.table_id:t for t in state.tables}
     if len(plan.targets)!=len(by_id) or {t.table_id for t in plan.targets}!=set(by_id):
@@ -79,23 +121,35 @@ def _validate_ring_chairs(state, plan):
         raise LayoutConstraintError('Discussion-Tischkollision oder ROI-Verletzung.')
     if not _rect_discussion_singleton_clearances_valid(state,plan.targets):
         raise LayoutConstraintError("Blockierte Discussion-Bewegungsfläche oder ROI-Verletzung.")
-    geometry=_seating_geometry(state,plan.targets)
+    geometry=_ring_geometry(state,plan.targets)
     if len({c['seat_id'] for c in plan.chairs})!=len(plan.chairs):
         raise LayoutConstraintError('Discussion-Seat-IDs müssen eindeutig sein.')
+    if set(plan.regions)!=set(geometry):
+        raise LayoutConstraintError('Ungültige Discussion-Sitzflächenzuordnung.')
     for tid,(region,rectangle,_,_,_) in geometry.items():
         if plan.regions.get(tid)!=region:
             raise LayoutConstraintError('Discussion-Sitzfläche stimmt nicht mit der äußeren Tischseite überein.')
         if not polygon_inside_roi(region,x_min=state.roi.x_min,y_min=state.roi.y_min,
             x_max=state.roi.x_max,y_max=state.roi.y_max) or any(
-            convex_polygons_intersect(region,p) for other,p in footprints.items() if other!=tid):
+            (_polygons_overlap_with_positive_area(region,p) if tid.startswith('corner:')
+             else convex_polygons_intersect(region,p)) for other,p in footprints.items() if other!=tid):
             raise LayoutConstraintError('Blockierte Discussion-Sitzfläche oder ROI-Verletzung.')
     counts={tid:0 for tid in by_id}
+    long_counts={tid:0 for tid in by_id}
+    corner_counts={}
     for chair in plan.chairs:
         tid=chair['table_id'];point=(chair['x_cm'],chair['y_cm']);radius=chair['radius_cm']
-        if tid not in geometry or radius!=CHAIR_RADIUS_CM:
+        key=chair.get('region_id',tid)
+        if tid not in by_id or key not in geometry or radius!=CHAIR_RADIUS_CM:
+            raise LayoutConstraintError('Ungültige Discussion-Chair-Zuordnung oder Größe.')
+        if key.startswith('corner:') and (key!=f'corner:{tid}' or chair.get('seat_kind')!='regular_corner'):
             raise LayoutConstraintError('Ungültige Discussion-Chair-Zuordnung oder Größe.')
         counts[tid]+=1
-        region,rectangle,*_=geometry[tid]
+        if key.startswith('corner:'):
+            corner_counts[key]=corner_counts.get(key,0)+1
+        else:
+            long_counts[tid]+=1
+        region,rectangle,*_=geometry[key]
         if not circle_inside_convex_polygon(point,radius,roi):
             raise LayoutConstraintError('Discussion-Chair überschreitet die ROI.')
         # Only the rounded corners may be exceeded. Straight strip bounds,
@@ -107,6 +161,9 @@ def _validate_ring_chairs(state, plan):
             checked_radius=radius-10*GEOMETRY_EPSILON if other==tid else radius
             if circle_intersects_convex_polygon(point,checked_radius,footprint):
                 raise LayoutConstraintError('Discussion-Chair kollidiert mit einem Tisch.')
+    if len(plan.targets)==4 and (any(count>2 for count in long_counts.values())
+                                or any(count>1 for count in corner_counts.values())):
+        raise LayoutConstraintError('Vierer-Discussion erlaubt zwei Längsplätze und einen Eckplatz je Tisch.')
     if any(count>3 for count in counts.values()):
         raise LayoutConstraintError('Discussion erlaubt höchstens drei Chairs pro Tisch.')
     if any(math.dist((a['x_cm'],a['y_cm']),(b['x_cm'],b['y_cm']))<=a['radius_cm']+b['radius_cm']+GEOMETRY_EPSILON
@@ -115,9 +172,11 @@ def _validate_ring_chairs(state, plan):
 
 
 def _assemble(state, targets, participants, *, validate=True):
-    geometry=_seating_geometry(state,targets);counts=evenly_distribute(participants,len(targets))
+    geometry=_ring_geometry(state,targets)
+    long_participants=min(participants,8) if len(targets)==4 else participants
+    counts=evenly_distribute(long_participants,len(targets))
     chairs=[]
-    for tid,count in zip(sorted(geometry),counts):
+    for tid,count in zip(sorted(t.table_id for t in targets),counts):
         region,rectangle,center,tangent,g=geometry[tid]
         offsets={0:(),1:(0.,),2:(-g.nominal_width/4,g.nominal_width/4),
                  3:(-(g.nominal_width/2-CHAIR_RADIUS_CM-3),0.,g.nominal_width/2-CHAIR_RADIUS_CM-3)}[count]
@@ -125,6 +184,13 @@ def _assemble(state, targets, participants, *, validate=True):
             chairs.append(dict(x_cm=center[0]+tangent[0]*offset,y_cm=center[1]+tangent[1]*offset,
                 radius_cm=CHAIR_RADIUS_CM,table_id=tid,seat_id=f'{tid}:discussion:{index}',
                 seat_kind='dense_long' if count==3 and index==1 else 'regular_long'))
+    if len(targets)==4 and participants>8:
+        corners=[key for key in geometry if key.startswith('corner:')]
+        # Fill opposite corners first when only two extra seats are requested.
+        for index in (0,2,1,3)[:participants-8]:
+            key=corners[index];center=geometry[key][2];tid=key.removeprefix('corner:')
+            chairs.append(dict(x_cm=center[0],y_cm=center[1],radius_cm=CHAIR_RADIUS_CM,
+                table_id=tid,seat_id=f'discussion:{key}',seat_kind='regular_corner',region_id=key))
     plan=DiscussionChairPlan(targets,chairs,{tid:data[0] for tid,data in geometry.items()})
     if validate:
         validate_discussion_chairs(state,plan)
@@ -263,6 +329,7 @@ def validate_discussion_chairs(state, plan):
         # Retain both accepted ring movement strips, including the inner side.
         regions = [r for t in active_targets for r in singleton_long_side_clearance_regions(
             t,by_id[t.table_id],clearance_depth_cm=DISCUSSION_SEAT_CLEARANCE_DEPTH_CM)]
+        regions.extend(r for key,r in plan.regions.items() if key.startswith('corner:'))
     elif plan.topology=='pair':
         if len(active)!=2 or not 1<=len(plan.chairs)<=6:
             raise LayoutConstraintError('Ungültige Discussion-Zweiergruppe.')
@@ -317,6 +384,8 @@ def _attach_parking(state, plan, parking_cache):
     regions = (list(plan.regions.values()) if plan.topology=='pair' else
         [r for t in plan.targets for r in singleton_long_side_clearance_regions(
             t,by_id[t.table_id],clearance_depth_cm=DISCUSSION_SEAT_CLEARANCE_DEPTH_CM)])
+    if plan.topology=='ring':
+        regions.extend(r for key,r in plan.regions.items() if key.startswith('corner:'))
     # Swapping the two initial table bindings leaves occupied geometry and
     # parked identities unchanged. Reuse the canonical parking solve locally.
     occupied = tuple(sorted(table_world_footprint(by_id[t.table_id],
@@ -356,7 +425,7 @@ def _four_candidates(state,participants):
     key = tuple((t.table_id,t.x,t.y,t.rot_deg,t.width,t.height,t.table_type)
                 for t in sorted(state.tables,key=lambda t:t.table_id))
     roi = (state.roi.x_min,state.roi.y_min,state.roi.x_max,state.roi.y_max)
-    baseline = deepcopy(_cached_ring_plan(roi,key,participants))
+    baseline = _assemble(state,deepcopy(_ring_targets(roi,key)),participants,validate=False)
     yield baseline
     cx = math.fsum(t.target_x for t in baseline.targets)/4
     cy = math.fsum(t.target_y for t in baseline.targets)/4
@@ -368,6 +437,7 @@ def _four_candidates(state,participants):
         relative = _assemble(state,targets,participants,validate=False)
         points = [p for t in targets for r in singleton_long_side_clearance_regions(t,by_id[t.table_id],
                   clearance_depth_cm=DISCUSSION_SEAT_CLEARANCE_DEPTH_CM) for p in r]
+        points.extend(p for key,r in relative.regions.items() if key.startswith('corner:') for p in r)
         points.extend((c['x_cm']+dx,c['y_cm']+dy) for c in relative.chairs
                       for dx,dy in ((-25,0),(25,0),(0,-25),(0,25)))
         x0=state.roi.x_min-min(x for x,y in points); x1=state.roi.x_max-max(x for x,y in points)

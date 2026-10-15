@@ -8,7 +8,8 @@ gewünschte Staffelung statt eines stets vollständigen Fünf-Tisch-Rings.
 | 1–4 | Zwei, mit gemeinsamer Längskante | Äußere Längsseiten, bei vier `2 + 2` gegenüber |
 | 5 | Dieselbe Zweiergruppe | Vier Längsplätze und ein gemeinsamer Stirnplatz |
 | 6 | Dieselbe Zweiergruppe | Vier Längsplätze und je ein Stirnplatz an beiden Enden |
-| 7–12 | Vier als nach innen gerichtetes Rechteck | Gleichmäßig auf äußere Längsseiten, bei zwölf drei je Tisch |
+| 7–8 | Vier als nach innen gerichtetes Rechteck | Höchstens zwei direkt je äußerer Längsseite |
+| 9–12 | Dasselbe Vier-Tisch-Rechteck | Acht Längsplätze plus ein bis vier äußere Eckplätze |
 | 13–15 | Fünf als nach innen gerichtetes Pentagon | Gleichmäßig auf äußere Längsseiten |
 
 Überzählige Tische werden mit einer Längsseite an den ROI-Rand geschoben.
@@ -38,7 +39,20 @@ Tischhälften rein tangieren. Zwischen den verbundenen Tischen liegt keine
 Sitz-/Bewegungsfläche. Vierer-/Fünferringe behalten beide bestehenden
 Längsseiten-Sitz-/Bewegungsstreifen; Chairs liegen außen.
 
-Bei drei Chairs auf einer Längsseite beträgt der Mittelpunktabstand 52 cm,
+Die vier äußeren Eckplätze liegen zwischen benachbarten Tischen und sind jeweils
+einem Tisch fest zugeordnet. Ihre Sitzflächen entstehen aus den äußeren
+Stützpunkten der kanonischen Tischkonturen: Auf deren virtueller Verbindungskante
+liegt ein bestehender 50-cm-Sitzstreifen. Es entsteht kein zusätzlicher physischer
+Tisch. Reine Randkontakte dieser Fläche an den beiden Stützpunkten sind erlaubt;
+positive Flächenüberlappung mit Tischen und Chair-/Tischkollisionen bleiben verboten.
+Alle vier Eckflächen werden schon für die ganze Stufe 7–12 innerhalb der ROI und
+gegen Parktische geprüft. Bei zehn Personen werden zuerst gegenüberliegende Ecken
+belegt, anschließend die übrigen. Keine Längsseite erhält in dieser Stufe drei Chairs.
+Bei zwölf: acht Längs- und vier Eckplätze; Tischidentitäten und Posen bleiben innerhalb
+der Stufe stabil. Die zusätzlichen Eckrollen werden ausschließlich in der
+Discussion-Vorschau verwendet.
+
+Im Pentagon bei drei Chairs auf einer Längsseite beträgt der Mittelpunktabstand 52 cm,
 mit 2 cm zwischen den Kreisen. Johannes akzeptiert den geplotteten Überstand
 von maximal 0,51 cm ausschließlich an den abgerundeten Sitzflächenecken.
 Gerade Flächengrenzen, vollständige Tisch-/Chair-ROI und fremde Tisch-/Chair-
@@ -65,13 +79,14 @@ Der normale Modus ohne Opt-in und isoliertes Tracking behalten ihre bisherigen W
   und alle Teilnehmerzahlen 1–15. Quellen beim Lauf lokal eingefroren.
 - Gemeinsame ROI-/Kollisionsprüfung einschließlich Parktischen, 60-cm-Abstand,
   Übergänge 6→7 und 12→13, deterministische Wiederholung und umgekehrte Scene Order.
-- 37 fokussierte Tests: Discussion-Chairs, unveränderte Rect-Templates,
-  Input-Geometrie und Groupwork-Vorschau. Auch fehlende Tische, Kapazität,
+- 21 fokussierte Tests zur Eckplatz-Erweiterung: Discussion-Chairs und unveränderte
+  Rect-Templates. Auch fehlende Tische, Kapazität,
   Tangenz versus Durchdringung, Cache-Kopien, Stärke 0 und Teilstärken geprüft.
 - OSC-Ausgabe lokal aufgezeichnet, ohne Netzwerkversand. Bestehende Adressen,
   Chair-Radius 25 als Float, Tischanzahl und Source-/Target-Reihenfolge beibehalten.
-- Kontrollplots mit 4, 6, 12 und 15 Personen für beide Ausgangsszenen visuell geprüft.
-  Lokale Artefakte: `data/aisi/debug/discussion_participants_2026-10-15/`.
+- Kontrollplots mit 4, 6, 12 und 15 Personen für beide Ausgangsszenen visuell geprüft;
+  Eckplätze violett hervorgehoben.
+  Lokale Artefakte: `data/aisi/debug/discussion_corners_2026-10-15/`.
 
 Reproduktion:
 
@@ -79,7 +94,7 @@ Reproduktion:
 MPLCONFIGDIR=/tmp/aisi-mpl PYTHONPATH=src .venv/bin/python \
   scripts/validate_discussion_participants.py \
   --scene data/aisi/scenes/simulated/live_scene.json \
-  --output data/aisi/debug/discussion_participants_2026-10-15
+  --output data/aisi/debug/discussion_corners_2026-10-15
 ```
 
 Der frühere 90-Fälle-Nachweis vom 2026-10-09 betraf den vorherigen festen Ring.
@@ -89,7 +104,7 @@ reproduzierbar; die 45-cm-Alternative wurde verworfen.
 ## Offene Prüfung
 
 Discussion-Chairs bei 100 % einzeln in Room Editor, Learning-Format-Interface
-und TouchDesigner prüfen, besonders 4/5/6 Personen, beide Topologieübergänge
+und TouchDesigner prüfen, besonders 4/5/6 Personen, Eckbelegung bei 9–12 und beide Topologieübergänge
 und die Parktische. Anschließend kurzer Formatwechsel-Check. Eigene
 Tischkantentangenz und Rundungsüberstand physisch beurteilen.
 Keine TD-Fernsteuerung, automatische Speicherung oder physische

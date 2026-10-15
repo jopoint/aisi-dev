@@ -258,7 +258,7 @@ Johannes präzisiert die teilnehmerabhängige Chair-Vorschau am 2026-10-15:
 
 - `1–4` Personen: zwei Rect-Tische mit gemeinsamer Längskante. Bis zu zwei Plätze an jeder äußeren Längsseite, bei vier Personen sitzen `2 + 2` gegenüber.
 - `5–6` Personen: dieselbe Zweiergruppe mit vier Längsseitenplätzen und zusätzlich einem gemeinsamen Stirnplatz je Ende; bei fünf nur an einem Ende.
-- `7–12` Personen: vier Tische als nach innen gerichtetes Rechteck. Chairs gleichmäßig auf die äußeren Längsseiten verteilen; bei zwölf drei pro Tisch.
+- `7–12` Personen: vier Tische als nach innen gerichtetes Rechteck. Zunächst höchstens zwei Chairs je äußerer Längsseite; bei `9–12` zusätzlich ein bis vier äußere Eckplätze zwischen Nachbartischen. Bei zwölf acht Längsplätze und vier Eckplätze, keine verdichtete Längsseitenbelegung. Zwei zusätzliche Eckplätze werden zuerst gegenüberliegend besetzt.
 - `13–15` Personen: fünf Tische als nach innen gerichtetes Pentagon.
 - Überzählige Tische werden mit einer Längsseite an den ROI-Rand geparkt, außerhalb der Sitz-/Bewegungsflächen und mit mindestens 60 cm Abstand zu aktiven Tischen. Aktive/geparkte Auswahl und Gesamtbewegungsweg werden gemeinsam bewertet.
 - Innerhalb jeder Stufe bleiben Tischidentitäten und Posen stabil; die maximale Stufenbelegung 6/12/15 wird vorgeplant, danach ändern sich nur die Chairs.
@@ -270,6 +270,7 @@ Geometrie und Bindung:
 - Chair-Durchmesser bleibt 50 cm. Reine Tangenz an der eigenen Tischkante ist vorläufig zulässig; gemeinsame Stirnplätze dürfen beide Hälften der Zweiergruppe tangieren.
 - Die Zweiergruppe darf ausschließlich ihre gemeinsame Tischlängskante teilen; positive Tischüberlappung ist verboten. Dort liegt keine Sitz-/Bewegungsfläche zwischen den Tischen.
 - Kanonische äußere Sitz-/Bewegungsstreifen sind 50 cm tief. Gemeinsame Stirnflächen werden aus derselben kanonischen Geometrie über beide Tischhälften abgeleitet. Die Vierer-/Fünferringe behalten beide bestehenden Längsseitenflächen.
+- Eck-Sitzflächen werden aus den äußeren Stützpunkten benachbarter kanonischer Tischkonturen und einem gleichartigen 50-cm-Streifen an ihrer virtuellen Verbindungskante abgeleitet. Jeder Eckplatz bleibt einem Tisch gebunden. Die vollständigen Eckflächen werden schon für die ganze Vier-Tisch-Stufe reserviert und in ROI-/Park-/Kollisionsprüfungen einbezogen. Reine Randberührung dieser Flächen an den beiden Stützpunkten ist erlaubt; Flächenüberlappung mit Tischen bleibt verboten.
 - Johannes akzeptiert den visuell geprüften Überstand von rund 0,51 cm ausschließlich an den abgerundeten Sitzflächenecken. Gerade Grenzen, volle Chair-/Tisch-ROI und fremde Tisch-/Chair-Kollisionen bleiben strikt.
 - Die absolute globale Ringrotation ist semantisch frei. Die aktive Source-Winkelreihenfolge bleibt erhalten; danach kein zweiter Slottausch. Gemeinsame Rotation und geringe Verschiebung berücksichtigen Sitzflächen, Chair-Außenkanten und Parktische.
 - Ausgabe kehrt in ursprüngliche Scene Order zurück. Bei Stärke 0 exakte Source-Posen ohne Chairs. Teilstärken blenden die gebundenen Rollen und werden bei ungültiger gemeinsamer Geometrie explizit abgelehnt; Zielprüfung bei 100 %.

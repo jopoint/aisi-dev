@@ -1,5 +1,6 @@
 """Offline-Prüfung der Discussion-Teilnehmerstufen, ohne OSC-Netzwerkversand."""
 import argparse
+from collections import Counter
 from copy import deepcopy
 from dataclasses import replace
 import json
@@ -42,8 +43,12 @@ def check_source(name, raw, output):
         assert all(type(value) is float for _,value in messages)
         required=2 if count<=6 else 4 if count<=12 else 5
         assert len(plan.active_table_ids)==required and len(plan.parked_table_ids)==5-required
+        kinds=Counter(c['seat_kind'] for c in chairs)
+        if required==4:
+            assert kinds['regular_long']==min(count,8)
+            assert kinds['regular_corner']==max(0,count-8) and kinds['dense_long']==0
         records.append(dict(participants=count,active=list(plan.active_table_ids),
-            parked=list(plan.parked_table_ids),seconds=time.monotonic()-start))
+            parked=list(plan.parked_table_ids),seat_kinds=dict(kinds),seconds=time.monotonic()-start))
         if count in (4,6,12,15): examples[count]=deepcopy(plan)
     fig,axes=plt.subplots(2,2,figsize=(11,11))
     by_id={t.table_id:t for t in state.tables}
@@ -55,10 +60,12 @@ def check_source(name, raw, output):
             footprint=table_world_footprint(by_id[target.table_id],(target.target_x,target.target_y),target.target_rot_deg)
             ax.add_patch(Polygon(footprint,facecolor='white' if parked else '#b9c1c9',edgecolor='#475569',hatch='//' if parked else None))
         for chair in plan.chairs:
-            ax.add_patch(Circle((chair['x_cm'],chair['y_cm']),25,facecolor='#f3c383',edgecolor='#b76516'))
+            corner=chair['seat_kind']=='regular_corner'
+            ax.add_patch(Circle((chair['x_cm'],chair['y_cm']),25,
+                facecolor='#bca7e8' if corner else '#f3c383',edgecolor='#673da0' if corner else '#b76516'))
         ax.set(xlim=(0,500),ylim=(500,0),aspect='equal',xlabel='X [cm]',ylabel='Y [cm]',
             title=f'{count} Personen · {len(plan.active_table_ids)} aktive Tische')
-    fig.suptitle(f'Discussion · Teilnehmerstufen · {name}\nSchraffiert: geparkte Tische',fontsize=14)
+    fig.suptitle(f'Discussion · Teilnehmerstufen · {name}\nViolett: Eckplätze · Schraffiert: geparkte Tische',fontsize=14)
     fig.tight_layout(rect=(0,0,1,.95))
     fig.savefig(output/f'{name}_stufen.png',dpi=150);plt.close(fig)
     return records
