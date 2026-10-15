@@ -10,7 +10,7 @@ gewünschte Staffelung statt eines stets vollständigen Fünf-Tisch-Rings.
 | 6 | Dieselbe Zweiergruppe | Vier Längsplätze und je ein Stirnplatz an beiden Enden |
 | 7–8 | Vier als nach innen gerichtetes Rechteck | Höchstens zwei direkt je äußerer Längsseite |
 | 9–12 | Dasselbe Vier-Tisch-Rechteck | Acht Längsplätze plus ein bis vier äußere Eckplätze |
-| 13–15 | Fünf als nach innen gerichtetes Pentagon | Gleichmäßig auf äußere Längsseiten |
+| 13–15 | Fünf als nach innen gerichtetes Pentagon | Zehn Längsplätze plus drei bis fünf Zwischenplätze |
 
 Überzählige Tische werden mit einer Längsseite an den ROI-Rand geschoben.
 Sie halten mindestens 60 cm Abstand zu aktiven Tischen und blockieren keine
@@ -52,11 +52,21 @@ Bei zwölf: acht Längs- und vier Eckplätze; Tischidentitäten und Posen bleibe
 der Stufe stabil. Die zusätzlichen Eckrollen werden ausschließlich in der
 Discussion-Vorschau verwendet.
 
-Im Pentagon bei drei Chairs auf einer Längsseite beträgt der Mittelpunktabstand 52 cm,
-mit 2 cm zwischen den Kreisen. Johannes akzeptiert den geplotteten Überstand
-von maximal 0,51 cm ausschließlich an den abgerundeten Sitzflächenecken.
-Gerade Flächengrenzen, vollständige Tisch-/Chair-ROI und fremde Tisch-/Chair-
-Kollisionen bleiben strikt. Die eigene Tischkante darf vorläufig tangiert werden.
+Im Pentagon bleiben zwei reguläre Plätze je äußerer Längsseite. Die übrigen
+drei bis fünf Personen sitzen zwischen Nachbartischen. Die Zwischenflächen
+werden aus den Mittelpunkten der einander zugewandten kanonischen Stirnkanten
+und demselben nach außen gerichteten 50-cm-Streifen erzeugt. Diese Öffnung liegt
+näher am Ringzentrum als die äußere Verbindung der Tisch-Eckpunkte und hält die
+volle Sitzfläche in der ROI. Bei 15 Personen sind alle fünf Zwischenplätze
+belegt; bei 13/14 werden die Plätze zunächst über den Ring verteilt. Identitäten,
+Tischposen und die zehn Längsplätze bleiben innerhalb 13–15 stabil.
+
+Die bestehende, von Johannes akzeptierte Toleranz von maximal 0,51 cm gilt
+weiterhin ausschließlich für abgerundete Sitzflächenecken. Die neuen
+Pentagon-Zwischenplätze überschreiten die polygonalisierte Rundung in der
+nominalen Probe um rund 0,12 cm. Gerade Grenzen, vollständige Tisch-/Chair-ROI
+und fremde Tisch-/Chair-Kollisionen bleiben strikt. Die eigene Tischkante darf
+vorläufig tangiert werden.
 
 Für die Ringstufen werden bestehende Synthese-/Ringfunktionen wiederverwendet.
 Bei vier aktiven und einem Parktisch prüft die begrenzte Suche zusätzlich
@@ -79,14 +89,14 @@ Der normale Modus ohne Opt-in und isoliertes Tracking behalten ihre bisherigen W
   und alle Teilnehmerzahlen 1–15. Quellen beim Lauf lokal eingefroren.
 - Gemeinsame ROI-/Kollisionsprüfung einschließlich Parktischen, 60-cm-Abstand,
   Übergänge 6→7 und 12→13, deterministische Wiederholung und umgekehrte Scene Order.
-- 21 fokussierte Tests zur Eckplatz-Erweiterung: Discussion-Chairs und unveränderte
+- 22 fokussierte Tests zu Eck-/Zwischenplätzen: Discussion-Chairs und unveränderte
   Rect-Templates. Auch fehlende Tische, Kapazität,
   Tangenz versus Durchdringung, Cache-Kopien, Stärke 0 und Teilstärken geprüft.
 - OSC-Ausgabe lokal aufgezeichnet, ohne Netzwerkversand. Bestehende Adressen,
   Chair-Radius 25 als Float, Tischanzahl und Source-/Target-Reihenfolge beibehalten.
 - Kontrollplots mit 4, 6, 12 und 15 Personen für beide Ausgangsszenen visuell geprüft;
-  Eckplätze violett hervorgehoben.
-  Lokale Artefakte: `data/aisi/debug/discussion_corners_2026-10-15/`.
+  Eck-/Zwischenplätze violett hervorgehoben.
+  Lokale Artefakte: `data/aisi/debug/discussion_pentagon_gaps_2026-10-15/`.
 
 Reproduktion:
 
@@ -94,12 +104,13 @@ Reproduktion:
 MPLCONFIGDIR=/tmp/aisi-mpl PYTHONPATH=src .venv/bin/python \
   scripts/validate_discussion_participants.py \
   --scene data/aisi/scenes/simulated/live_scene.json \
-  --output data/aisi/debug/discussion_corners_2026-10-15
+  --output data/aisi/debug/discussion_pentagon_gaps_2026-10-15
 ```
 
 Der frühere 90-Fälle-Nachweis vom 2026-10-09 betraf den vorherigen festen Ring.
-Der Größenvergleich bleibt über `scripts/plot_discussion_chair_fit.py`
-reproduzierbar; die 45-cm-Alternative wurde verworfen.
+Der historische Größenvergleich bleibt über `scripts/plot_discussion_chair_fit.py`
+reproduzierbar; er zeigt die inzwischen ersetzte Dreier-Längsseitenbelegung.
+Der Chair-Durchmesser bleibt bei 50 cm.
 
 ## Floor-Naht der Zweiergruppe
 
@@ -111,7 +122,7 @@ rücknehmbare Konturbegrenzung vorbereitet; noch nicht im laufenden Graph angewe
 ## Offene Prüfung
 
 Discussion-Chairs bei 100 % einzeln in Room Editor, Learning-Format-Interface
-und TouchDesigner prüfen, besonders 4/5/6 Personen, Eckbelegung bei 9–12 und beide Topologieübergänge
+und TouchDesigner prüfen, besonders 4/5/6 Personen, Eckbelegung bei 9–12, Zwischenplätze bei 13–15 und beide Topologieübergänge
 und die Parktische. Anschließend kurzer Formatwechsel-Check. Eigene
 Tischkantentangenz und Rundungsüberstand physisch beurteilen.
 Keine TD-Fernsteuerung, automatische Speicherung oder physische

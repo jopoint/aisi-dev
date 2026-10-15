@@ -44,9 +44,9 @@ def check_source(name, raw, output):
         required=2 if count<=6 else 4 if count<=12 else 5
         assert len(plan.active_table_ids)==required and len(plan.parked_table_ids)==5-required
         kinds=Counter(c['seat_kind'] for c in chairs)
-        if required==4:
-            assert kinds['regular_long']==min(count,8)
-            assert kinds['regular_corner']==max(0,count-8) and kinds['dense_long']==0
+        if required in (4,5):
+            assert kinds['regular_long']==min(count,2*required)
+            assert kinds['regular_corner']==max(0,count-2*required) and kinds['dense_long']==0
         records.append(dict(participants=count,active=list(plan.active_table_ids),
             parked=list(plan.parked_table_ids),seat_kinds=dict(kinds),seconds=time.monotonic()-start))
         if count in (4,6,12,15): examples[count]=deepcopy(plan)

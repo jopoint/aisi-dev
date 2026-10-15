@@ -94,6 +94,31 @@ class DiscussionChairTests(unittest.TestCase):
         bad=deepcopy(p);bad.chairs[corners[1]]=dict(bad.chairs[corners[0]],seat_id='duplicate-corner')
         with self.assertRaises(LayoutConstraintError): validate_discussion_chairs(s,bad)
 
+    def test_pentagon_uses_five_gap_seats_instead_of_dense_long_rows(self):
+        s=state(scene());poses=None
+        for count in (13,14,15):
+            with self.subTest(participants=count):
+                p=plan_discussion_chairs(s,count)
+                kinds=Counter(c['seat_kind'] for c in p.chairs)
+                self.assertEqual(kinds['regular_long'],10)
+                self.assertEqual(kinds['regular_corner'],count-10)
+                self.assertEqual(kinds['dense_long'],0)
+                self.assertEqual(set(Counter(c['table_id'] for c in p.chairs
+                    if c['seat_kind']=='regular_long').values()),{2})
+                gap_keys=[c['region_id'] for c in p.chairs if c['seat_kind']=='regular_corner']
+                self.assertEqual(len(gap_keys),len(set(gap_keys)))
+                self.assertEqual(len(p.active_table_ids),5)
+                self.assertFalse(p.parked_table_ids)
+                validate_discussion_chairs(s,p)
+                if poses is not None:self.assertEqual(p.targets,poses)
+                poses=p.targets
+        corners=[c for c in p.chairs if c['seat_kind']=='regular_corner']
+        self.assertEqual(len(corners),5)
+        bad=deepcopy(p);bad.chairs[-1]['region_id']='unknown'
+        with self.assertRaises(LayoutConstraintError):validate_discussion_chairs(s,bad)
+        bad=deepcopy(p);bad.chairs[-1]['x_cm']=-1
+        with self.assertRaises(LayoutConstraintError):validate_discussion_chairs(s,bad)
+
     def test_tangency_corner_tolerance_and_collisions(self):
         s=state(scene())
         for count in (6,12,15):

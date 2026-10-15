@@ -69,14 +69,14 @@ def _seating_geometry(state, targets):
 
 def _ring_geometry(state, targets):
     geometry = _seating_geometry(state, targets)
-    if len(targets)!=4:
+    if len(targets) not in (4,5):
         return geometry
     by_id = {t.table_id:t for t in state.tables}
-    cx = math.fsum(t.target_x for t in targets)/4
-    cy = math.fsum(t.target_y for t in targets)/4
+    cx = math.fsum(t.target_x for t in targets)/len(targets)
+    cy = math.fsum(t.target_y for t in targets)/len(targets)
     ordered = sorted(targets,key=lambda t:math.atan2(t.target_y-cy,t.target_x-cx))
     # Anchor to identity so common rotation never changes the corner roles.
-    start = min(range(4),key=lambda i:ordered[i].table_id)
+    start = min(range(len(ordered)),key=lambda i:ordered[i].table_id)
     ordered = ordered[start:]+ordered[:start]
     for first,second in zip(ordered,ordered[1:]+ordered[:1]):
         a = table_world_footprint(by_id[first.table_id],(first.target_x,first.target_y),first.target_rot_deg)
@@ -86,6 +86,19 @@ def _ring_geometry(state, targets):
         # neighboring tables. Derive the seat strip from this canonical edge.
         support = lambda p:p[0]*outward[0]+p[1]*outward[1]
         va,vb = max(a,key=support),max(b,key=support)
+        if len(targets)==5:
+            # Pentagon gaps widen towards the outside. Their short-end centers
+            # define the free mouth without pushing the seat beyond the ROI.
+            def facing_end_center(polygon,target,neighbor):
+                angle=math.radians(target.target_rot_deg)
+                tangent=(math.cos(angle),math.sin(angle))
+                delta=(neighbor.target_x-target.target_x,neighbor.target_y-target.target_y)
+                sign=1 if tangent[0]*delta[0]+tangent[1]*delta[1]>=0 else -1
+                end=sorted(polygon,key=lambda p:sign*(p[0]*tangent[0]+p[1]*tangent[1]))[-2:]
+                return ((end[0][0]+end[1][0])/2,(end[0][1]+end[1][1])/2)
+            va=facing_end_center(a,first,second)
+            vb=facing_end_center(b,second,first)
+
         width = math.dist(va,vb)
         if width<=2*CHAIR_RADIUS_CM:
             raise LayoutConstraintError('Discussion-Ecke bietet nicht genügend Sitzbreite.')
@@ -161,9 +174,9 @@ def _validate_ring_chairs(state, plan):
             checked_radius=radius-10*GEOMETRY_EPSILON if other==tid else radius
             if circle_intersects_convex_polygon(point,checked_radius,footprint):
                 raise LayoutConstraintError('Discussion-Chair kollidiert mit einem Tisch.')
-    if len(plan.targets)==4 and (any(count>2 for count in long_counts.values())
+    if len(plan.targets) in (4,5) and (any(count>2 for count in long_counts.values())
                                 or any(count>1 for count in corner_counts.values())):
-        raise LayoutConstraintError('Vierer-Discussion erlaubt zwei Längsplätze und einen Eckplatz je Tisch.')
+        raise LayoutConstraintError('Discussion-Ringe erlauben zwei Längsplätze und einen Zwischenplatz je Tisch.')
     if any(count>3 for count in counts.values()):
         raise LayoutConstraintError('Discussion erlaubt höchstens drei Chairs pro Tisch.')
     if any(math.dist((a['x_cm'],a['y_cm']),(b['x_cm'],b['y_cm']))<=a['radius_cm']+b['radius_cm']+GEOMETRY_EPSILON
@@ -173,21 +186,21 @@ def _validate_ring_chairs(state, plan):
 
 def _assemble(state, targets, participants, *, validate=True):
     geometry=_ring_geometry(state,targets)
-    long_participants=min(participants,8) if len(targets)==4 else participants
+    long_participants=min(participants,2*len(targets)) if len(targets) in (4,5) else participants
     counts=evenly_distribute(long_participants,len(targets))
     chairs=[]
     for tid,count in zip(sorted(t.table_id for t in targets),counts):
         region,rectangle,center,tangent,g=geometry[tid]
-        offsets={0:(),1:(0.,),2:(-g.nominal_width/4,g.nominal_width/4),
-                 3:(-(g.nominal_width/2-CHAIR_RADIUS_CM-3),0.,g.nominal_width/2-CHAIR_RADIUS_CM-3)}[count]
+        offsets={0:(),1:(0.,),2:(-g.nominal_width/4,g.nominal_width/4)}[count]
         for index,offset in enumerate(offsets):
             chairs.append(dict(x_cm=center[0]+tangent[0]*offset,y_cm=center[1]+tangent[1]*offset,
                 radius_cm=CHAIR_RADIUS_CM,table_id=tid,seat_id=f'{tid}:discussion:{index}',
-                seat_kind='dense_long' if count==3 and index==1 else 'regular_long'))
-    if len(targets)==4 and participants>8:
+                seat_kind='regular_long'))
+    if len(targets) in (4,5) and participants>2*len(targets):
         corners=[key for key in geometry if key.startswith('corner:')]
-        # Fill opposite corners first when only two extra seats are requested.
-        for index in (0,2,1,3)[:participants-8]:
+        # Spread the extra seats around the ring before filling adjacent gaps.
+        order=(0,2,1,3) if len(targets)==4 else (0,2,4,1,3)
+        for index in order[:participants-2*len(targets)]:
             key=corners[index];center=geometry[key][2];tid=key.removeprefix('corner:')
             chairs.append(dict(x_cm=center[0],y_cm=center[1],radius_cm=CHAIR_RADIUS_CM,
                 table_id=tid,seat_id=f'discussion:{key}',seat_kind='regular_corner',region_id=key))
@@ -221,11 +234,13 @@ def _cached_ring_plan(roi,key,participants):
                 return False
         def bounds(targets):
             plan=_assemble(state,targets,participants,validate=False)
-            return tuple(point for chair in plan.chairs for point in (
+            points=tuple(point for chair in plan.chairs for point in (
                 (chair["x_cm"]-CHAIR_RADIUS_CM,chair["y_cm"]),
                 (chair["x_cm"]+CHAIR_RADIUS_CM,chair["y_cm"]),
                 (chair["x_cm"],chair["y_cm"]-CHAIR_RADIUS_CM),
                 (chair["x_cm"],chair["y_cm"]+CHAIR_RADIUS_CM)))
+            return points+tuple(point for key,region in plan.regions.items()
+                                if key.startswith('corner:') for point in region)
         try:
             targets,_=_layout_rect_discussion_templates(state,state.tables,
                 candidate_filter=accept,candidate_bounds=bounds)

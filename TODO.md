@@ -96,6 +96,8 @@ Synthetische Chairs sind für Input und Groupwork umgesetzt. Die aktuelle Groupw
 
 ### Discussion
 
+- [x] Pentagon-Belegung am 2026-10-15 angepasst: 13–15 Personen mit zehn Längsseitenplätzen und drei bis fünf Zwischenplätzen; höchstens zwei direkt je Längsseite. Kanonische Stirnkanten, volle Zwischenflächen und ROI-/Kollisionsprüfung wiederverwendet.
+
 - [x] Überkreuzte Floor-Naht der Zweiergruppe offline auf die 5-cm-Konturzugabe je Tisch zurückgeführt. Rücknehmbarer Textport-Helfer vorbereitet und mit zehn Tests / 30 Fällen geprüft; keine Tischposen geändert. [Anleitung](docs/TOUCHDESIGNER_JOINED_FLOOR_CONTOURS.md).
 - [ ] Floor-Naht-Helfer im aktuellen TD-Graph ausführen und 6→7→6 sowie Moduswechsel visuell bestätigen; keine automatische Speicherung.
 
@@ -104,8 +106,8 @@ Synthetische Chairs sind für Input und Groupwork umgesetzt. Die aktuelle Groupw
 - [x] Überzählige Tische am ROI-Rand parken, mindestens 60 cm von aktiven Tischen und außerhalb der Sitz-/Bewegungsflächen. Aktive/geparkte Auswahl gemeinsam nach Gesamtweg bewerten; alle IDs und Scene Order erhalten.
 - [x] Standard-Count ohne explizite Teilnehmerzahl bleibt zwei Personen je verfügbarem Tisch; aktive Topologie folgt dem Count. Fehlende Tische für die Stufe und Counts über 15 klar ablehnen.
 - [x] 50-cm-Chairs beibehalten; eigene Kantentangenz und 0,51 cm Rundungsüberstand vorläufig akzeptiert. Nur die beiden Tische der Zweiergruppe teilen eine Längskante; gemeinsame Stirnplätze tangieren beide Tischhälften.
-- [x] Offline-Abschluss der neuen Staffelung: 30 Fälle aus zwei Ausgangsszenen für Counts 1–15, aktuell 21 fokussierte Discussion-/Rect-Template-Tests für die Eckplatz-Erweiterung; Kontrollplots erstellt. Der frühere 90-Fälle-Nachweis vom 2026-10-09 betraf den vorherigen festen Ring.
-- [ ] Discussion mit Chairs interaktiv bei 100 % im Room Editor, Learning-Format-Interface und TouchDesigner prüfen, insbesondere 4/5/6, Eckplätze bei 9–12, 6→7, 12→13 und geparkte Tische; Berührungen und Rundungsüberstand dabei beurteilen.
+- [x] Offline-Abschluss der neuen Staffelung: 30 Fälle aus zwei Ausgangsszenen für Counts 1–15, aktuell 22 fokussierte Discussion-/Rect-Template-Tests einschließlich Pentagon-Zwischenplätzen; Kontrollplots erstellt. Der frühere 90-Fälle-Nachweis vom 2026-10-09 betraf den vorherigen festen Ring.
+- [ ] Discussion mit Chairs interaktiv bei 100 % im Room Editor, Learning-Format-Interface und TouchDesigner prüfen, insbesondere 4/5/6, Eckplätze bei 9–12, Zwischenplätze bei 13–15, 6→7, 12→13 und geparkte Tische; Berührungen und Rundungsüberstand dabei beurteilen.
 - [ ] Präsentations-/Publikumsrollen nur definieren, falls das Format sie benötigt.
 
 ## Kontrollansicht für Layout-Stichproben
