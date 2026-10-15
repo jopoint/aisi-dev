@@ -1,4 +1,5 @@
 """Teilnehmerabhängige Discussion: verbundene Zweiergruppe, Viererring, Pentagon."""
+from collections import OrderedDict
 from copy import deepcopy
 from dataclasses import dataclass, replace
 from functools import lru_cache
@@ -9,7 +10,7 @@ from aisi.core.models import ROI, SceneState, TableState, TableTarget
 from aisi.core.table_geometry import (
     GEOMETRY_EPSILON, circle_inside_convex_polygon, circle_intersects_convex_polygon,
     convex_polygons_intersect, polygon_inside_roi, resolve_table_state_geometry,
-    table_world_footprint,
+    table_world_footprint, table_allowed_center_bounds,
 )
 from aisi.analysis.rect_groupwork_adaptive_prototype import (
     single_long_side_clearance_region, singleton_long_side_clearance_regions,
@@ -556,20 +557,120 @@ def plan_discussion_chairs(state,participants):
     return replace(plan,targets=[by_id[t.table_id] for t in state.tables])
 
 
+_transform_cache = OrderedDict()
+
+
 def transform_discussion_plan(state,plan,strength):
+    """Blend before bounded repair, preserving all active/parked table roles."""
+    key = (tuple((t.table_id,t.x,t.y,t.rot_deg,t.width,t.height,t.table_type) for t in state.tables),
+           (state.roi.x_min,state.roi.y_min,state.roi.x_max,state.roi.y_max),
+           tuple((t.table_id,t.target_x,t.target_y,t.target_rot_deg) for t in plan.targets),
+           plan.active_table_ids,plan.parked_table_ids,plan.topology,len(plan.chairs),strength)
+    if key not in _transform_cache:
+        _transform_cache[key] = _transform_discussion_plan(state,plan,strength)
+        if len(_transform_cache)>32:
+            _transform_cache.popitem(last=False)
+    _transform_cache.move_to_end(key)
+    return deepcopy(_transform_cache[key])
+
+
+def _transform_discussion_plan(state,plan,strength):
     blended = _blend_targets_with_source(state,plan.targets,strength)
-    # Final topology and active/parked identities are fixed before blending.
     active_state = _active_state(state,plan.active_table_ids)
-    active_targets = [t for t in blended if t.table_id in plan.active_table_ids]
+    capacity = 6 if plan.topology=='pair' else 3*len(plan.active_table_ids)
+
+    def assemble(targets, count):
+        active_targets = [t for t in targets if t.table_id in plan.active_table_ids]
+        seated = (_assemble_pair(active_state,active_targets,count) if plan.topology=='pair'
+                  else _assemble(active_state,active_targets,count,validate=False))
+        return replace(seated,targets=targets,active_table_ids=plan.active_table_ids,
+                       parked_table_ids=plan.parked_table_ids)
+
+    def finish(targets):
+        by_id = {t.table_id:t for t in state.tables}
+        for t in targets:
+            if t.table_id not in plan.parked_table_ids:
+                continue
+            x0,y0,x1,y1 = table_allowed_center_bounds(by_id[t.table_id],t.target_rot_deg,
+                x_min=state.roi.x_min,y_min=state.roi.y_min,x_max=state.roi.x_max,y_max=state.roi.y_max)
+            horizontal = abs((t.target_rot_deg+90)%180-90)<1e-7
+            vertical = abs(t.target_rot_deg%180-90)<1e-7
+            if not ((horizontal and min(abs(t.target_y-y0),abs(t.target_y-y1))<1e-7)
+                    or (vertical and min(abs(t.target_x-x0),abs(t.target_x-x1))<1e-7)):
+                raise LayoutConstraintError('Discussion-Parktisch muss mit einer Längsseite am ROI-Rand stehen.')
+        # Reserve the same maximum seating envelope throughout each count tier.
+        validate_discussion_chairs(state,assemble(targets,capacity))
+        result = assemble(targets,len(plan.chairs))
+        validate_discussion_chairs(state,result)
+        return result
+
     try:
-        if plan.topology=='pair':
-            partial = _assemble_pair(active_state,active_targets,len(plan.chairs))
-        else:
-            partial = _assemble(active_state,active_targets,len(plan.chairs),validate=False)
-        partial = replace(partial,targets=blended,active_table_ids=plan.active_table_ids,
-                          parked_table_ids=plan.parked_table_ids)
-        validate_discussion_chairs(state,partial)
-        return partial
-    except ValueError as exc:
-        raise LayoutConstraintError('Discussion-Chairs passen bei dieser Teilstärke nicht; '
-                                    'Topologie und Tischrollen bleiben gebunden. Für Zielprüfung 100 % verwenden.') from exc
+        return finish(blended)
+    except LayoutConstraintError:
+        pass
+
+    # Independent table interpolation usually breaks a pair's parallel edges
+    # or a ring's seat strips. Project its active poses onto the already bound
+    # final shape, using a least-squares rigid fit of the blended centers.
+    final = [t for t in plan.targets if t.table_id in plan.active_table_ids]
+    wanted = {t.table_id:t for t in blended}
+    center = tuple(math.fsum(getattr(t,axis) for t in final)/len(final)
+                   for axis in ('target_x','target_y'))
+    destination = tuple(math.fsum(getattr(wanted[t.table_id],axis) for t in final)/len(final)
+                        for axis in ('target_x','target_y'))
+    dot = cross = 0.
+    for t in final:
+        x,y = t.target_x-center[0],t.target_y-center[1]
+        u,v = wanted[t.table_id].target_x-destination[0],wanted[t.table_id].target_y-destination[1]
+        dot += x*u+y*v
+        cross += x*v-y*u
+    angle = math.atan2(cross,dot)
+    by_id = {t.table_id:t for t in state.tables}
+    # Parking repair measures movement from the blended request, while keeping
+    # exactly the original active/parked identities and scene order.
+    intermediate = replace(state,tables=[replace(t,x=wanted[t.table_id].target_x,
+        y=wanted[t.table_id].target_y,rot_deg=wanted[t.table_id].target_rot_deg) for t in state.tables])
+    parking_cache = {}
+    for fraction in (1.,.5,.25,.125,.0625,.03125,.015625,0.):
+        rotation = angle*fraction
+        c,s = math.cos(rotation),math.sin(rotation)
+        cx,cy = (center[i]+fraction*(destination[i]-center[i]) for i in (0,1))
+        targets = [replace(t,target_x=cx+c*(t.target_x-center[0])-s*(t.target_y-center[1]),
+            target_y=cy+s*(t.target_x-center[0])+c*(t.target_y-center[1]),
+            target_rot_deg=(t.target_rot_deg+math.degrees(rotation)+180)%360-180,
+            facing_target_x=cx if t.facing_target_x is not None else None,
+            facing_target_y=cy if t.facing_target_y is not None else None) for t in final]
+        candidate = assemble(targets,capacity)
+        points = [p for region in candidate.regions.values() for p in region]
+        points.extend(p for t in targets for p in table_world_footprint(by_id[t.table_id],
+            (t.target_x,t.target_y),t.target_rot_deg))
+        if plan.topology=='ring':
+            points.extend(p for t in targets for region in singleton_long_side_clearance_regions(
+                t,by_id[t.table_id],clearance_depth_cm=DISCUSSION_SEAT_CLEARANCE_DEPTH_CM) for p in region)
+        points.extend((chair['x_cm']+dx,chair['y_cm']+dy) for chair in candidate.chairs
+                      for dx,dy in ((-25,0),(25,0),(0,-25),(0,25)))
+        x0=state.roi.x_min-min(x for x,y in points); x1=state.roi.x_max-max(x for x,y in points)
+        y0=state.roi.y_min-min(y for x,y in points); y1=state.roi.y_max-max(y for x,y in points)
+        if x0>x1+1e-7 or y0>y1+1e-7:
+            continue
+        dx,dy = max(x0,min(x1,0.)),max(y0,min(y1,0.))
+        targets = [replace(t,target_x=t.target_x+dx,target_y=t.target_y+dy,
+            facing_target_x=t.facing_target_x+dx if t.facing_target_x is not None else None,
+            facing_target_y=t.facing_target_y+dy if t.facing_target_y is not None else None) for t in targets]
+        # Retain original park targets when valid, otherwise reuse the canonical
+        # edge-parking solver; it cannot change the active table selection.
+        parked = [t for t in plan.targets if t.table_id in plan.parked_table_ids]
+        try:
+            ordered = {t.table_id:t for t in [*targets,*parked]}
+            return finish([ordered[t.table_id] for t in state.tables])
+        except LayoutConstraintError:
+            pass
+        try:
+            complete = _attach_parking(intermediate,assemble(targets,capacity),parking_cache)
+            ordered = {t.table_id:replace(t,source_rot_deg=by_id[t.table_id].rot_deg) for t in complete.targets}
+            return finish([ordered[t.table_id] for t in state.tables])
+        except LayoutConstraintError:
+            continue
+    # The validated full target remains a feasible hard-constraint repair.
+    # Never leave the sender frozen on an earlier request at positive strength.
+    return finish(deepcopy(plan.targets))

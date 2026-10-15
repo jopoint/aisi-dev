@@ -207,24 +207,66 @@ class DiscussionChairTests(unittest.TestCase):
             prepare_scene_output(scene(),'discussion',1.,False)
         existing.assert_called_once()
 
-    def test_partial_poses_preserve_roles_or_are_explicitly_rejected(self):
+    def test_partial_strengths_repair_geometry_preserve_roles_and_return_copies(self):
         s=state(scene())
-        for count in (4,10,15):
+        for count in (4,6,10,15):
             final=plan_discussion_chairs(s,count)
             poses={t.table_id:t for t in final.targets}
             ready=replace(s,tables=[replace(t,x=poses[t.table_id].target_x,y=poses[t.table_id].target_y,
-                                           rot_deg=poses[t.table_id].target_rot_deg) for t in s.tables])
-            partial=transform_discussion_plan(ready,final,.5)
-            validate_discussion_chairs(ready,partial)
-            try:
-                moving=transform_discussion_plan(s,final,.5)
-            except LayoutConstraintError as exc:
-                self.assertIn('Teilstärke',str(exc))
-            else:
-                validate_discussion_chairs(s,moving)
-            self.assertEqual(set(partial.active_table_ids),set(final.active_table_ids))
-            self.assertEqual(set(partial.parked_table_ids),set(final.parked_table_ids))
-            self.assertEqual([t.table_id for t in partial.targets],[t.table_id for t in s.tables])
+                rot_deg=poses[t.table_id].target_rot_deg) for t in s.tables])
+            stable=transform_discussion_plan(ready,final,.5)
+            validate_discussion_chairs(ready,stable)
+            self.assertEqual([(t.target_x,t.target_y,t.target_rot_deg) for t in stable.targets],
+                             [(t.target_x,t.target_y,t.target_rot_deg) for t in final.targets])
+            for strength in (.01,.25,.5,.75,.99):
+                with self.subTest(participants=count,strength=strength):
+                    partial=transform_discussion_plan(s,final,strength)
+                    validate_discussion_chairs(s,partial)
+                    self.assertEqual(partial.active_table_ids,final.active_table_ids)
+                    self.assertEqual(partial.parked_table_ids,final.parked_table_ids)
+                    self.assertEqual([t.table_id for t in partial.targets],[t.table_id for t in s.tables])
+                    self.assertEqual([c['seat_id'] for c in partial.chairs],[c['seat_id'] for c in final.chairs])
+                    self.assertEqual(partial,transform_discussion_plan(s,final,strength))
+                    partial.chairs[0]['x_cm']=-999
+                    self.assertNotEqual(partial,transform_discussion_plan(s,final,strength))
+
+    def test_partial_rigid_pair_moves_and_rotates_over_short_path(self):
+        s=state(scene(2));final=plan_discussion_chairs(s,6)
+        # A feasible pair starts 30 cm left and rotated +20 degrees. The
+        # independent midpoint blend shrinks its gap and needs rigid repair.
+        poses={t.table_id:t for t in final.targets}
+        angle=math.radians(20)
+        sources=[]
+        for t in s.tables:
+            target=poses[t.table_id];x=target.target_x-250;y=target.target_y-250
+            sources.append(replace(t,x=220+math.cos(angle)*x-math.sin(angle)*y,
+                y=250+math.sin(angle)*x+math.cos(angle)*y,rot_deg=target.target_rot_deg+20))
+        moved=replace(s,tables=sources)
+        results=[]
+        for strength in (.25,.5,.75):
+            partial=transform_discussion_plan(moved,final,strength)
+            validate_discussion_chairs(moved,partial)
+            cx=sum(t.target_x for t in partial.targets)/2
+            self.assertAlmostEqual(cx,220+30*strength)
+            self.assertAlmostEqual(sum(t.target_y for t in partial.targets)/2,250.)
+            self.assertAlmostEqual(math.dist(*[(t.target_x,t.target_y) for t in partial.targets]),90.)
+            delta=(partial.targets[0].target_rot_deg-final.targets[0].target_rot_deg+180)%360-180
+            self.assertGreater(delta,0);self.assertLess(delta,20)
+            results.append(partial.targets)
+        self.assertNotEqual(results[0],results[1]);self.assertNotEqual(results[1],results[2])
+        self.assertAlmostEqual((results[1][0].target_rot_deg-final.targets[0].target_rot_deg+180)%360-180,10.)
+
+    def test_partial_osc_output_updates_instead_of_rejecting_request(self):
+        raw=scene();parameters={'participants':6,'adaptive_layout_preview':True}
+        outputs=[]
+        for strength in (0.,.25,.5,.75,1.):
+            tables,_,chairs,targets,error=prepare_scene_output(raw,'discussion',strength,False,
+                activity_parameters=parameters)
+            self.assertIsNone(error);self.assertEqual(tables,raw['tables'])
+            self.assertEqual(len(chairs),0 if strength==0 else 6)
+            self.assertEqual(len(targets),5)
+            outputs.append(targets)
+        self.assertNotEqual(outputs[1],outputs[2]);self.assertNotEqual(outputs[2],outputs[3])
 
 
 if __name__=='__main__': unittest.main()

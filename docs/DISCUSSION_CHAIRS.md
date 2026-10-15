@@ -83,13 +83,35 @@ Phasen-/Mittelpunktsuche einschließlich Chair-Grenzen. Die Parkplanung nutzt
 den vorhandenen kompakten Parkhelfer. Begrenzte Caches liefern unabhängige
 Ergebniskopien; gleiche Parkgeometrie innerhalb einer Suche wird wiederverwendet.
 
-Stärke 0 erhält exakte Source-Posen ohne Chairs. Teilstärken blenden die bereits
-gebundenen aktiven/geparkten Rollen entlang des kürzesten Rotationswegs und
-prüfen die gemeinsame Geometrie. Ungültige Teilposen werden ausdrücklich
-abgelehnt; kein Rollenwechsel als Reparatur. Für die Zielprüfung 100 % verwenden.
+Stärke 0 erhält exakte Source-Posen ohne Chairs. Positive Teilstärken blenden die
+gebundenen aktiven/geparkten Rollen entlang des kürzesten Rotationswegs.
+Ungültige Zwischenformen werden anschließend repariert: Die bereits gebundene
+Zweier-/Ringform wird starr an die interpolierten Tischmittelpunkte angepasst,
+samt sämtlichen Sitzflächen und Chair-Kreisen in die ROI eingepasst und bei
+Bedarf begrenzt zur gültigen Endform zurückgenommen. Randparken und mindestens
+60 cm Abstand bleiben erhalten; die vorhandene Parkplanung darf nur die schon
+geparkten IDs neu platzieren. Kein Rollen- oder Slotwechsel. Die maximale
+Stufenbelegung 6/12/15 bleibt reserviert, damit Counts innerhalb einer Stufe
+keine abweichenden Tischposen erzeugen. Für die Zielprüfung 100 % verwenden.
+Die harte Form-/Sitz-/ROI-Reparatur kann die Reglerwirkung begrenzen und im
+engen Raum zur unveränderten Endform führen. Wiederholte Anfragen verwenden
+einen auf 32 Einträge begrenzten Cache mit unabhängigen Ergebniskopien.
+Die frühere reine Ablehnung aller ungültigen Teilposen ließ den OSC-Sender ohne
+neue Ausgabe und damit das vorherige Bild stehen; dieser Pfad wurde ersetzt.
 Der normale Modus ohne Opt-in und isoliertes Tracking behalten ihre bisherigen Wege.
 
 ## Offline-Nachweis
+
+Aktualisierung Umbauintensität am 2026-10-15: 27 fokussierte Tests bestanden
+(Discussion-Chairs, Rect-Templates und Interface-/Sender-Einstellungen). 210 Fälle aus zwei Ausgangsszenen,
+Counts 1–15, jeweils 0/1/25/50/75/99/100 %. Gemeinsame Geometrie, aktive/geparkte
+Identitäten, Scene Order einschließlich umgekehrter Eingabe, deterministische
+Wiederholung und Source-Erhalt bei 0 geprüft. Keine OSC-Netzwerkausgabe.
+Quellen und Checks lokal: `data/aisi/debug/discussion_strength_2026-10-15/`.
+Gezielte Regression prüft zusätzlich eine verschobene und gedrehte Zweiergruppe:
+der Mittelpunkt folgt der Teilstärke, 10-cm-Spalt und gültige Sitzflächen bleiben
+erhalten; bei 50 % halbiert sich die gemeinsame 20°-Drehung auf 10°.
+
 
 - 30 Fälle: Editor- und aktuelle Live-Ausgangsszene, jeweils fünf Rect-Tische
   und alle Teilnehmerzahlen 1–15. Quellen beim Lauf lokal eingefroren.
@@ -132,6 +154,7 @@ manuell zurückzunehmen. Danach Sender neu starten und neu generieren.
 
 ## Offene Prüfung
 
+Nach Sender-Neustart zusätzlich die Reglerwerte 0/25/50/75/100 % live prüfen.
 Discussion-Chairs bei 100 % einzeln in Room Editor, Learning-Format-Interface
 und TouchDesigner prüfen, besonders 4/5/6 Personen, Eckbelegung bei 9–12, Zwischenplätze bei 13–15 und beide Topologieübergänge
 und die Parktische. Anschließend kurzer Formatwechsel-Check. Eigene

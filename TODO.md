@@ -96,6 +96,9 @@ Synthetische Chairs sind für Input und Groupwork umgesetzt. Die aktuelle Groupw
 
 ### Discussion
 
+- [x] Umbauintensität mit Chairs repariert: Zwischenwerte wurden bisher abgelehnt, wodurch der Sender das alte Bild stehen ließ. Nach Interpolation jetzt gebundene Zweier-/Ringform samt Sitzflächen reparieren, ROI und Randparken erhalten; begrenzter Cache für Wiederholungen. 27 fokussierte Tests und 210 Offline-Fälle über zwei Szenen, Counts 1–15 und sieben Stärken bestanden.
+- [ ] Sender neu starten und Umbauintensität bei Discussion live mit 0/25/50/75/100 % prüfen; harte Form-/Sitz-/ROI-Regeln dürfen die sichtbare Wirkung begrenzen.
+
 - [x] Pentagon-Zwischenplätze auf Johannes’ Wunsch radial nach außen verschoben: alle Chair-Mittelpunkte liegen auf dem Kreis der regulären Längsplätze, nominal rund 26,5 cm zusätzliche Verschiebung. Vollständige Sitzflächen werden mitverschoben und erneut auf ROI/Kollisionen geprüft; 22 Tests und 30 Offline-Fälle bestanden.
 
 - [x] Pentagon-Belegung am 2026-10-15 angepasst: 13–15 Personen mit zehn Längsseitenplätzen und drei bis fünf Zwischenplätzen; höchstens zwei direkt je Längsseite. Kanonische Stirnkanten, volle Zwischenflächen und ROI-/Kollisionsprüfung wiederverwendet.
