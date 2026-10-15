@@ -331,6 +331,78 @@ def _active_state(state, active_ids):
     return replace(state, tables=[t for t in state.tables if t.table_id in active_ids])
 
 
+
+def _transport_discussion_seating(reference, targets):
+    """Move canonical final seat polygons with their bound individual table."""
+    origins = {t.table_id:t for t in reference.targets}
+    destinations = {t.table_id:t for t in targets}
+    transforms = {}
+    for tid in reference.active_table_ids:
+        source,target = origins[tid],destinations[tid]
+        angle = math.radians(target.target_rot_deg-source.target_rot_deg)
+        transforms[tid] = source,target,math.cos(angle),math.sin(angle)
+
+    def move(point, tid):
+        source,target,c,s = transforms[tid]
+        x,y = point[0]-source.target_x,point[1]-source.target_y
+        return target.target_x+c*x-s*y,target.target_y+s*x+c*y
+
+    owners = {c.get('region_id',c['table_id']):c['table_id'] for c in reference.chairs}
+    regions = {key:tuple(move(point,owners[key]) for point in region)
+               for key,region in reference.regions.items()}
+    chairs = []
+    for chair in reference.chairs:
+        x,y = move((chair['x_cm'],chair['y_cm']),chair['table_id'])
+        chairs.append(dict(chair,x_cm=x,y_cm=y))
+    return replace(reference,targets=targets,chairs=chairs,regions=regions,topology='relaxed')
+
+
+def _validate_relaxed_discussion(state, plan, footprints):
+    # Reconstruct the accepted canonical template rather than trusting caller
+    # polygons. Reserve the maximum tier seating even at a lower chair count.
+    capacity = 6 if len(plan.active_table_ids)==2 else 3*len(plan.active_table_ids)
+    reference = plan_discussion_chairs(state,capacity)
+    if (plan.active_table_ids!=reference.active_table_ids
+            or plan.parked_table_ids!=reference.parked_table_ids):
+        raise LayoutConstraintError('Discussion-Tischrollen dürfen bei Teilstärke nicht wechseln.')
+    final = {t.table_id:t for t in reference.targets}
+    for target in plan.targets:
+        if target.table_id not in plan.parked_table_ids:
+            continue
+        parked=final[target.table_id]
+        horizontal=abs((parked.target_rot_deg+90)%180-90)<1e-7
+        edge_axis='target_y' if horizontal else 'target_x'
+        if (abs((target.target_rot_deg-parked.target_rot_deg+90)%180-90)>1e-7
+                or abs(getattr(target,edge_axis)-getattr(parked,edge_axis))>1e-7):
+            raise LayoutConstraintError('Discussion-Parktisch verlässt seine ROI-Randseite.')
+    reserved = _transport_discussion_seating(reference,plan.targets)
+    selected = {c['seat_id'] for c in plan_discussion_chairs(state,len(plan.chairs)).chairs}
+    expected = [c for c in reserved.chairs if c['seat_id'] in selected]
+    if plan.regions!=reserved.regions or plan.chairs!=expected:
+        raise LayoutConstraintError('Discussion-Teilstärke hat ungültige gebundene Sitzgeometrie.')
+    for chair in reserved.chairs:
+        point = chair['x_cm'],chair['y_cm']
+        if not circle_inside_convex_polygon(point,CHAIR_RADIUS_CM,_roi_polygon(state.roi)):
+            raise LayoutConstraintError('Discussion-Chair überschreitet die ROI.')
+        for tid,footprint in footprints.items():
+            radius = CHAIR_RADIUS_CM-10*GEOMETRY_EPSILON if tid==chair['table_id'] else CHAIR_RADIUS_CM
+            if circle_intersects_convex_polygon(point,radius,footprint):
+                raise LayoutConstraintError('Discussion-Chair kollidiert mit einem Tisch.')
+    if any(math.dist((a['x_cm'],a['y_cm']),(b['x_cm'],b['y_cm']))<=2*CHAIR_RADIUS_CM+GEOMETRY_EPSILON
+           for a,b in combinations(reserved.chairs,2)):
+        raise LayoutConstraintError('Discussion-Chairs kollidieren.')
+    regions = list(reserved.regions.values())
+    if len(plan.active_table_ids)>=4:
+        by_id = {t.table_id:t for t in state.tables}
+        regions.extend(r for t in plan.targets if t.table_id in plan.active_table_ids
+            for r in singleton_long_side_clearance_regions(t,by_id[t.table_id],
+                clearance_depth_cm=DISCUSSION_SEAT_CLEARANCE_DEPTH_CM))
+    if any(_polygons_overlap_with_positive_area(region,fp)
+           for region in regions for fp in footprints.values()):
+        raise LayoutConstraintError('Blockierte Discussion-Sitz-/Bewegungsfläche.')
+    return regions
+
+
 def validate_discussion_chairs(state, plan):
     by_id = {t.table_id:t for t in state.tables}
     active = plan.active_table_ids or tuple(t.table_id for t in plan.targets)
@@ -357,7 +429,9 @@ def validate_discussion_chairs(state, plan):
             raise LayoutConstraintError('Discussion-Tische kollidieren.')
     if any(_polygon_distance(footprints[p],footprints[a])<PARK_ACTIVE_CLEARANCE_CM-1e-7 for p in parked for a in active):
         raise LayoutConstraintError('Geparkter Discussion-Tisch unterschreitet 60 cm Abstand.')
-    if plan.topology=='ring':
+    if plan.topology=='relaxed':
+        regions = _validate_relaxed_discussion(state,plan,footprints)
+    elif plan.topology=='ring':
         _validate_ring_chairs(active_state, replace(plan,targets=active_targets))
         # Retain both accepted ring movement strips, including the inner side.
         regions = [r for t in active_targets for r in singleton_long_side_clearance_regions(
@@ -575,102 +649,109 @@ def transform_discussion_plan(state,plan,strength):
 
 
 def _transform_discussion_plan(state,plan,strength):
+    if strength>=1.:
+        return deepcopy(plan)
     blended = _blend_targets_with_source(state,plan.targets,strength)
-    active_state = _active_state(state,plan.active_table_ids)
-    capacity = 6 if plan.topology=='pair' else 3*len(plan.active_table_ids)
+    capacity = 6 if len(plan.active_table_ids)==2 else 3*len(plan.active_table_ids)
+    reference = plan_discussion_chairs(state,capacity)
+    selected = {c['seat_id'] for c in plan.chairs}
+    by_id = {t.table_id:t for t in state.tables}
+    final = {t.table_id:t for t in plan.targets}
 
-    def assemble(targets, count):
-        active_targets = [t for t in targets if t.table_id in plan.active_table_ids]
-        seated = (_assemble_pair(active_state,active_targets,count) if plan.topology=='pair'
-                  else _assemble(active_state,active_targets,count,validate=False))
-        return replace(seated,targets=targets,active_table_ids=plan.active_table_ids,
-                       parked_table_ids=plan.parked_table_ids)
-
-    def finish(targets):
-        by_id = {t.table_id:t for t in state.tables}
-        for t in targets:
-            if t.table_id not in plan.parked_table_ids:
-                continue
-            x0,y0,x1,y1 = table_allowed_center_bounds(by_id[t.table_id],t.target_rot_deg,
-                x_min=state.roi.x_min,y_min=state.roi.y_min,x_max=state.roi.x_max,y_max=state.roi.y_max)
-            horizontal = abs((t.target_rot_deg+90)%180-90)<1e-7
-            vertical = abs(t.target_rot_deg%180-90)<1e-7
-            if not ((horizontal and min(abs(t.target_y-y0),abs(t.target_y-y1))<1e-7)
-                    or (vertical and min(abs(t.target_x-x0),abs(t.target_x-x1))<1e-7)):
-                raise LayoutConstraintError('Discussion-Parktisch muss mit einer Längsseite am ROI-Rand stehen.')
-        # Reserve the same maximum seating envelope throughout each count tier.
-        validate_discussion_chairs(state,assemble(targets,capacity))
-        result = assemble(targets,len(plan.chairs))
-        validate_discussion_chairs(state,result)
+    def assemble(targets):
+        result = _transport_discussion_seating(reference,targets)
+        result.chairs = [c for c in result.chairs if c['seat_id'] in selected]
         return result
 
-    try:
-        return finish(blended)
-    except LayoutConstraintError:
-        pass
+    def fit_roi(targets):
+        reserved = _transport_discussion_seating(reference,targets)
+        owners = {c.get('region_id',c['table_id']):c['table_id'] for c in reference.chairs}
+        points = {tid:[] for tid in plan.active_table_ids}
+        for key,region in reserved.regions.items():
+            points[owners[key]].extend(region)
+        for chair in reserved.chairs:
+            points[chair['table_id']].extend((chair['x_cm']+dx,chair['y_cm']+dy)
+                for dx,dy in ((-25,0),(25,0),(0,-25),(0,25)))
+        fitted = []
+        for target in targets:
+            tid=target.table_id
+            if tid in plan.parked_table_ids:
+                parked=final[tid]
+                # Keep its accepted ROI side; only the along-edge position is free.
+                x0,y0,x1,y1=table_allowed_center_bounds(by_id[tid],parked.target_rot_deg,
+                    x_min=state.roi.x_min,y_min=state.roi.y_min,x_max=state.roi.x_max,y_max=state.roi.y_max)
+                horizontal=abs((parked.target_rot_deg+90)%180-90)<1e-7
+                fitted.append(replace(target,target_rot_deg=parked.target_rot_deg,
+                    target_x=min(x1,max(x0,target.target_x)) if horizontal else parked.target_x,
+                    target_y=parked.target_y if horizontal else min(y1,max(y0,target.target_y))))
+                continue
+            points[tid].extend(table_world_footprint(by_id[tid],(target.target_x,target.target_y),target.target_rot_deg))
+            if len(plan.active_table_ids)>=4:
+                points[tid].extend(p for r in singleton_long_side_clearance_regions(target,by_id[tid],
+                    clearance_depth_cm=DISCUSSION_SEAT_CLEARANCE_DEPTH_CM) for p in r)
+            x0=state.roi.x_min-min(x for x,y in points[tid]);x1=state.roi.x_max-max(x for x,y in points[tid])
+            y0=state.roi.y_min-min(y for x,y in points[tid]);y1=state.roi.y_max-max(y for x,y in points[tid])
+            dx,dy=max(x0,min(x1,0.)),max(y0,min(y1,0.))
+            fitted.append(replace(target,target_x=target.target_x+dx,target_y=target.target_y+dy))
+        return fitted
 
-    # Independent table interpolation usually breaks a pair's parallel edges
-    # or a ring's seat strips. Project its active poses onto the already bound
-    # final shape, using a least-squares rigid fit of the blended centers.
-    final = [t for t in plan.targets if t.table_id in plan.active_table_ids]
-    wanted = {t.table_id:t for t in blended}
-    center = tuple(math.fsum(getattr(t,axis) for t in final)/len(final)
-                   for axis in ('target_x','target_y'))
-    destination = tuple(math.fsum(getattr(wanted[t.table_id],axis) for t in final)/len(final)
-                        for axis in ('target_x','target_y'))
-    dot = cross = 0.
-    for t in final:
-        x,y = t.target_x-center[0],t.target_y-center[1]
-        u,v = wanted[t.table_id].target_x-destination[0],wanted[t.table_id].target_y-destination[1]
-        dot += x*u+y*v
-        cross += x*v-y*u
-    angle = math.atan2(cross,dot)
-    by_id = {t.table_id:t for t in state.tables}
-    # Parking repair measures movement from the blended request, while keeping
-    # exactly the original active/parked identities and scene order.
-    intermediate = replace(state,tables=[replace(t,x=wanted[t.table_id].target_x,
-        y=wanted[t.table_id].target_y,rot_deg=wanted[t.table_id].target_rot_deg) for t in state.tables])
-    parking_cache = {}
-    for fraction in (1.,.5,.25,.125,.0625,.03125,.015625,0.):
-        rotation = angle*fraction
-        c,s = math.cos(rotation),math.sin(rotation)
-        cx,cy = (center[i]+fraction*(destination[i]-center[i]) for i in (0,1))
-        targets = [replace(t,target_x=cx+c*(t.target_x-center[0])-s*(t.target_y-center[1]),
-            target_y=cy+s*(t.target_x-center[0])+c*(t.target_y-center[1]),
-            target_rot_deg=(t.target_rot_deg+math.degrees(rotation)+180)%360-180,
-            facing_target_x=cx if t.facing_target_x is not None else None,
-            facing_target_y=cy if t.facing_target_y is not None else None) for t in final]
-        candidate = assemble(targets,capacity)
-        points = [p for region in candidate.regions.values() for p in region]
-        points.extend(p for t in targets for p in table_world_footprint(by_id[t.table_id],
-            (t.target_x,t.target_y),t.target_rot_deg))
-        if plan.topology=='ring':
-            points.extend(p for t in targets for region in singleton_long_side_clearance_regions(
-                t,by_id[t.table_id],clearance_depth_cm=DISCUSSION_SEAT_CLEARANCE_DEPTH_CM) for p in region)
-        points.extend((chair['x_cm']+dx,chair['y_cm']+dy) for chair in candidate.chairs
-                      for dx,dy in ((-25,0),(25,0),(0,-25),(0,25)))
-        x0=state.roi.x_min-min(x for x,y in points); x1=state.roi.x_max-max(x for x,y in points)
-        y0=state.roi.y_min-min(y for x,y in points); y1=state.roi.y_max-max(y for x,y in points)
-        if x0>x1+1e-7 or y0>y1+1e-7:
-            continue
-        dx,dy = max(x0,min(x1,0.)),max(y0,min(y1,0.))
-        targets = [replace(t,target_x=t.target_x+dx,target_y=t.target_y+dy,
-            facing_target_x=t.facing_target_x+dx if t.facing_target_x is not None else None,
-            facing_target_y=t.facing_target_y+dy if t.facing_target_y is not None else None) for t in targets]
-        # Retain original park targets when valid, otherwise reuse the canonical
-        # edge-parking solver; it cannot change the active table selection.
-        parked = [t for t in plan.targets if t.table_id in plan.parked_table_ids]
+    def valid(targets):
+        result=assemble(targets)
         try:
-            ordered = {t.table_id:t for t in [*targets,*parked]}
-            return finish([ordered[t.table_id] for t in state.tables])
+            validate_discussion_chairs(state,result)
         except LayoutConstraintError:
-            pass
-        try:
-            complete = _attach_parking(intermediate,assemble(targets,capacity),parking_cache)
-            ordered = {t.table_id:replace(t,source_rot_deg=by_id[t.table_id].rot_deg) for t in complete.targets}
-            return finish([ordered[t.table_id] for t in state.tables])
-        except LayoutConstraintError:
-            continue
-    # The validated full target remains a feasible hard-constraint repair.
-    # Never leave the sender frozen on an earlier request at positive strength.
-    return finish(deepcopy(plan.targets))
+            return None
+        return result
+
+    wanted = fit_roi(blended)
+    result = valid(wanted)
+    if result is not None:
+        return result
+    # A feasible seed may approach the requested poses table by table. Unlike
+    # the old rigid fit, relative positions and rotations are now free.
+    result = None
+    requested = {t.table_id:t for t in wanted}
+    for fraction in (.75,.5,.25,0.):
+        seed = [replace(t,
+            target_x=t.target_x+fraction*(requested[t.table_id].target_x-t.target_x),
+            target_y=t.target_y+fraction*(requested[t.table_id].target_y-t.target_y),
+            target_rot_deg=t.target_rot_deg+fraction*((requested[t.table_id].target_rot_deg-t.target_rot_deg+180)%360-180))
+            for t in plan.targets]
+        result = valid(fit_roi(seed))
+        if result is not None:
+            break
+    if result is None:
+        raise LayoutConstraintError('Keine gültige gebundene Discussion-Sitzgeometrie.')
+    wanted = {t.table_id:t for t in wanted}
+    def request_error(target):
+        table=by_id[target.table_id];desired=wanted[target.table_id]
+        actual=table_world_footprint(table,(target.target_x,target.target_y),target.target_rot_deg)
+        goal=table_world_footprint(table,(desired.target_x,desired.target_y),desired.target_rot_deg)
+        return math.fsum((x-u)**2+(y-v)**2 for (x,y),(u,v) in zip(actual,goal))
+
+    for _ in range(2):
+        changed=False
+        for tid in sorted(final):
+            for mode in ('pose','translation','rotation'):
+                current={t.table_id:t for t in result.targets}
+                source,target=current[tid],wanted[tid]
+                rotation=(target.target_rot_deg-source.target_rot_deg+180)%360-180
+                for fraction in (1.,.5,.25,.125,.0625):
+                    trial=replace(source,
+                        target_x=source.target_x+(target.target_x-source.target_x)*fraction if mode!='rotation' else source.target_x,
+                        target_y=source.target_y+(target.target_y-source.target_y)*fraction if mode!='rotation' else source.target_y,
+                        target_rot_deg=source.target_rot_deg+rotation*fraction if mode!='translation' else source.target_rot_deg)
+                    if trial==source:
+                        break
+                    targets=fit_roi([trial if t.table_id==tid else t for t in result.targets])
+                    fitted=next(t for t in targets if t.table_id==tid)
+                    if request_error(fitted)>=request_error(source)-1e-7:
+                        continue
+                    candidate=valid(targets)
+                    if candidate is not None:
+                        changed=changed or candidate.targets!=result.targets
+                        result=candidate
+                        break
+        if not changed:
+            break
+    return result

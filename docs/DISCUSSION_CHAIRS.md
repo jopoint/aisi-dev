@@ -2,6 +2,8 @@
 
 Stand: 2026-10-15. Die Opt-in-Teilnehmervorschau verwendet die von Johannes
 gewünschte Staffelung statt eines stets vollständigen Fünf-Tisch-Rings.
+Die folgende Tabelle beschreibt die vollständige Zielform bei 100 %;
+positive Zwischenwerte dürfen davon abweichen.
 
 | Personen | Aktive Tische | Belegung |
 | --- | --- | --- |
@@ -83,35 +85,64 @@ Phasen-/Mittelpunktsuche einschließlich Chair-Grenzen. Die Parkplanung nutzt
 den vorhandenen kompakten Parkhelfer. Begrenzte Caches liefern unabhängige
 Ergebniskopien; gleiche Parkgeometrie innerhalb einer Suche wird wiederverwendet.
 
-Stärke 0 erhält exakte Source-Posen ohne Chairs. Positive Teilstärken blenden die
-gebundenen aktiven/geparkten Rollen entlang des kürzesten Rotationswegs.
-Ungültige Zwischenformen werden anschließend repariert: Die bereits gebundene
-Zweier-/Ringform wird starr an die interpolierten Tischmittelpunkte angepasst,
-samt sämtlichen Sitzflächen und Chair-Kreisen in die ROI eingepasst und bei
-Bedarf begrenzt zur gültigen Endform zurückgenommen. Randparken und mindestens
-60 cm Abstand bleiben erhalten; die vorhandene Parkplanung darf nur die schon
-geparkten IDs neu platzieren. Kein Rollen- oder Slotwechsel. Die maximale
-Stufenbelegung 6/12/15 bleibt reserviert, damit Counts innerhalb einer Stufe
-keine abweichenden Tischposen erzeugen. Für die Zielprüfung 100 % verwenden.
-Die harte Form-/Sitz-/ROI-Reparatur kann die Reglerwirkung begrenzen und im
-engen Raum zur unveränderten Endform führen. Wiederholte Anfragen verwenden
-einen auf 32 Einträge begrenzten Cache mit unabhängigen Ergebniskopien.
-Die frühere reine Ablehnung aller ungültigen Teilposen ließ den OSC-Sender ohne
-neue Ausgabe und damit das vorherige Bild stehen; dieser Pfad wurde ersetzt.
+Stärke 0 erhält exakte Source-Posen ohne Chairs. Johannes erlaubt am 2026-10-15
+lockerere Zwischenformen: Positive Teilstärken interpolieren einzelne Tischposen
+entlang des kürzesten Rotationswegs. Die vollständige Zweier-/Rechteck-/Pentagonform
+gilt bei 100 %. Die zuvor starre Reparatur der Gesamtform ist abgelöst.
+
+Die bereits kanonisch abgeleitete maximale Stufenbelegung 6/12/15 wird pro Tisch
+mitgeführt. Long-, Stirn- und Eck-Chairs behalten Tisch-/Seat-ID und lokale
+Position zur zugeordneten Tischhälfte; die vollständigen Sitzpolygone werden
+mit demselben Einzeltransform transportiert. Gemeinsame Stirn-/Eckflächen
+müssen in Zwischenformen dadurch nicht mehr beide bisherigen Nachbartische
+verbinden. Ihre nutzbare Geometrie am Besitzer bleibt erhalten. Die zuvor
+vereinbarte Rundungstoleranz wird weder erweitert noch neu angewandt.
+
+Jede positive Ausgabe prüft alle reservierten Chair-Kreise, Sitzflächen und
+Tischkonturen auf ROI und Fremdkollisionen. Beide kanonischen Längsseiten-
+Bewegungsstreifen der Ringstufen bleiben frei. Parktische behalten ihre bereits
+zugeordnete ROI-Randseite und mindestens 60 cm Abstand. Die Reparatur nähert
+zuerst die Zwischenposen an; falls nötig beginnt sie von einer gültigen Form
+und verbessert einzelne Tischpositionen und Drehungen in zwei begrenzten
+Durchläufen. Bewertet wird die Abweichung kanonischer Tischkonturpunkte von
+der angefragten Pose. Keine neue Slotzuordnung oder neue aktive/geparkte Auswahl.
+
+Die harten Sitz-/Bewegungsflächen begrenzen die Wirkung insbesondere bei hoher
+Belegung weiterhin. Der Regler ist keine Garantie linearer Bewegung; physische
+Umbauwege sind damit nicht kollisionsfrei nachgewiesen. Wiederholte Anfragen
+verwenden den bestehenden Cache mit maximal 32 unabhängigen Ergebniskopien.
 Der normale Modus ohne Opt-in und isoliertes Tracking behalten ihre bisherigen Wege.
 
 ## Offline-Nachweis
 
-Aktualisierung Umbauintensität am 2026-10-15: 27 fokussierte Tests bestanden
-(Discussion-Chairs, Rect-Templates und Interface-/Sender-Einstellungen). 210 Fälle aus zwei Ausgangsszenen,
-Counts 1–15, jeweils 0/1/25/50/75/99/100 %. Gemeinsame Geometrie, aktive/geparkte
-Identitäten, Scene Order einschließlich umgekehrter Eingabe, deterministische
-Wiederholung und Source-Erhalt bei 0 geprüft. Keine OSC-Netzwerkausgabe.
-Quellen und Checks lokal: `data/aisi/debug/discussion_strength_2026-10-15/`.
-Gezielte Regression prüft zusätzlich eine verschobene und gedrehte Zweiergruppe:
-der Mittelpunkt folgt der Teilstärke, 10-cm-Spalt und gültige Sitzflächen bleiben
-erhalten; bei 50 % halbiert sich die gemeinsame 20°-Drehung auf 10°.
+Aktualisierung lockerer Zwischenformen am 2026-10-15: 26 fokussierte Tests
+(Discussion-Chairs und Rect-Templates) sowie 210 Fälle aus zwei Ausgangsszenen
+bestanden: Counts 1–15 bei 0/1/25/50/75/99/100 %. Gemeinsame Geometrie, volle
+reservierte Belegung, Rollen/Seat-IDs, Scene Order einschließlich umgekehrter
+Eingabe, Determinismus, Cache-Kopien und exakte Source bei 0 geprüft.
+Regressionen prüfen ausdrücklich veränderte relative Tischabstände in allen
+drei Stufen; eine reine gemeinsame Drehung/Verschiebung würde den Test nicht
+bestehen. Manipulierte Chairs, Sitzpolygone, ROI- und Tischkollisionen werden
+weiter abgelehnt. Die 100-%-Ausgabe bleibt identisch.
 
+Lokale Quellen, Checks und visueller Vergleich für die Live-Ausgangsszene:
+`data/aisi/debug/discussion_relaxed_strength_2026-10-15/`. Bei sechs Personen
+sinkt der gesamte Tischweg dort von rund 365 cm (100 %) auf 187 cm (25 %).
+Bei zehn und fünfzehn bleiben wegen der vollständigen Sitz-/Bewegungsflächen
+kleinere Änderungen; im Plot sind auch die relativen Tischposen verändert.
+Messzeiten pro Fall einschließlich zusätzlicher Prüfungen und umgekehrter
+Scene Order stehen in `checks.json`; die gesamte Live-Latenz ist noch zu prüfen.
+
+Reproduktion ohne OSC-Netzwerkversand:
+
+```sh
+MPLCONFIGDIR=/tmp/aisi-mpl PYTHONPATH=src:. .venv/bin/python \
+  scripts/validate_discussion_strength.py \
+  --scene data/aisi/scenes/simulated/live_scene.json \
+  --output data/aisi/debug/discussion_relaxed_strength_2026-10-15
+```
+
+Die folgenden Nachweise betreffen die unveränderte vollständige Zielform:
 
 - 30 Fälle: Editor- und aktuelle Live-Ausgangsszene, jeweils fünf Rect-Tische
   und alle Teilnehmerzahlen 1–15. Quellen beim Lauf lokal eingefroren.

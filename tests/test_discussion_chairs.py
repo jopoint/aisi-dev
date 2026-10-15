@@ -216,8 +216,9 @@ class DiscussionChairTests(unittest.TestCase):
                 rot_deg=poses[t.table_id].target_rot_deg) for t in s.tables])
             stable=transform_discussion_plan(ready,final,.5)
             validate_discussion_chairs(ready,stable)
-            self.assertEqual([(t.target_x,t.target_y,t.target_rot_deg) for t in stable.targets],
-                             [(t.target_x,t.target_y,t.target_rot_deg) for t in final.targets])
+            for actual,expected in zip(stable.targets,final.targets):
+                for field in ('target_x','target_y','target_rot_deg'):
+                    self.assertAlmostEqual(getattr(actual,field),getattr(expected,field))
             for strength in (.01,.25,.5,.75,.99):
                 with self.subTest(participants=count,strength=strength):
                     partial=transform_discussion_plan(s,final,strength)
@@ -230,10 +231,10 @@ class DiscussionChairTests(unittest.TestCase):
                     partial.chairs[0]['x_cm']=-999
                     self.assertNotEqual(partial,transform_discussion_plan(s,final,strength))
 
-    def test_partial_rigid_pair_moves_and_rotates_over_short_path(self):
+    def test_partial_pair_preserves_valid_individual_blend_and_short_rotation(self):
         s=state(scene(2));final=plan_discussion_chairs(s,6)
-        # A feasible pair starts 30 cm left and rotated +20 degrees. The
-        # independent midpoint blend shrinks its gap and needs rigid repair.
+        # A feasible pair starts 30 cm left and rotated +20 degrees. Its
+        # independently blended centers may change the gap while remaining safe.
         poses={t.table_id:t for t in final.targets}
         angle=math.radians(20)
         sources=[]
@@ -246,15 +247,54 @@ class DiscussionChairTests(unittest.TestCase):
         for strength in (.25,.5,.75):
             partial=transform_discussion_plan(moved,final,strength)
             validate_discussion_chairs(moved,partial)
+            for original,target in zip(moved.tables,partial.targets):
+                end=poses[target.table_id]
+                self.assertAlmostEqual(target.target_x,original.x+strength*(end.target_x-original.x))
+                self.assertAlmostEqual(target.target_y,original.y+strength*(end.target_y-original.y))
             cx=sum(t.target_x for t in partial.targets)/2
             self.assertAlmostEqual(cx,220+30*strength)
             self.assertAlmostEqual(sum(t.target_y for t in partial.targets)/2,250.)
-            self.assertAlmostEqual(math.dist(*[(t.target_x,t.target_y) for t in partial.targets]),90.)
+            self.assertNotAlmostEqual(math.dist(*[(t.target_x,t.target_y) for t in partial.targets]),90.)
             delta=(partial.targets[0].target_rot_deg-final.targets[0].target_rot_deg+180)%360-180
             self.assertGreater(delta,0);self.assertLess(delta,20)
             results.append(partial.targets)
         self.assertNotEqual(results[0],results[1]);self.assertNotEqual(results[1],results[2])
         self.assertAlmostEqual((results[1][0].target_rot_deg-final.targets[0].target_rot_deg+180)%360-180,10.)
+
+    def test_partial_layout_changes_relative_table_poses(self):
+        s=state(scene())
+        for count in (6,10,15):
+            final=plan_discussion_chairs(s,count)
+            partial=transform_discussion_plan(s,final,.25)
+            full={t.table_id:t for t in final.targets if t.table_id in final.active_table_ids}
+            loose={t.table_id:t for t in partial.targets if t.table_id in partial.active_table_ids}
+            differences=[]
+            ids=sorted(full)
+            for i,a in enumerate(ids):
+                for b in ids[i+1:]:
+                    distance=lambda poses:math.dist((poses[a].target_x,poses[a].target_y),
+                                                    (poses[b].target_x,poses[b].target_y))
+                    differences.append(abs(distance(full)-distance(loose)))
+            self.assertGreater(max(differences),1.,'Keine bloße gemeinsame Drehung/Verschiebung')
+            self.assertEqual(partial.topology,'relaxed')
+            self.assertEqual(transform_discussion_plan(s,final,1.),final)
+
+    def test_relaxed_geometry_cannot_hide_chair_region_or_table_errors(self):
+        s=state(scene());final=plan_discussion_chairs(s,15)
+        partial=transform_discussion_plan(s,final,.5)
+        bad=deepcopy(partial);bad.chairs[0]['x_cm']+=10
+        with self.assertRaises(LayoutConstraintError):validate_discussion_chairs(s,bad)
+        bad=deepcopy(partial);bad.regions.pop(next(iter(bad.regions)))
+        with self.assertRaises(LayoutConstraintError):validate_discussion_chairs(s,bad)
+        pair=transform_discussion_plan(s,plan_discussion_chairs(s,6),.5)
+        bad=deepcopy(pair);i=next(i for i,t in enumerate(bad.targets) if t.table_id in bad.parked_table_ids)
+        bad.targets[i]=replace(bad.targets[i],target_x=250.,target_y=250.)
+        with self.assertRaises(LayoutConstraintError):validate_discussion_chairs(s,bad)
+        bad=deepcopy(partial);bad.targets[0]=replace(bad.targets[0],target_x=-100)
+        with self.assertRaises(LayoutConstraintError):validate_discussion_chairs(s,bad)
+        bad=deepcopy(partial);bad.targets[0]=replace(bad.targets[0],
+            target_x=bad.targets[1].target_x,target_y=bad.targets[1].target_y)
+        with self.assertRaises(LayoutConstraintError):validate_discussion_chairs(s,bad)
 
     def test_partial_osc_output_updates_instead_of_rejecting_request(self):
         raw=scene();parameters={'participants':6,'adaptive_layout_preview':True}
