@@ -191,6 +191,10 @@ Current state:
 
 ### Participant-based Input preview
 
+Johannes bestätigt am 2026-10-15 Input für den Moment als passend. Qualitative
+Rückmeldung zur aktuellen Anzeige; keine zusätzliche vollständige Count-/Seiten-
+oder physische Raumprüfung. Gemeinsamer Formatwechsel-Check bleibt offen.
+
 Der explizit aktivierte Simulationspfad plant aktive und geparkte Rect-Tische
 nach Teilnehmendenzahl und leitet Chair-Marker aus ihren gerichteten Sitzflächen ab.
 

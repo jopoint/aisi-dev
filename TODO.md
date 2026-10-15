@@ -1,10 +1,17 @@
 # AISI TODO
 
-Stand: 2026-10-08
+Stand: 2026-10-15
 
 Use this file to choose the next coherent task. Do not execute all items automatically. Completed implementation history belongs in Git and the handoff documents, not in this checklist.
 
 ## NOW — Participant-based Input / TouchDesigner integration
+
+Johannes bestätigt am 2026-10-15 Input für den Moment als in Ordnung. Dies ist
+eine qualitative Freigabe der aktuellen Anzeige, kein zusätzlicher Nachweis
+aller Counts/Seiten oder physischer Projektion. Der gemeinsame Formatwechsel-Check
+ist der nächste zusammenhängende Prüfschritt; offene Einzel-/TD-Nachweise bleiben
+separat erhalten. Die unmittelbar vorherige Codeänderung betraf Discussion;
+daraus wird keine zusätzliche explizite Discussion-Live-Freigabe abgeleitet.
 
 **Source-Rotation im Rect Input — Auftrag vom 2026-10-07, offline behoben am 2026-10-08:**
 - [x] Beobachtung am 2026-10-08 offline reproduziert: Alle fünf Source-Tische stehen horizontal (0°/180°), die Automatik erzeugt vertikale Ziele (±90°). Ursache ist die positionsbasierte Präsentationsachse mit Ost-Ausweichlösung, kein zusätzlicher Darstellungsversatz. Nord und Süd erhalten die horizontale Orientierung und bestehen die gemeinsame Geometrieprüfung. Source-/Target-Winkel im lokalen OSC-Recorder und 18 gespeicherte Geo-Bindungen aus Version 141 geprüft; kein neuer Live-Nachweis.
