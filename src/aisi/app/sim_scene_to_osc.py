@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from aisi.app.sim_layout_rules import compute_target_layout
+from aisi.app.sim_layout_rules import compute_synthetic_layout, compute_target_layout
 from aisi.app.study_tracking import StudyActiveTrackBindingStore, StudyTableTrackBindingStore
 from aisi.core.table_geometry import TABLE_TYPE_IDS, TABLE_TYPE_NAMES
 
@@ -38,7 +38,7 @@ DEFAULT_LAYOUT_MODE = "groupwork"
 LEARNING_FORMAT_POLL_SECONDS = 1.0
 DEFAULT_SHOW_PERSONS = True
 DEFAULT_SHOW_CHAIRS = True
-DEFAULT_TRANSFORMATION_STRENGTH = 0.5
+DEFAULT_TRANSFORMATION_STRENGTH = 1.0
 DEFAULT_TRACKING_TABLE_ID = "table_00"
 VALID_LEARNING_FORMATS = {"input", "groupwork", "discussion"}
 SCENE_READ_RETRY_DELAYS_SECONDS = (0.005, 0.010, 0.020)
@@ -223,7 +223,7 @@ def load_learning_format(path: Path) -> str | None:
 
 
 def clamp_transformation_strength(value: object) -> float:
-    """Clamp the transformation strength to the expected 0.0..1.0 range."""
+    """Clamp the saved UI value to the supported 0.0..1.0 range."""
 
     try:
         return max(0.0, min(1.0, float(value)))
@@ -261,6 +261,28 @@ def load_learning_settings(path: Path) -> tuple[str | None, bool, bool, float]:
         show_chairs,
         transformation_strength,
     )
+
+
+def load_activity_parameters(path: Path) -> dict[str, object]:
+    """Read optional participant-aware layout parameters without changing OSC state."""
+    try:
+        with path.open("r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {"participants": 4, "number_of_groups": 2, "presentation_side": None, "adaptive_layout_preview": False}
+    try:
+        participants = max(1, int(data.get("participants", 4)))
+        groups = max(1, int(data.get("number_of_groups", 2)))
+    except (TypeError, ValueError):
+        participants, groups = 4, 2
+    side = data.get("presentation_side")
+    preview_enabled = data.get("adaptive_layout_preview") is True
+    return {
+        "participants": participants,
+        "number_of_groups": groups,
+        "presentation_side": side if side in {"north", "east", "south", "west"} else None,
+        "adaptive_layout_preview": preview_enabled,
+    }
 
 
 def get_table_type(index: int, table: dict[str, Any]) -> str:
@@ -386,6 +408,7 @@ def prepare_scene_output(
     tracking_table_id: str = DEFAULT_TRACKING_TABLE_ID,
     study_active_binding_present: bool = False,
     study_active_track_id: str | None = None,
+    activity_parameters: dict[str, object] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], list[dict[str, float]], str | None]:
     """Choose regular layout output or isolated source-only tracking output."""
     tables = scene.get("tables", [])
@@ -407,7 +430,28 @@ def prepare_scene_output(
         # This mode deliberately neither reads people/chairs nor calls layout synthesis.
         return selected_tables, [], [], source_pose_targets(selected_tables), reason
 
-    targets = compute_target_layout(scene, layout_mode, transformation_strength=transformation_strength)
+    preview_enabled = bool(activity_parameters and activity_parameters.get("adaptive_layout_preview") is True)
+    if preview_enabled:
+        layout = compute_synthetic_layout(
+            scene,
+            layout_mode,
+            transformation_strength=transformation_strength,
+            activity_parameters=activity_parameters,
+        )
+        targets = layout.table_targets
+        # The explicitly enabled participant preview owns its review chairs.  The
+        # normal pipeline continues to pass through the scene's chair source.
+        if layout_mode in {"input", "groupwork", "discussion"}:
+            chairs = layout.chairs
+    else:
+        # Keep the established function boundary intact for normal layout
+        # output (including callers that patch or monitor it in tests).
+        targets = compute_target_layout(
+            scene,
+            layout_mode,
+            transformation_strength=transformation_strength,
+            activity_parameters=activity_parameters,
+        )
     return tables, persons, chairs, targets, None
 
 
@@ -687,6 +731,7 @@ def main() -> None:
                     continue
 
             _, show_persons, show_chairs, transformation_strength = load_learning_settings(file_path)
+            activity_parameters = load_activity_parameters(file_path)
 
             with state_lock:
                 layout_mode = current_layout_mode
@@ -697,15 +742,26 @@ def main() -> None:
             _, _, study_bindings = (
                 study_table_tracks_binding.read() if study_table_tracks_binding is not None else (False, None, {})
             )
-            tables, persons, chairs, targets, tracking_rejection = prepare_scene_output(
-                scene,
-                layout_mode,
-                transformation_strength,
-                tracking_only=args.tracking_only,
-                tracking_table_id=args.tracking_table_id,
-                study_active_binding_present=binding_present,
-                study_active_track_id=active_track_id,
-            )
+            try:
+                tables, persons, chairs, targets, tracking_rejection = prepare_scene_output(
+                    scene,
+                    layout_mode,
+                    transformation_strength,
+                    tracking_only=args.tracking_only,
+                    tracking_table_id=args.tracking_table_id,
+                    study_active_binding_present=binding_present,
+                    study_active_track_id=active_track_id,
+                    activity_parameters=activity_parameters,
+                )
+            except ValueError as exc:
+                # Reject the whole invalid participant preview before any OSC sends.
+                # Keep the loop alive so a corrected request can recover.
+                now = time.monotonic()
+                if now - last_bad_json_notice >= 1.0:
+                    print(f"Layout-Anfrage abgelehnt; keine OSC-Ausgabe: {exc}")
+                    last_bad_json_notice = now
+                time.sleep(args.interval)
+                continue
             if tracking_rotation_unwrapper is not None:
                 tables = tracking_rotation_unwrapper.unwrap_tables(tables)
                 # Tracking-only targets are compatibility mirrors, not layout output.

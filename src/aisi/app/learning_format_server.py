@@ -20,16 +20,26 @@ DEFAULT_LEARNING_FORMAT = "groupwork"
 VALID_LEARNING_FORMATS = {"input", "groupwork", "discussion"}
 DEFAULT_SHOW_PERSONS = True
 DEFAULT_SHOW_CHAIRS = True
-DEFAULT_TRANSFORMATION_STRENGTH = 0.5
+DEFAULT_TRANSFORMATION_STRENGTH = 1.0
+DEFAULT_PARTICIPANTS = 4
+DEFAULT_NUMBER_OF_GROUPS = 2
+VALID_PRESENTATION_SIDES = {"north", "east", "south", "west"}
 
 
 def clamp_transformation_strength(value: object) -> float:
-    """Clamp the slider value to the expected 0.0..1.0 range."""
+    """Clamp the UI value to the supported 0.0..1.0 range."""
 
     try:
         return max(0.0, min(1.0, float(value)))
     except (TypeError, ValueError):
         return DEFAULT_TRANSFORMATION_STRENGTH
+
+
+def _positive_int(value: object, fallback: int) -> int:
+    try:
+        return max(1, int(value))
+    except (TypeError, ValueError):
+        return fallback
 
 
 def default_state() -> dict[str, object]:
@@ -39,6 +49,10 @@ def default_state() -> dict[str, object]:
         "show_persons": DEFAULT_SHOW_PERSONS,
         "show_chairs": DEFAULT_SHOW_CHAIRS,
         "transformation_strength": DEFAULT_TRANSFORMATION_STRENGTH,
+        "participants": DEFAULT_PARTICIPANTS,
+        "number_of_groups": DEFAULT_NUMBER_OF_GROUPS,
+        "presentation_side": None,
+        "adaptive_layout_preview": False,
     }
 
 
@@ -60,10 +74,12 @@ def state_file_path() -> Path:
 
 
 def ensure_state_file() -> None:
-    """Create the state file with a default value if it does not exist yet."""
+    """Create or canonicalize the state file for the current UI contract."""
     path = state_file_path()
     if not path.exists():
         write_state(default_state())
+        return
+    write_state(read_state())
 
 
 def read_state() -> dict[str, object]:
@@ -89,6 +105,11 @@ def read_state() -> dict[str, object]:
     state["transformation_strength"] = clamp_transformation_strength(
         data.get("transformation_strength", DEFAULT_TRANSFORMATION_STRENGTH)
     )
+    state["participants"] = _positive_int(data.get("participants"), DEFAULT_PARTICIPANTS)
+    state["number_of_groups"] = _positive_int(data.get("number_of_groups"), DEFAULT_NUMBER_OF_GROUPS)
+    side = data.get("presentation_side")
+    state["presentation_side"] = side if side in VALID_PRESENTATION_SIDES else None
+    state["adaptive_layout_preview"] = data.get("adaptive_layout_preview") is True
 
     return state
 
@@ -115,6 +136,11 @@ def write_state(state: dict[str, object]) -> bool:
     payload["transformation_strength"] = clamp_transformation_strength(
         state.get("transformation_strength", DEFAULT_TRANSFORMATION_STRENGTH)
     )
+    payload["participants"] = _positive_int(state.get("participants"), DEFAULT_PARTICIPANTS)
+    payload["number_of_groups"] = _positive_int(state.get("number_of_groups"), DEFAULT_NUMBER_OF_GROUPS)
+    side = state.get("presentation_side")
+    payload["presentation_side"] = side if side in VALID_PRESENTATION_SIDES else None
+    payload["adaptive_layout_preview"] = state.get("adaptive_layout_preview") is True
 
     path = state_file_path()
     temp_path = path.with_suffix(".tmp")
@@ -159,7 +185,16 @@ def get_local_ip() -> str:
         return "127.0.0.1"
 
 
-def build_html(current_format: str, show_persons: bool, show_chairs: bool, transformation_strength: float) -> str:
+def build_html(
+    current_format: str,
+    show_persons: bool,
+    show_chairs: bool,
+    transformation_strength: float,
+    participants: int = DEFAULT_PARTICIPANTS,
+    number_of_groups: int = DEFAULT_NUMBER_OF_GROUPS,
+    presentation_side: str | None = None,
+    adaptive_layout_preview: bool = False,
+) -> str:
     """Build a very simple mobile-friendly HTML page."""
     persons_text = "on" if show_persons else "off"
     chairs_text = "on" if show_chairs else "off"
@@ -193,27 +228,22 @@ def build_html(current_format: str, show_persons: bool, show_chairs: bool, trans
       margin-top: 24px;
       max-width: 420px;
     }}
-        .slider-card {{
-            margin-top: 20px;
-            max-width: 420px;
-            padding: 18px;
-            border-radius: 18px;
-            background: #1c1c1c;
-        }}
-        .slider-label {{
-            display: flex;
-            justify-content: space-between;
-            gap: 12px;
-            font-size: 1.2rem;
-            margin-bottom: 10px;
-        }}
-        input[type="range"] {{
-            width: 100%;
-        }}
-        .slider-value {{
-            color: #9fe29f;
-            font-weight: bold;
-        }}
+    .slider-card {{
+      margin-top: 20px;
+      max-width: 420px;
+      padding: 18px;
+      border-radius: 18px;
+      background: #1c1c1c;
+    }}
+    .slider-label {{
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 1.2rem;
+      margin-bottom: 10px;
+    }}
+    input[type="range"] {{ width: 100%; }}
+    .slider-value {{ color: #9fe29f; font-weight: bold; }}
         .toggles {{
             display: flex;
             flex-direction: column;
@@ -247,6 +277,7 @@ def build_html(current_format: str, show_persons: bool, show_chairs: bool, trans
     .groupwork {{ background: #2f9e44; }}
     .discussion {{ background: #c92a2a; }}
     .toggle {{ background: #444; }}
+    input[type="number"], select {{ font-size: 1.15rem; width: 100%; padding: 10px; box-sizing: border-box; }}
   </style>
 </head>
 <body>
@@ -257,23 +288,45 @@ def build_html(current_format: str, show_persons: bool, show_chairs: bool, trans
     <button class=\"groupwork\" type=\"submit\" name=\"learning_format\" value=\"groupwork\">2. Groupwork</button>
     <button class=\"discussion\" type=\"submit\" name=\"learning_format\" value=\"discussion\">3. Discussion</button>
   </form>
-    <form class="slider-card" method="post" action="/set">
-        <div class="slider-label">
-            <span>Umbauintensität</span>
-            <span class="slider-value" id="transformation-strength-value">{strength_percent}%</span>
-        </div>
-        <input
-            id="transformation-strength"
-            type="range"
-            name="transformation_strength"
-            min="0"
-            max="100"
-            step="1"
-            value="{strength_percent}"
-            onchange="this.form.submit()"
-            oninput="document.getElementById('transformation-strength-value').textContent = this.value + '%'"
-        >
-    </form>
+  <form class="slider-card" method="post" action="/set">
+    <label style="display:flex; gap:10px; align-items:center; font-size:1.15rem">
+      <input type="checkbox" name="adaptive_layout_preview" value="on" {'checked' if adaptive_layout_preview else ''} onchange="this.form.submit()">
+      Synthetische Tischplanung testen
+    </label>
+    <div class="slider-label"><span>Teilnehmende</span></div>
+    <input type="number" name="participants" min="1" max="99" value="{participants}" onchange="this.form.submit()">
+    <div id="groupwork-parameters" style="margin-top:14px">
+      <div class="slider-label"><span>Gruppen</span></div>
+      <input type="number" name="number_of_groups" min="1" value="{number_of_groups}" onchange="this.form.submit()">
+    </div>
+    <div id="input-parameters" style="margin-top:14px">
+      <div class="slider-label"><span>Präsentationsseite</span></div>
+      <select name="presentation_side" onchange="this.form.submit()">
+        <option value="" {'selected' if presentation_side is None else ''}>Automatisch</option>
+        <option value="north" {'selected' if presentation_side == 'north' else ''}>Nord</option>
+        <option value="east" {'selected' if presentation_side == 'east' else ''}>Ost</option>
+        <option value="south" {'selected' if presentation_side == 'south' else ''}>Süd</option>
+        <option value="west" {'selected' if presentation_side == 'west' else ''}>West</option>
+      </select>
+    </div>
+  </form>
+  <form class="slider-card" method="post" action="/set">
+    <div class="slider-label">
+      <span>Umbauintensität</span>
+      <span class="slider-value" id="transformation-strength-value">{strength_percent}%</span>
+    </div>
+    <input
+      id="transformation-strength"
+      type="range"
+      name="transformation_strength"
+      min="0"
+      max="100"
+      step="1"
+      value="{strength_percent}"
+      onchange="this.form.submit()"
+      oninput="document.getElementById('transformation-strength-value').textContent = this.value + '%'"
+    >
+  </form>
     <form class="toggles" method="post" action="/set">
         <button class="toggle" type="submit" name="toggle" value="persons">Persons: {persons_text}</button>
         <button class="toggle" type="submit" name="toggle" value="chairs">Chairs: {chairs_text}</button>
@@ -281,6 +334,11 @@ def build_html(current_format: str, show_persons: bool, show_chairs: bool, trans
     <div class="current">Current learning format: {current_format}</div>
     <div class="state">Persons: {persons_text}</div>
     <div class="state">Chairs: {chairs_text}</div>
+    <script>
+      const format = "{current_format}";
+      document.getElementById("groupwork-parameters").style.display = format === "groupwork" ? "block" : "none";
+      document.getElementById("input-parameters").style.display = format === "input" ? "block" : "none";
+    </script>
 </body>
 </html>"""
 
@@ -300,6 +358,8 @@ class LearningFormatHandler(BaseHTTPRequestHandler):
             bool(state["show_persons"]),
             bool(state["show_chairs"]),
             float(state["transformation_strength"]),
+            int(state["participants"]), int(state["number_of_groups"]), state["presentation_side"],
+            bool(state["adaptive_layout_preview"]),
         ).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -320,6 +380,10 @@ class LearningFormatHandler(BaseHTTPRequestHandler):
         selected = form_data.get("learning_format", [""])[0]
         toggle = form_data.get("toggle", [""])[0]
         transformation_strength_raw = form_data.get("transformation_strength", [""])[0]
+        participants_raw = form_data.get("participants", [""])[0]
+        groups_raw = form_data.get("number_of_groups", [""])[0]
+        presentation_side = form_data.get("presentation_side", [""])[0]
+        adaptive_layout_preview = form_data.get("adaptive_layout_preview", [""])[0] == "on"
 
         state = read_state()
         changed = False
@@ -336,10 +400,28 @@ class LearningFormatHandler(BaseHTTPRequestHandler):
 
         if transformation_strength_raw != "":
             try:
-                state["transformation_strength"] = clamp_transformation_strength(int(transformation_strength_raw) / 100.0)
+                state["transformation_strength"] = clamp_transformation_strength(
+                    int(transformation_strength_raw) / 100.0
+                )
                 changed = True
             except ValueError:
                 pass
+        if participants_raw != "":
+            state["participants"] = _positive_int(participants_raw, DEFAULT_PARTICIPANTS)
+            changed = True
+        if groups_raw != "":
+            state["number_of_groups"] = _positive_int(groups_raw, DEFAULT_NUMBER_OF_GROUPS)
+            changed = True
+        if presentation_side in VALID_PRESENTATION_SIDES or presentation_side == "":
+            state["presentation_side"] = presentation_side or None
+            changed = True
+        # An unchecked checkbox is omitted by HTML forms; this field belongs to
+        # the same form as the activity parameters and is therefore safe to
+        # update on every such request.
+        if participants_raw != "" or groups_raw != "" or presentation_side != "" or "adaptive_layout_preview" in form_data:
+            state["adaptive_layout_preview"] = adaptive_layout_preview
+            changed = True
+
 
         if changed:
             write_state(state)
@@ -349,6 +431,8 @@ class LearningFormatHandler(BaseHTTPRequestHandler):
             bool(state["show_persons"]),
             bool(state["show_chairs"]),
             float(state["transformation_strength"]),
+            int(state["participants"]), int(state["number_of_groups"]), state["presentation_side"],
+            bool(state["adaptive_layout_preview"]),
         ).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")

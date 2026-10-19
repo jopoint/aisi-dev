@@ -1,0 +1,470 @@
+from collections import Counter, OrderedDict
+from copy import deepcopy
+from dataclasses import replace
+import unittest
+import math
+from unittest.mock import patch
+
+from aisi.app.sim_layout_rules import _normalize_scene_for_aisi, _compact_park_targets
+from aisi.app.sim_room_editor import make_default_tables, scene_payload
+from aisi.core.models import ROI, SceneState, TableState, TableTarget
+from aisi.input.scene_loader import build_scene_state_from_dict
+from aisi.analysis.rect_groupwork_adaptive_prototype import enumerate_cluster_partitions
+from aisi.generation.adaptive_layout_v1 import LayoutConstraintError
+from aisi.generation.layout_constraints import evaluate_hard_constraints
+from aisi.generation.groupwork_participants import (
+    ParticipantCluster, GroupworkPlan, cluster_seating,
+    plan_participant_groupwork, validate_groupwork_plan,
+    _improve_floor_spacing, intergroup_floor_gap,
+    _cached_cluster_seating, _movement_priority, _profile_key, groups_are_spatially_distinct,
+)
+
+
+def single_state(rotation=0):
+    return SceneState(ROI(0,0,500,500),[TableState('a',250,250,rotation,160,80,table_type='rect')],'groupwork')
+
+
+def editor_state():
+    return build_scene_state_from_dict(_normalize_scene_for_aisi(scene_payload(make_default_tables(),chairs=[],persons=[])),learning_format='groupwork')
+
+
+class GroupworkSeatTests(unittest.TestCase):
+    def test_park_active_gap_is_edge_distance_and_a_hard_constraint(self):
+        state=SceneState(ROI(0,0,500,500),[
+            TableState('a',280,250,0,160,80,table_type='rect'),
+            TableState('b',460,250,90,160,80,table_type='rect')],'groupwork')
+        targets=[TableTarget(t.table_id,t.x,t.y,target_rot_deg=t.rot_deg) for t in state.tables]
+        cluster=ParticipantCluster('c','group_0',('a',),3)
+        seats,regions=cluster_seating(state,targets,cluster)
+        plan=GroupworkPlan(targets,seats,(cluster,),(3,),{'c':regions},('b',))
+        validate_groupwork_plan(state,plan)  # physical edge gap is exactly 60 cm
+        too_close=deepcopy(plan);too_close.targets[1].target_x-=.001
+        with self.assertRaisesRegex(LayoutConstraintError,'60 cm'):
+            validate_groupwork_plan(state,too_close)
+        # Without the new option the existing shared parking contract is retained.
+        candidate=((459.,250.,90.),)
+        self.assertEqual(len(_compact_park_targets(state,[state.tables[1]],targets[:1],
+            candidate,exclusion_regions=[])),1)
+        with self.assertRaises(ValueError):
+            _compact_park_targets(state,[state.tables[1]],targets[:1],candidate,
+                exclusion_regions=[],min_active_gap_cm=60.)
+
+    def test_total_movement_precedes_active_movement_with_active_tie_break(self):
+        state=SceneState(ROI(0,0,500,500),[
+            TableState('a',250,250,0,160,80),TableState('b',250,250,0,160,80)],'groupwork')
+        keep_active=[TableTarget('a',251,250),TableTarget('b',250,450)]
+        move_active=[TableTarget('a',270,250),TableTarget('b',251,250)]
+        self.assertLess(_movement_priority(state,move_active,('b',)),
+                        _movement_priority(state,keep_active,('b',)))
+        equal_total=[TableTarget('a',270,250),TableTarget('b',431,250)]
+        self.assertLess(_movement_priority(state,keep_active,('b',)),
+                        _movement_priority(state,equal_total,('b',)))
+
+    def test_edge_parking_uses_actual_footprint_dimensions_and_roi(self):
+        state=SceneState(ROI(20,30,520,530),[
+            TableState('a',250,250,37,160,100)],'groupwork')
+        for slot,expected in (((250.,40.,0.),(250.,80.)),
+                              ((460.,250.,90.),(470.,250.))):
+            target=_compact_park_targets(state,state.tables,[],(slot,),
+                exclusion_regions=[],edge_aligned=True)[0]
+            self.assertAlmostEqual(target.target_x,expected[0])
+            self.assertAlmostEqual(target.target_y,expected[1])
+            self.assertEqual(target.source_rot_deg,37)
+
+    def test_seating_cache_keeps_labels_copies_and_foreign_geometry_separate(self):
+        state=SceneState(ROI(0,0,500,500),[
+            TableState('a',130,250,0,160,80,table_type='rect'),
+            TableState('b',370,250,0,160,80,table_type='rect')],'groupwork')
+        targets=[TableTarget(t.table_id,t.x,t.y,target_rot_deg=0) for t in state.tables]
+        cluster=ParticipantCluster('cluster_a','group_0',('a',),3)
+        cache=OrderedDict()
+        seats,regions=_cached_cluster_seating(state,targets,cluster,(),cache)
+        seats[0]['x_cm']=-999
+        relabeled=replace(cluster,group_id='group_1')
+        repeated,_=_cached_cluster_seating(state,targets,relabeled,(),cache)
+        self.assertTrue(all(s['group_id']=='group_1' for s in repeated))
+        self.assertTrue(all(s['x_cm']>=0 for s in repeated))
+        self.assertEqual(len(cache),1)
+        # A newly occupied foreign footprint must never reuse a prior success.
+        blocked=[targets[0],replace(targets[1],target_x=130,target_y=180)]
+        with self.assertRaises(LayoutConstraintError):
+            _cached_cluster_seating(state,blocked,cluster,(),cache)
+        # Changes to occupied seating regions and ROI also invalidate the entry.
+        with self.assertRaises(LayoutConstraintError):
+            _cached_cluster_seating(state,targets,cluster,regions,cache)
+        smaller=deepcopy(state);smaller.roi.y_min=200
+        with self.assertRaises(LayoutConstraintError):
+            _cached_cluster_seating(smaller,targets,cluster,(),cache)
+
+    def test_singleton_uses_regular_ends_before_dense_long_rows(self):
+        for rotation in (0,37,90,180):
+            state=single_state(rotation)
+            target=[TableTarget('a',250,250,target_rot_deg=rotation)]
+            for count in range(1,9):
+                with self.subTest(rotation=rotation,count=count):
+                    cluster=ParticipantCluster('c','group_0',('a',),count)
+                    chairs,regions=cluster_seating(state,target,cluster)
+                    kinds=Counter(c['seat_kind'] for c in chairs)
+                    self.assertEqual(kinds['regular_end'],min(max(0,count-4),2))
+                    self.assertEqual(kinds['dense_long'],max(0,count-6))
+                    validate_groupwork_plan(state,GroupworkPlan(target,chairs,(cluster,),(count,),{'c':regions}))
+
+    def test_seven_people_may_use_pair_four_plus_singleton_three(self):
+        state=SceneState(ROI(0,0,500,500),[
+            TableState('a',140,206,0,160,80,table_type='rect'),
+            TableState('b',140,294,0,160,80,table_type='rect'),
+            TableState('c',390,250,0,160,80,table_type='rect')],'groupwork')
+        targets=[TableTarget(t.table_id,t.x,t.y,target_rot_deg=0) for t in state.tables]
+        clusters=(ParticipantCluster('pair','group_0',('a','b'),4),
+                  ParticipantCluster('single','group_0',('c',),3))
+        plan=GroupworkPlan(targets,[],clusters,(7,),{})
+        for cluster in clusters:
+            chairs,regions=cluster_seating(state,targets,cluster)
+            plan.chairs.extend(chairs);plan.regions[cluster.cluster_id]=regions
+        validate_groupwork_plan(state,plan)
+        self.assertEqual(Counter(c['cluster_id'] for c in plan.chairs),{'pair':4,'single':3})
+        self.assertEqual({c['group_id'] for c in plan.chairs},{'group_0'})
+        broken=deepcopy(plan);broken.chairs[0]['group_id']='group_1'
+        with self.assertRaises(LayoutConstraintError):validate_groupwork_plan(state,broken)
+        blocked=deepcopy(plan);blocked.targets[-1]=replace(blocked.targets[-1],target_x=140,target_y=250)
+        with self.assertRaises(LayoutConstraintError):validate_groupwork_plan(state,blocked)
+
+    def test_relative_group_assignment_rejects_interleaved_clusters(self):
+        clusters=(ParticipantCluster('a','group_0',('a',),2),
+                  ParticipantCluster('b','group_0',('b',),2),
+                  ParticipantCluster('c','group_1',('c',),2))
+        targets=[TableTarget('a',100,250),TableTarget('b',180,250),TableTarget('c',400,250)]
+        plan=GroupworkPlan(targets,[],clusters,(4,2),{})
+        self.assertTrue(groups_are_spatially_distinct(plan))
+        plan.targets[1]=replace(plan.targets[1],target_x=450)
+        self.assertFalse(groups_are_spatially_distinct(plan))
+
+    def test_pair_capacity_uses_ends_and_rejects_nonfitting_dense_chairs(self):
+        state=SceneState(ROI(0,0,500,500),[
+            TableState('a',250,206,0,160,80,table_type='rect'),
+            TableState('b',250,294,0,160,80,table_type='rect')],'groupwork')
+        targets=[TableTarget(t.table_id,t.x,t.y,target_rot_deg=0) for t in state.tables]
+        for count in range(1,9):
+            cluster=ParticipantCluster('pair','group_0',('a','b'),count)
+            seats,regions=cluster_seating(state,targets,cluster)
+            validate_groupwork_plan(state,GroupworkPlan(targets,seats,(cluster,),(count,),{'pair':regions}))
+            kinds=Counter(c['seat_kind'] for c in seats)
+            self.assertEqual(kinds['regular_end'],min(max(0,count-4),4))
+            self.assertEqual(kinds['dense_long'],max(0,count-8))
+        # Ten is only the seat-position upper bound: the current ellipse
+        # cannot contain the dense outer-row circles for nine or ten.
+        for count in (9,10):
+            with self.assertRaisesRegex(LayoutConstraintError,'Chair-Kreise'):
+                cluster_seating(state,targets,replace(cluster,participants=count))
+        with self.assertRaisesRegex(LayoutConstraintError,'Sitzpositionen'):
+            cluster_seating(state,targets,replace(cluster,participants=11))
+
+    def test_explicit_cluster_topology_is_complete_and_scene_order_independent(self):
+        tables=editor_state().tables
+        for sizes in ((1,1,1,1,1),(1,2,2),(1,1,1,2)):
+            partitions=enumerate_cluster_partitions(tables,sizes)
+            self.assertEqual(partitions,enumerate_cluster_partitions(list(reversed(tables)),sizes))
+            for partition in partitions:
+                self.assertEqual(sorted(map(len,partition)),sorted(sizes))
+                self.assertEqual({t.table_id for cluster in partition for t in cluster},{t.table_id for t in tables})
+
+
+class GroupworkPlanningTests(unittest.TestCase):
+    def test_free_space_separates_current_singletons_without_breaking_pair(self):
+        poses=((375.,237.857,175),(131.429,100.714,145),
+               (364.286,92.857,215),(126.429,389.286,415),(259.433,347.143,40))
+        state=SceneState(ROI(0,0,500,500),[
+            TableState(f'table_{i}',x,y,r,160,80,table_type='rect')
+            for i,(x,y,r) in enumerate(poses)],'groupwork')
+        plan=plan_participant_groupwork(state,15,4)
+        validate_groupwork_plan(state,plan)
+        self.assertGreaterEqual(intergroup_floor_gap(state,plan),60.)
+        self.assertEqual(sorted(len(c.table_ids) for c in plan.clusters),[1,1,1,2])
+        reverse=deepcopy(state);reverse.tables.reverse()
+        other=plan_participant_groupwork(reverse,15,4)
+        self.assertEqual(plan.targets,list(reversed(other.targets)))
+        self.assertEqual(plan.chairs,other.chairs)
+        self.assertEqual(plan,plan_participant_groupwork(state,15,4))
+
+    def test_editor_four_groups_retry_contours_before_rejecting(self):
+        state=editor_state()
+        for count in (13,14,15):
+            with self.subTest(count=count):
+                plan=plan_participant_groupwork(state,count,4)
+                validate_groupwork_plan(state,plan)
+                self.assertEqual(len(plan.chairs),count)
+                self.assertEqual(len({c.group_id for c in plan.clusters}),4)
+                reverse=deepcopy(state);reverse.tables.reverse()
+                other=plan_participant_groupwork(reverse,count,4)
+                self.assertEqual(plan.targets,list(reversed(other.targets)))
+                self.assertEqual(plan.chairs,other.chairs)
+                self.assertEqual(plan,plan_participant_groupwork(state,count,4))
+
+    def test_current_source_pair_selection_avoids_long_lower_left_parking(self):
+        poses=((363.571,254.286,175),(131.429,100.714,145),
+               (364.286,92.857,215),(126.429,389.286,415),(279.433,395.714,40))
+        state=SceneState(ROI(0,0,500,500),[
+            TableState(f'table_{i}',x,y,angle,160,80,table_type='rect')
+            for i,(x,y,angle) in enumerate(poses)],'groupwork')
+        plan=plan_participant_groupwork(state,5,1)
+        validate_groupwork_plan(state,plan)
+        self.assertEqual(len(plan.clusters[0].table_ids),2)
+        distances=[math.hypot(t.target_x-state.tables[i].x,t.target_y-state.tables[i].y)
+                   for i,t in enumerate(plan.targets)]
+        self.assertLess(sum(distances),490.)
+        self.assertLess(distances[3],260.)
+        other=deepcopy(state);other.tables.reverse()
+        reverse=plan_participant_groupwork(other,5,1)
+        self.assertEqual(plan.targets,list(reversed(reverse.targets)))
+        self.assertEqual(plan.chairs,reverse.chairs)
+        self.assertEqual(plan,plan_participant_groupwork(state,5,1))
+
+    def test_fifteen_five_escapes_current_source_jam_without_relaxing_contours(self):
+        poses=((363.571,254.286,175),(131.429,100.714,145),
+               (364.286,92.857,215),(126.429,389.286,415),(279.433,395.714,40))
+        state=SceneState(ROI(0,0,500,500),[
+            TableState(f'table_{i}',x,y,angle,160,80,table_type='rect')
+            for i,(x,y,angle) in enumerate(poses)],'groupwork')
+        plan=plan_participant_groupwork(state,15,5)
+        validate_groupwork_plan(state,plan)
+        self.assertEqual(plan.group_sizes,(3,)*5)
+        self.assertEqual(len(plan.clusters),5)
+        self.assertEqual(len(plan.chairs),15)
+        self.assertEqual(plan.parked_table_ids,())
+        self.assertTrue(all(len(c.table_ids)==1 and c.participants==3 for c in plan.clusters))
+        other=deepcopy(state);other.tables.reverse()
+        reverse=plan_participant_groupwork(other,15,5)
+        self.assertEqual(plan.targets,list(reversed(reverse.targets)))
+        self.assertEqual(plan.chairs,reverse.chairs)
+        self.assertEqual(plan,plan_participant_groupwork(state,15,5))
+
+    def test_connected_pair_fallback_precedes_split_small_group(self):
+        four_singles=((0,1,3),(1,1,3),(2,1,2),(3,1,2))
+        pair_fallback=((0,2,3),(1,1,3),(2,1,2),(3,1,2))
+        split_fallback=((0,1,1),(0,1,2),(1,1,3),(2,1,2),(3,1,2))
+        self.assertLess(_profile_key(four_singles,'group_capacity'),
+                        _profile_key(pair_fallback,'group_capacity'))
+        self.assertLess(_profile_key(pair_fallback,'group_capacity'),
+                        _profile_key(split_fallback,'group_capacity'))
+        pair_for_two=((0,1,3),(1,1,3),(2,2,2),(3,1,2))
+        self.assertLess(_profile_key(pair_fallback,'group_capacity'),
+                        _profile_key(pair_for_two,'group_capacity'))
+
+    def test_live_ten_four_uses_pair_when_singleton_parking_does_not_fit(self):
+        poses=((359.286,247.143,175),(132.143,197.143,145),
+               (364.286,92.857,215),(126.429,389.286,415),(403.719,409.286,40))
+        state=SceneState(ROI(0,0,500,500),[
+            TableState(f'table_{i}',x,y,angle,160,80,table_type='rect')
+            for i,(x,y,angle) in enumerate(poses)],'groupwork')
+        plan=plan_participant_groupwork(state,10,4)
+        validate_groupwork_plan(state,plan)  # includes exact pair axis / 8-cm seam
+        self.assertEqual(plan.group_sizes,(3,3,2,2))
+        self.assertEqual(sorted(len(c.table_ids) for c in plan.clusters),[1,1,1,2])
+        self.assertEqual([c.participants for c in plan.clusters if len(c.table_ids)==2],[3])
+        self.assertEqual(len({c.group_id for c in plan.clusters}),4)
+        self.assertEqual(plan.parked_table_ids,())
+        self.assertEqual(len(plan.chairs),10)
+        other=deepcopy(state);other.tables.reverse()
+        reversed_plan=plan_participant_groupwork(other,10,4)
+        self.assertEqual(plan.targets,list(reversed(reversed_plan.targets)))
+        self.assertEqual(plan.chairs,reversed_plan.chairs)
+        self.assertEqual(plan,plan_participant_groupwork(state,10,4))
+        five_groups=plan_participant_groupwork(state,10,5)
+        validate_groupwork_plan(state,five_groups)
+        self.assertEqual(len(five_groups.clusters),5)
+        self.assertTrue(all(len(c.table_ids)==1 for c in five_groups.clusters))
+
+    def test_valid_four_singleton_source_angles_are_preserved_exactly(self):
+        poses=((130,125,10),(370,125,-10),(130,375,-10),(370,375,10))
+        state=SceneState(ROI(0,0,500,500),[
+            TableState(str(i),x,y,angle,160,80,table_type='rect')
+            for i,(x,y,angle) in enumerate(poses)],'groupwork')
+        plan=plan_participant_groupwork(state,12,4)
+        validate_groupwork_plan(state,plan)
+        self.assertEqual([(t.target_x,t.target_y,t.target_rot_deg) for t in plan.targets],
+                         [(t.x,t.y,t.rot_deg) for t in state.tables])
+
+    def test_five_groups_keep_source_derived_angles_and_react_to_source_changes(self):
+        poses=((359.286,247.143,175),(132.143,197.143,145),
+               (364.286,92.857,215),(126.429,389.286,415),(360.147,440.,-5))
+        state=SceneState(ROI(0,0,500,500),[
+            TableState(f'table_{i}',x,y,angle,160,80,table_type='rect')
+            for i,(x,y,angle) in enumerate(poses)],'groupwork')
+        for people in (5,10,15):
+            plan=plan_participant_groupwork(state,people,5)
+            validate_groupwork_plan(state,plan)
+            self.assertEqual(len(plan.chairs),people)
+            self.assertEqual(len(plan.clusters),5)
+            self.assertGreater(max(abs((t.target_rot_deg+45)%90-45) for t in plan.targets),2.)
+            other=deepcopy(state);other.tables.reverse()
+            reversed_plan=plan_participant_groupwork(other,people,5)
+            self.assertEqual(plan.targets,list(reversed(reversed_plan.targets)))
+            self.assertEqual(plan.chairs,reversed_plan.chairs)
+            self.assertEqual(plan,plan_participant_groupwork(state,people,5))
+        moved=deepcopy(state);moved.tables[0].rot_deg+=12
+        changed=plan_participant_groupwork(moved,15,5)
+        validate_groupwork_plan(moved,changed)
+        self.assertNotEqual([(t.target_x,t.target_y,t.target_rot_deg) for t in changed.targets],
+                            [(t.target_x,t.target_y,t.target_rot_deg) for t in plan.targets])
+
+    def test_full_strength_parking_keeps_long_side_flush_after_spacing(self):
+        from aisi.core.table_geometry import footprint_bounds,table_world_footprint
+        state=editor_state()
+        for people,groups in ((3,1),(5,1),(15,2)):
+            plan=plan_participant_groupwork(state,people,groups)
+            validate_groupwork_plan(state,plan)
+            by_id={t.table_id:t for t in state.tables}
+            for target in plan.targets:
+                if target.table_id not in plan.parked_table_ids:
+                    continue
+                x0,y0,x1,y1=footprint_bounds(table_world_footprint(by_id[target.table_id],
+                    (target.target_x,target.target_y),target.target_rot_deg))
+                if abs(target.target_rot_deg % 180.)<1e-8:
+                    gap=min(abs(y0-state.roi.y_min),abs(y1-state.roi.y_max))
+                else:
+                    gap=min(abs(x0-state.roi.x_min),abs(x1-state.roi.x_max))
+                self.assertLess(gap,1e-7)
+                from aisi.analysis.rect_groupwork_adaptive_prototype import _polygon_distance
+                parked_poly=table_world_footprint(by_id[target.table_id],
+                    (target.target_x,target.target_y),target.target_rot_deg)
+                for active in plan.targets:
+                    if active.table_id in plan.parked_table_ids:
+                        continue
+                    active_poly=table_world_footprint(by_id[active.table_id],
+                        (active.target_x,active.target_y),active.target_rot_deg)
+                    self.assertGreaterEqual(_polygon_distance(parked_poly,active_poly),60.-1e-7)
+
+    def test_live_four_groups_do_not_send_upper_left_source_into_distant_pair(self):
+        poses=((262.857,211.429,175),(132.143,128.571,145),
+               (364.286,83.571,175),(177.143,381.429,195),(398.004,367.143,45))
+        state=SceneState(ROI(0,0,500,500),[
+            TableState(f'table_{i}',x,y,angle,160,80,table_type='rect')
+            for i,(x,y,angle) in enumerate(poses)],'groupwork')
+        plan=plan_participant_groupwork(state,14,4)
+        validate_groupwork_plan(state,plan)
+        targets={t.table_id:t for t in plan.targets}
+        distances=[math.dist((t.x,t.y),(targets[t.table_id].target_x,
+                                       targets[t.table_id].target_y)) for t in state.tables]
+        # Previously table_1 travelled 267 cm into a pair; table_0 moved
+        # towards its vacated source. Turning the singleton avoids that detour.
+        # The new soft separation preference permits a small local shift,
+        # while still preventing the former 267-cm source-position exchange.
+        self.assertLess(distances[1],20.)
+        self.assertGreaterEqual(intergroup_floor_gap(state,plan),60.)
+        self.assertLess(max(distances),120.)
+        self.assertLess(sum(distances),200.)
+        self.assertIn(('table_1',),[c.table_ids for c in plan.clusters])
+        self.assertEqual(plan,plan_participant_groupwork(state,14,4))
+        reversed_state=deepcopy(state);reversed_state.tables.reverse()
+        reversed_plan=plan_participant_groupwork(reversed_state,14,4)
+        self.assertEqual(plan.targets,list(reversed(reversed_plan.targets)))
+        self.assertEqual(plan.clusters,reversed_plan.clusters)
+        self.assertEqual(plan.chairs,reversed_plan.chairs)
+
+    def test_valid_source_singletons_are_not_moved_only_to_maximize_gap(self):
+        state=SceneState(ROI(0,0,500,500),[
+            TableState('a',130,250,0,160,80,table_type='rect'),
+            TableState('b',370,250,0,160,80,table_type='rect')],'groupwork')
+        targets=[TableTarget(t.table_id,t.x,t.y,target_rot_deg=t.rot_deg) for t in state.tables]
+        clusters=tuple(ParticipantCluster(f'cluster_{i}',f'group_{i}',(t.table_id,),3)
+                       for i,t in enumerate(state.tables))
+        plan=GroupworkPlan(targets,[],clusters,(3,3),{})
+        for cluster in clusters:
+            seats,regions=cluster_seating(state,targets,cluster)
+            plan.chairs.extend(seats);plan.regions[cluster.cluster_id]=regions
+        validate_groupwork_plan(state,plan)
+        with patch('aisi.generation.groupwork_participants.cluster_seating',
+                   side_effect=AssertionError('A strictly worse path must not rebuild seating')):
+            result=_improve_floor_spacing(state,plan)
+        self.assertEqual(result,plan)
+
+    def test_five_singletons_repair_complete_envelopes_after_local_search_failure(self):
+        state=editor_state()
+        positions=((112.143,233.571),(187.857,131.429),(386.429,134.286),
+                   (160.,384.286),(364.286,326.429))
+        for i,(table,(x,y)) in enumerate(zip(state.tables,positions)):
+            table.table_id=f'repair_{i}';table.x=x;table.y=y
+        with patch('aisi.generation.groupwork_participants.solve_rect_groupwork_prototype',side_effect=ValueError('local search exhausted')):
+            plan=plan_participant_groupwork(state,15,5,table_policy='few_tables')
+        validate_groupwork_plan(state,plan)
+        self.assertEqual(len(plan.chairs),15)
+
+    def test_occupied_envelopes_can_skip_legacy_directed_clearance_explicitly(self):
+        state=SceneState(ROI(0,0,500,500),[
+            TableState('a',250,100,0,160,200),TableState('b',250,310,0,160,200)],'groupwork')
+        targets=[TableTarget(t.table_id,t.x,t.y,target_rot_deg=0) for t in state.tables]
+        self.assertGreater(evaluate_hard_constraints(state,targets).clearance_violations,0)
+        stats=evaluate_hard_constraints(state,targets,clearance_depth_factor=None)
+        self.assertEqual(stats.total_violations,0)
+
+    def test_five_people_on_one_available_table_have_two_two_one(self):
+        state=single_state()
+        plan=plan_participant_groupwork(state,5,1,table_policy='few_tables')
+        validate_groupwork_plan(state,plan)
+        self.assertEqual(Counter(c['seat_kind'] for c in plan.chairs),{'regular_long':4,'regular_end':1})
+
+    def test_balanced_participant_groups_keep_all_visible_tables_and_identity(self):
+        state=editor_state()
+        for people,groups in ((3,2),(7,2),(10,2),(15,5)):
+            with self.subTest(people=people,groups=groups):
+                plan=plan_participant_groupwork(state,people,groups,table_policy='few_tables')
+                validate_groupwork_plan(state,plan)
+                self.assertEqual(sum(plan.group_sizes),people)
+                self.assertLessEqual(max(plan.group_sizes)-min(plan.group_sizes),1)
+                self.assertEqual(len(plan.targets),5)
+                other=deepcopy(state);other.tables.reverse()
+                reversed_plan=plan_participant_groupwork(other,people,groups,table_policy='few_tables')
+                self.assertEqual(plan.targets,list(reversed(reversed_plan.targets)))
+                self.assertEqual(plan.chairs,reversed_plan.chairs)
+                self.assertEqual(plan.clusters,reversed_plan.clusters)
+                self.assertEqual(plan.parked_table_ids,tuple(reversed(reversed_plan.parked_table_ids)))
+                self.assertEqual(plan,plan_participant_groupwork(state,people,groups,table_policy='few_tables'))
+
+    def test_table_policies_are_explicit_and_produce_different_valid_plans(self):
+        state=editor_state()
+        compact=plan_participant_groupwork(state,5,1,table_policy='few_tables')
+        preferred=plan_participant_groupwork(state,5,1,table_policy='regular_seats')
+        for plan in (compact,preferred):validate_groupwork_plan(state,plan)
+        self.assertEqual(sum(len(c.table_ids) for c in compact.clusters),1)
+        self.assertEqual(sum(len(c.table_ids) for c in preferred.clusters),2)
+        self.assertTrue(all(c['seat_kind']=='regular_long' for c in preferred.chairs))
+
+    def test_default_prefers_three_per_singleton_and_pairs_for_larger_groups(self):
+        state=editor_state()
+        for people,groups,expected_sizes in ((3,1,[1]),(4,1,[2]),(5,1,[2]),(15,2,[2,2])):
+            with self.subTest(people=people,groups=groups):
+                plan=plan_participant_groupwork(state,people,groups)
+                validate_groupwork_plan(state,plan)
+                self.assertEqual(sorted(len(c.table_ids) for c in plan.clusters),expected_sizes)
+                self.assertTrue(all(c.participants<=3 for c in plan.clusters if len(c.table_ids)==1))
+                self.assertFalse(any(c['seat_kind']=='dense_long' for c in plan.chairs))
+        # Three remains an optimum: a single available table may still seat
+        # five, using ends before density rather than inventing a hard limit.
+        fallback=plan_participant_groupwork(single_state(),5,1)
+        self.assertEqual([len(c.table_ids) for c in fallback.clusters],[1])
+        self.assertEqual(Counter(c['seat_kind'] for c in fallback.chairs),{'regular_long':4,'regular_end':1})
+
+    def test_padded_floor_contours_reject_physically_separate_singletons(self):
+        state=SceneState(ROI(0,0,500,500),[
+            TableState('a',160,250,0,160,80,table_type='rect'),
+            TableState('b',322,250,0,160,80,table_type='rect')],'groupwork')
+        targets=[TableTarget(t.table_id,t.x,t.y,target_rot_deg=0) for t in state.tables]
+        clusters=tuple(ParticipantCluster(f'cluster_{i}',f'group_{i}',(t.table_id,),2)
+                       for i,t in enumerate(state.tables))
+        plan=GroupworkPlan(targets,[],clusters,(2,2),{})
+        for c in clusters:
+            seats,regions=cluster_seating(state,targets,c)
+            plan.chairs.extend(seats);plan.regions[c.cluster_id]=regions
+        # Physical 160-cm widths are separate, but 170-cm floor contours overlap.
+        self.assertEqual(evaluate_hard_constraints(state,targets,clearance_depth_factor=None).overlap_violations,0)
+        with self.assertRaisesRegex(LayoutConstraintError,'Bodenkonturen'):
+            validate_groupwork_plan(state,plan)
+
+    def test_invalid_requests_are_rejected_before_search(self):
+        state=editor_state()
+        for people,groups in ((0,1),(3,0),(3,4),(10,6),(41,1),(3.5,1)):
+            with self.subTest(people=people,groups=groups),self.assertRaises(LayoutConstraintError):
+                plan_participant_groupwork(state,people,groups,table_policy='few_tables')
+
+
+if __name__=='__main__':unittest.main()

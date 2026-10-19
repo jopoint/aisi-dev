@@ -341,3 +341,36 @@ def _edge_normals(polygon: Footprint) -> tuple[Point2D, ...]:
             continue
         normals.append(_normalized_axis((-edge_y, edge_x)))
     return tuple(normals)
+
+
+def _convex_point_and_edge_distance(point: Point2D, polygon: Footprint) -> tuple[bool, float]:
+    """Return convex containment and exact shortest boundary distance."""
+    if len(polygon) < 3:
+        raise ValueError("Convex polygons must contain at least three points")
+    crosses: list[float] = []
+    distances: list[float] = []
+    for first, second in zip(polygon, polygon[1:] + polygon[:1]):
+        dx, dy = second[0] - first[0], second[1] - first[1]
+        px, py = point[0] - first[0], point[1] - first[1]
+        crosses.append(dx * py - dy * px)
+        length_squared = dx * dx + dy * dy
+        fraction = min(1.0, max(0.0, (px * dx + py * dy) / length_squared)) if length_squared else 0.0
+        distances.append(math.hypot(px - fraction * dx, py - fraction * dy))
+    inside = min(crosses) >= -GEOMETRY_EPSILON or max(crosses) <= GEOMETRY_EPSILON
+    return inside, min(distances)
+
+
+def circle_inside_convex_polygon(center: Point2D, radius: float, polygon: Footprint) -> bool:
+    """Check the complete circle against canonical convex polygon edges."""
+    if radius < 0.0:
+        raise ValueError("Circle radius must be nonnegative")
+    inside, distance = _convex_point_and_edge_distance(center, polygon)
+    return inside and distance + GEOMETRY_EPSILON >= radius
+
+
+def circle_intersects_convex_polygon(center: Point2D, radius: float, polygon: Footprint) -> bool:
+    """Check circle contact/overlap, including corners, without polygonizing it."""
+    if radius < 0.0:
+        raise ValueError("Circle radius must be nonnegative")
+    inside, distance = _convex_point_and_edge_distance(center, polygon)
+    return inside or distance <= radius + GEOMETRY_EPSILON

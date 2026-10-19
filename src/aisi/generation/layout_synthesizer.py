@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from itertools import permutations
 from statistics import mean, median
 
 from aisi.core.models import (
@@ -15,6 +16,8 @@ from aisi.core.models import (
     long_axis_rotation_from_facing_vector,
 )
 from aisi.core.table_geometry import (
+    convex_polygons_intersect,
+    polygon_inside_roi,
     required_table_center_separation,
     resolve_table_state_geometry,
     table_allowed_center_bounds,
@@ -28,10 +31,12 @@ from aisi.generation.target_structure_generator import pair_tables_for_groupwork
 
 GROUPWORK_PAIR_SEAM_GAP_CM = 4.0
 INPUT_TABLE_GAP_CM = 8.0
-RECT_TEMPLATE_MAX_TABLES = 6
-RECT_INPUT_TWO_COLUMN_SPACING_CM = 220.0
-RECT_INPUT_ROW_SPACING_CM = 190.0
-
+INPUT_SEAT_CLEARANCE_DEPTH_CM = 70.0
+DISCUSSION_SEAT_CLEARANCE_DEPTH_CM = 50.0
+_DISCUSSION_CLEARANCE_PHASE_SAMPLES = 1440
+# Layout generation is intentionally limited to at most five tables in the
+# current 500×500 cm AISI ROI.
+MAX_LAYOUT_TABLES = 5
 
 def synthesize_layout(
     scene_state: SceneState,
@@ -39,8 +44,18 @@ def synthesize_layout(
     target_profile: TargetProfile,
     target_structure: TargetStructure,
     transformation_strength: float = 0.5,
+    *,
+    input_presentation_side: str | None = None,
 ) -> LayoutProposal:
     """Synthesize adaptive table-only layouts from target structure + current scene."""
+    table_count = len(scene_state.tables)
+    if table_count > MAX_LAYOUT_TABLES:
+        raise ValueError(
+            "AISI layout generation supports at most "
+            f"{MAX_LAYOUT_TABLES} tables in the current 500x500 cm ROI; "
+            f"received {table_count}."
+        )
+
     tables = sorted(scene_state.tables, key=lambda table: table.table_id)
     strength = _clamp(transformation_strength, 0.0, 1.0)
 
@@ -56,7 +71,7 @@ def synthesize_layout(
         )
 
     if _uses_rect_template_layout(tables):
-        targets, notes = _layout_rect_templates(scene_state, tables)
+        targets, notes = _layout_rect_templates(scene_state, tables, input_presentation_side=input_presentation_side)
     elif scene_state.learning_format == "input":
         targets, notes = _layout_input_adaptive(
             scene_state,
@@ -86,7 +101,50 @@ def synthesize_layout(
     targets = _blend_targets_with_source(scene_state, targets, strength)
     notes.append(f"transformation_strength={strength:.3f}")
 
-    repaired_targets, repair_notes = _apply_hard_constraint_repair(scene_state, targets, notes)
+    # Rect Groupwork has approved island-level clearance geometry (pair ellipse
+    # and singleton long-side strips).  The generic repair only understands a
+    # one-sided table clearance and would destroy the selected pair geometry.
+    rect_input = (
+        scene_state.learning_format == "input"
+        and 1 <= len(tables) <= MAX_LAYOUT_TABLES
+        and all(table.table_type == "rect" for table in tables)
+    )
+    rect_groupwork = (
+        scene_state.learning_format == "groupwork"
+        and 2 <= len(tables) <= MAX_LAYOUT_TABLES
+        and all(table.table_type == "rect" for table in tables)
+    )
+    rect_discussion = (
+        scene_state.learning_format == "discussion"
+        and 1 <= len(tables) <= MAX_LAYOUT_TABLES
+        and all(table.table_type == "rect" for table in tables)
+    )
+    if rect_input and strength >= 1.0 - 1e-9:
+        repaired_targets, repair_notes = _repair_rect_input_after_blend(scene_state, targets, strength, input_presentation_side=input_presentation_side)
+    elif rect_groupwork:
+        repaired_targets, repair_notes, repaired_groupwork_notes = _repair_rect_groupwork_after_blend(
+            scene_state,
+            targets,
+            strength,
+        )
+        if repaired_groupwork_notes:
+            notes = [
+                note
+                for note in notes
+                if not (
+                    note.startswith("rect_groupwork_prototype=")
+                    or note.startswith("groupwork_")
+                )
+            ]
+            notes.extend(repaired_groupwork_notes)
+    elif rect_discussion and strength >= 1.0 - 1e-9:
+        repaired_targets, repair_notes = _repair_rect_discussion_after_blend(
+            scene_state,
+            targets,
+            strength,
+        )
+    else:
+        repaired_targets, repair_notes = _apply_hard_constraint_repair(scene_state, targets, notes)
     notes = [*notes, *repair_notes]
 
     final_stats = _evaluate_for_learning_format(scene_state, repaired_targets, notes)
@@ -105,9 +163,106 @@ def synthesize_layout(
     )
 
 
+def _repair_rect_groupwork_after_blend(
+    scene_state: SceneState,
+    blended_targets: list[TableTarget],
+    strength: float,
+) -> tuple[list[TableTarget], list[str], list[str]]:
+    """Repair a blended Rect Groupwork pose with its full island geometry.
+
+    The generic repair is intentionally not used here: it only knows directed
+    single-table clearance and would compact or split an approved pair ellipse.
+    At partial strength, the blended pose becomes the local source for one more
+    adaptive solve. This retains the normal blend-before-repair contract while
+    ensuring that the emitted pose again satisfies the complete Groupwork
+    clearance model.
+    """
+    if strength >= 1.0 - 1e-9:
+        return blended_targets, ["repair_skipped=rect_groupwork_target_already_valid"], []
+
+    source_by_id = {table.table_id: table for table in scene_state.tables}
+    intermediate = SceneState(
+        roi=scene_state.roi,
+        tables=[
+            TableState(
+                table_id=target.table_id,
+                x=target.target_x,
+                y=target.target_y,
+                rot_deg=target.target_rot_deg,
+                width=source_by_id[target.table_id].width,
+                height=source_by_id[target.table_id].height,
+                confidence=source_by_id[target.table_id].confidence,
+                table_type=source_by_id[target.table_id].table_type,
+            )
+            for target in blended_targets
+        ],
+        learning_format="groupwork",
+    )
+    from aisi.analysis.rect_groupwork_adaptive_prototype import solve_rect_groupwork_prototype
+
+    result = solve_rect_groupwork_prototype(intermediate, selection="clearance")
+    repaired = [
+        TableTarget(
+            table_id=target.table_id,
+            target_x=target.target_x,
+            target_y=target.target_y,
+            source_rot_deg=source_by_id[target.table_id].rot_deg,
+            target_rot_deg=target.target_rot_deg,
+            facing_target_x=target.facing_target_x,
+            facing_target_y=target.facing_target_y,
+        )
+        for target in result.table_targets
+    ]
+    objective = result.objective
+    groupwork_notes = [
+        *result.generation_notes,
+        f"groupwork_zone_overlap_cm2={objective.clearance_overlap_area_cm2:.3f}",
+        f"groupwork_max_displacement_cm={objective.max_displacement_cm:.3f}",
+        f"groupwork_total_displacement_cm={objective.total_displacement_cm:.3f}",
+        f"groupwork_total_rotation_change_deg={objective.total_rotation_change_deg:.3f}",
+        f"groupwork_crossing_count={objective.crossing_count}",
+        f"groupwork_min_intergroup_gap_cm={objective.min_intergroup_gap_cm:.3f}",
+    ]
+    return repaired, [
+        "repair_applied=rect_groupwork_custom_clearance",
+        f"repair_strength={strength:.3f}",
+        f"repair_zone_overlap_cm2={result.objective.clearance_overlap_area_cm2:.3f}",
+    ], groupwork_notes
+
+
+def _repair_rect_input_after_blend(
+    scene_state: SceneState,
+    blended_targets: list[TableTarget],
+    strength: float,
+    *,
+    input_presentation_side: str | None = None,
+) -> tuple[list[TableTarget], list[str]]:
+    """Validate complete one-sided Input seating zones at the full target."""
+    if strength < 1.0 - 1e-9:
+        raise AssertionError("Die vollständige Input-Clearance gilt nur für den 100-%-Endzustand.")
+    presenter, axis = _rect_input_presenter_and_axis(scene_state.tables, input_presentation_side)
+    if not _rect_input_clearances_valid(scene_state, blended_targets, presenter.table_id, axis):
+        raise ValueError("Rect-Input-Ziel verletzt die 70-cm-Sitz-/Bewegungsflächen.")
+    return blended_targets, ["repair_skipped=rect_input_target_clearance_valid"]
+
+
+def _repair_rect_discussion_after_blend(
+    scene_state: SceneState,
+    blended_targets: list[TableTarget],
+    strength: float,
+) -> tuple[list[TableTarget], list[str]]:
+    """Validate full Discussion singleton zones at the completed target only."""
+
+    if strength < 1.0 - 1e-9:
+        raise AssertionError("Die vollständige Discussion-Clearance gilt nur für den 100-%-Endzustand.")
+    if not _rect_discussion_singleton_clearances_valid(scene_state, blended_targets):
+        raise ValueError("Rect-Discussion-Ziel verletzt die bestätigten Sitz-/Bewegungsflächen.")
+    return blended_targets, ["repair_skipped=rect_discussion_target_clearance_valid"]
+
+
 def _uses_rect_template_layout(tables: list[TableState]) -> bool:
     """Return whether a small all-rect scene uses the restored template path."""
-    return 1 <= len(tables) <= RECT_TEMPLATE_MAX_TABLES and all(
+    return 1 <= len(tables) <= MAX_LAYOUT_TABLES and all(
         table.table_type == "rect" for table in tables
     )
 
@@ -115,10 +270,12 @@ def _uses_rect_template_layout(tables: list[TableState]) -> bool:
 def _layout_rect_templates(
     scene_state: SceneState,
     tables: list[TableState],
+    *,
+    input_presentation_side: str | None = None,
 ) -> tuple[list[TableTarget], list[str]]:
     """Build deterministic, ID-bound layouts for the historical rect workflow."""
     if scene_state.learning_format == "input":
-        return _layout_rect_input_templates(scene_state, tables)
+        return _layout_rect_input_templates(scene_state, tables, input_presentation_side=input_presentation_side)
     if scene_state.learning_format == "groupwork":
         return _layout_rect_groupwork_templates(scene_state, tables)
     return _layout_rect_discussion_templates(scene_state, tables)
@@ -127,134 +284,193 @@ def _layout_rect_templates(
 def _layout_rect_input_templates(
     scene_state: SceneState,
     tables: list[TableState],
+    *,
+    input_presentation_side: str | None = None,
 ) -> tuple[list[TableTarget], list[str]]:
-    """Restore frontal rect rows with spacing that satisfies current clearance."""
-    occupancy_by_count = {
-        1: (1,),
-        2: (2,),
-        3: (2, 1),
-        4: (2, 2),
-        5: (3, 2),
-        6: (3, 3),
-    }
-    occupancy = occupancy_by_count[len(tables)]
-    row_y = (250.0,) if len(occupancy) == 1 else (155.0, 345.0)
-    rotation_deg = long_axis_rotation_from_facing_vector((0.0, -1.0), reference_rot_deg=0.0)
-
-    slots: list[tuple[float, float]] = []
-    for row_size, y in zip(occupancy, row_y):
-        slots.extend((x, y) for x in _rect_input_row_x_positions(tables[0], row_size))
-
+    """Build a source-adaptive Input presentation and audience formation."""
+    presenter, source_axis = _rect_input_presenter_and_axis(tables, input_presentation_side)
+    local_positions = _rect_input_local_positions(len(tables))
+    axis, anchor, axis_strategy = _rect_input_fitted_axis_and_anchor(
+        scene_state, tables, presenter, source_axis, local_positions
+    )
+    lateral = (-axis[1], axis[0])
+    audience = [table for table in tables if table.table_id != presenter.table_id]
+    audience_slots = local_positions[1:]
+    slot_assignment = min(
+        permutations(audience_slots),
+        key=lambda slots: _rect_input_assignment_key(audience, slots, anchor, lateral, axis),
+    ) if audience else ()
     targets = [
-        TableTarget(
-            table_id=table.table_id,
-            target_x=slot[0],
-            target_y=slot[1],
-            source_rot_deg=table.rot_deg,
-            target_rot_deg=rotation_deg,
-            facing_target_x=slot[0],
-            facing_target_y=slot[1] - 100.0,
-        )
-        for table, slot in zip(tables, slots)
+        _rect_input_target(presenter, anchor, local_positions[0], lateral, axis, facing=(-axis[0], -axis[1])),
+        *[
+            _rect_input_target(table, anchor, local, lateral, axis, facing=axis)
+            for table, local in zip(audience, slot_assignment)
+        ],
     ]
+    if not _rect_input_clearances_valid(scene_state, targets, presenter.table_id, axis):
+        raise ValueError("Die quelladaptive Rect-Input-Formation verletzt die 70-cm-Sitz-/Bewegungsflächen.")
     return targets, [
         "rect_template=input",
-        f"rect_input_occupancy={list(occupancy)}",
-        f"rect_input_two_column_spacing_cm={RECT_INPUT_TWO_COLUMN_SPACING_CM:.1f}",
-        f"rect_input_row_spacing_cm={RECT_INPUT_ROW_SPACING_CM:.1f}",
+        "rect_input_topology=source_adaptive_presenter_audience",
+        f"rect_input_presenter_id={presenter.table_id}",
+        f"rect_input_presentation_axis=({axis[0]:.4f},{axis[1]:.4f})",
+        f"rect_input_axis_strategy={axis_strategy}",
+        f"rect_input_single_side_clearance_depth_cm={INPUT_SEAT_CLEARANCE_DEPTH_CM:.1f}",
     ]
 
 
-def _rect_input_row_x_positions(table: TableState, row_size: int) -> tuple[float, ...]:
-    if row_size == 1:
-        return (250.0,)
-    if row_size == 2:
-        half_spacing = RECT_INPUT_TWO_COLUMN_SPACING_CM * 0.5
-        return (250.0 - half_spacing, 250.0 + half_spacing)
-
-    lateral_spacing = required_table_center_separation(
-        table,
-        0.0,
-        table,
-        0.0,
-        (1.0, 0.0),
-        gap=INPUT_TABLE_GAP_CM,
+def _rect_input_presenter_and_axis(tables: list[TableState], presentation_side: str | None = None) -> tuple[TableState, tuple[float, float]]:
+    if presentation_side is not None:
+        directions = {"north": (0.0, -1.0), "east": (1.0, 0.0), "south": (0.0, 1.0), "west": (-1.0, 0.0)}
+        if presentation_side not in directions:
+            raise ValueError(f"Ungültige Präsentationsseite: {presentation_side!r}.")
+        axis = directions[presentation_side]
+        presenter = max(tables, key=lambda table: (_dot((table.x, table.y), axis), table.table_id))
+        return presenter, axis
+    if len(tables) == 1:
+        table = tables[0]
+        return table, _normalize_vector((math.cos(math.radians(table.rot_deg + 90.0)), math.sin(math.radians(table.rot_deg + 90.0))))
+    # Rect orientations are axial: 0 and 180 degrees describe the same
+    # footprint. Average doubled angles before choosing a seating normal.
+    # Positions still select the presentation end; explicit sides above win.
+    tables = sorted(tables, key=lambda table: table.table_id)
+    center = (mean(table.x for table in tables), mean(table.y for table in tables))
+    sxx = mean((table.x - center[0]) ** 2 for table in tables)
+    syy = mean((table.y - center[1]) ** 2 for table in tables)
+    sxy = mean((table.x - center[0]) * (table.y - center[1]) for table in tables)
+    angle = 0.0 if abs(sxy) <= 1e-9 and abs(sxx - syy) <= 1e-9 else 0.5 * math.atan2(2.0 * sxy, sxx - syy)
+    orientation_x = math.fsum(math.cos(math.radians(2.0 * table.rot_deg)) for table in tables)
+    orientation_y = math.fsum(math.sin(math.radians(2.0 * table.rot_deg)) for table in tables)
+    if math.hypot(orientation_x, orientation_y) > 1e-9 * len(tables):
+        angle = 0.5 * math.atan2(orientation_y, orientation_x) + math.pi / 2.0
+    # Conflicting axial orientations with no resultant keep the positional
+    # principal axis instead of inventing an ID-dependent orientation.
+    axis = (math.cos(angle), math.sin(angle))
+    endpoints = (
+        min(tables, key=lambda table: (_dot((table.x - center[0], table.y - center[1]), axis), table.table_id)),
+        max(tables, key=lambda table: (_dot((table.x - center[0], table.y - center[1]), axis), table.table_id)),
     )
-    return tuple(250.0 + (index - 1) * lateral_spacing for index in range(row_size))
+    presenter = max(
+        endpoints,
+        key=lambda table: (
+            math.fsum(math.dist((table.x, table.y), (other.x, other.y)) for other in tables if other is not table),
+            abs(_dot((table.x - center[0], table.y - center[1]), axis)),
+            table.table_id,
+        ),
+    )
+    if _dot((presenter.x - center[0], presenter.y - center[1]), axis) < 0.0:
+        axis = (-axis[0], -axis[1])
+    return presenter, axis
+
+
+def _rect_input_local_positions(count: int) -> tuple[tuple[float, float], ...]:
+    layouts = {
+        1: ((0.0, 0.0),),
+        2: ((0.0, 100.0), (0.0, -100.0)),
+        3: ((0.0, 110.0), (-84.0, -80.0), (84.0, -80.0)),
+        4: ((0.0, 110.0), (-84.0, 10.0), (84.0, 10.0), (0.0, -148.0)),
+        5: ((0.0, 125.0), (-84.0, 20.0), (84.0, 20.0), (-84.0, -138.0), (84.0, -138.0)),
+    }
+    return layouts[count]
+
+
+def _rect_input_fitted_axis_and_anchor(
+    scene_state: SceneState,
+    tables: list[TableState],
+    presenter: TableState,
+    source_axis: tuple[float, float],
+    local_positions: tuple[tuple[float, float], ...],
+) -> tuple[tuple[float, float], tuple[float, float], str]:
+    candidates = [(source_axis, "source_continuous")]
+    if len(tables) >= 5:
+        cardinal = (math.copysign(1.0, source_axis[0]), 0.0) if abs(source_axis[0]) >= abs(source_axis[1]) else (0.0, math.copysign(1.0, source_axis[1]))
+        candidates.append((cardinal, "source_axis_room_fit"))
+    for axis, strategy in candidates:
+        anchor = _rect_input_anchor(scene_state, tables, presenter, axis, local_positions)
+        if anchor is not None:
+            return axis, anchor, strategy
+    raise ValueError("Die 70-cm-Input-Sitzflächen passen nicht vollständig in die ROI.")
+
+
+def _rect_input_anchor(
+    scene_state: SceneState,
+    tables: list[TableState],
+    presenter: TableState,
+    axis: tuple[float, float],
+    local_positions: tuple[tuple[float, float], ...],
+) -> tuple[float, float] | None:
+    lateral = (-axis[1], axis[0])
+    order = [presenter, *[table for table in tables if table.table_id != presenter.table_id]]
+    provisional = [
+        _rect_input_target(table, (0.0, 0.0), local, lateral, axis, facing=(-axis[0], -axis[1]) if table.table_id == presenter.table_id else axis)
+        for table, local in zip(order, local_positions)
+    ]
+    regions = _rect_input_clearance_regions(provisional, tables, presenter.table_id, axis)
+    footprints = [
+        table_world_footprint(next(table for table in tables if table.table_id == target.table_id), (target.target_x, target.target_y), target.target_rot_deg)
+        for target in provisional
+    ]
+    occupied = [*regions, *footprints]
+    min_x, max_x = min(x for polygon in occupied for x, _ in polygon), max(x for polygon in occupied for x, _ in polygon)
+    min_y, max_y = min(y for polygon in occupied for _, y in polygon), max(y for polygon in occupied for _, y in polygon)
+    x_min, x_max = scene_state.roi.x_min - min_x, scene_state.roi.x_max - max_x
+    y_min, y_max = scene_state.roi.y_min - min_y, scene_state.roi.y_max - max_y
+    if x_min > x_max or y_min > y_max:
+        return None
+    source_center = (mean(table.x for table in tables), mean(table.y for table in tables))
+    return _clamp(source_center[0], x_min, x_max), _clamp(source_center[1], y_min, y_max)
+
+
+def _rect_input_target(table: TableState, anchor: tuple[float, float], local: tuple[float, float], lateral: tuple[float, float], axis: tuple[float, float], *, facing: tuple[float, float]) -> TableTarget:
+    x = anchor[0] + lateral[0] * local[0] + axis[0] * local[1]
+    y = anchor[1] + lateral[1] * local[0] + axis[1] * local[1]
+    return TableTarget(table.table_id, x, y, table.rot_deg, long_axis_rotation_from_facing_vector(facing, table.rot_deg), x + facing[0] * 100.0, y + facing[1] * 100.0)
+
+
+def _rect_input_assignment_key(tables: list[TableState], slots: tuple[tuple[float, float], ...], anchor: tuple[float, float], lateral: tuple[float, float], axis: tuple[float, float]) -> tuple[float, float, tuple[tuple[float, float], ...]]:
+    positions = [(anchor[0] + lateral[0] * slot[0] + axis[0] * slot[1], anchor[1] + lateral[1] * slot[0] + axis[1] * slot[1]) for slot in slots]
+    distances = [math.dist((table.x, table.y), position) for table, position in zip(tables, positions)]
+    return max(distances), sum(distances), slots
 
 
 def _layout_rect_groupwork_templates(
     scene_state: SceneState,
     tables: list[TableState],
 ) -> tuple[list[TableTarget], list[str]]:
-    """Arrange rect tables as compact, centered pair islands and singletons."""
-    groups = [tables[index : index + 2] for index in range(0, len(tables), 2)]
-    centers = _rect_groupwork_group_centers(len(tables))
-    targets: list[TableTarget] = []
-    assignment_notes: list[str] = []
-    geometry_notes: list[str] = []
-    rotation_deg = 0.0
-
-    for group_index, (group, center) in enumerate(zip(groups, centers)):
-        group_id = f"pair{group_index}"
-        if len(group) == 2:
-            separation = required_table_center_separation(
-                group[0],
-                rotation_deg,
-                group[1],
-                rotation_deg,
-                (0.0, 1.0),
-                gap=GROUPWORK_PAIR_SEAM_GAP_CM,
+    """Generate source-adaptive Rect Groupwork islands for counts two through five."""
+    if len(tables) == 1:
+        table = tables[0]
+        return [
+            TableTarget(
+                table_id=table.table_id,
+                target_x=table.x,
+                target_y=table.y,
+                source_rot_deg=table.rot_deg,
+                target_rot_deg=table.rot_deg,
             )
-            half_separation = separation * 0.5
-            slots = ((center[0], center[1] - half_separation), (center[0], center[1] + half_separation))
-            seat_directions = ((0.0, -1.0), (0.0, 1.0))
-            geometry_notes.append(
-                f"{group_id}|center={center[0]:.3f},{center[1]:.3f}|normal=0.000000,1.000000|gap_cm={separation:.3f}"
-            )
-        else:
-            slots = (center,)
-            seat_directions = ((0.0, -1.0),)
+        ], ["rect_template=groupwork", "rect_groupwork=single_table_source_pose"]
 
-        for table, slot, seat_direction in zip(group, slots, seat_directions):
-            targets.append(
-                TableTarget(
-                    table_id=table.table_id,
-                    target_x=slot[0],
-                    target_y=slot[1],
-                    source_rot_deg=table.rot_deg,
-                    target_rot_deg=rotation_deg,
-                    facing_target_x=slot[0] + seat_direction[0] * 100.0,
-                    facing_target_y=slot[1] + seat_direction[1] * 100.0,
-                )
-            )
-            assignment_notes.append(f"{table.table_id}->{group_id}")
+    from aisi.analysis.rect_groupwork_adaptive_prototype import solve_rect_groupwork_prototype
 
-    return targets, [
+    result = solve_rect_groupwork_prototype(scene_state, selection="clearance")
+    objective = result.objective
+    return list(result.table_targets), [
         "rect_template=groupwork",
-        f"groupwork_pair_count={len(groups)}",
-        f"groupwork_assignments={', '.join(assignment_notes)}",
-        f"groupwork_pair_geometry={'; '.join(geometry_notes)}",
-        f"groupwork_pair_seam_gap_cm={GROUPWORK_PAIR_SEAM_GAP_CM:.1f}",
+        "rect_groupwork=adaptive_local_clearance",
+        *result.generation_notes,
+        f"groupwork_zone_overlap_cm2={objective.clearance_overlap_area_cm2:.3f}",
+        f"groupwork_max_displacement_cm={objective.max_displacement_cm:.3f}",
+        f"groupwork_total_displacement_cm={objective.total_displacement_cm:.3f}",
+        f"groupwork_total_rotation_change_deg={objective.total_rotation_change_deg:.3f}",
+        f"groupwork_crossing_count={objective.crossing_count}",
+        f"groupwork_min_intergroup_gap_cm={objective.min_intergroup_gap_cm:.3f}",
     ]
-
-
-def _rect_groupwork_group_centers(table_count: int) -> tuple[tuple[float, float], ...]:
-    """Return deliberate centered compositions for one to three islands."""
-    by_count = {
-        1: ((250.0, 250.0),),
-        2: ((250.0, 250.0),),
-        3: ((150.0, 250.0), (350.0, 250.0)),
-        4: ((150.0, 250.0), (350.0, 250.0)),
-        5: ((120.0, 160.0), (380.0, 160.0), (250.0, 360.0)),
-        6: ((120.0, 180.0), (380.0, 180.0), (250.0, 350.0)),
-    }
-    return by_count[table_count]
 
 
 def _layout_rect_discussion_templates(
     scene_state: SceneState,
     tables: list[TableState],
+    *, candidate_filter=None, candidate_bounds=None,
 ) -> tuple[list[TableTarget], list[str]]:
     """Arrange rect tables on a regular inward-facing polygon around the ROI center."""
     center = scene_state.roi.center
@@ -268,19 +484,55 @@ def _layout_rect_discussion_templates(
                 source_rot_deg=table.rot_deg,
                 target_rot_deg=0.0,
             )
-        ], ["rect_template=discussion", "rect_discussion_centered_singleton=true"]
+        ], [
+            "rect_template=discussion",
+            "rect_discussion_centered_singleton=true",
+            f"rect_discussion_singleton_clearance_depth_cm={DISCUSSION_SEAT_CLEARANCE_DEPTH_CM:.1f}",
+        ]
 
     # Bind the regular ring in source angular order. This remains a
     # format-specific ID binding (not a slot-permutation optimization), while
     # avoiding avoidable crossing paths during strength blending.
     ordered_tables = _tables_in_source_angular_order(tables, center)
-    start_angle = _source_angle_or_default(ordered_tables[0], center, len(tables))
+    # Derive the radius first, then rotate the whole ring freely.  The global
+    # rotation has no Discussion semantics, while using the first source angle
+    # as a fixed anchor can make a nearby table travel past a nearer slot.
+    provisional_start_angle = _source_angle_or_default(ordered_tables[0], center, len(tables))
+    provisional_angles = tuple(
+        provisional_start_angle + (2.0 * math.pi * index) / len(ordered_tables)
+        for index in range(len(ordered_tables))
+    )
+    provisional_rotations = tuple(
+        long_axis_rotation_from_facing_vector((-math.cos(angle), -math.sin(angle)), reference_rot_deg=0.0)
+        for angle in provisional_angles
+    )
+    radius = _rect_discussion_radius(scene_state, ordered_tables, provisional_angles, provisional_rotations)
+    if len(ordered_tables) == 5:
+        phase_strategy = "rect_discussion_ring_phase=clearance_constrained_minimax_motion"
+        center, start_angle = _rect_discussion_clearance_constrained_center_and_phase(
+            scene_state,
+            ordered_tables,
+            radius,
+            **({"candidate_filter":candidate_filter, "candidate_bounds":candidate_bounds} if candidate_filter is not None else {}),
+        )
+    else:
+        phase_strategy = "rect_discussion_ring_phase=continuous_minimax_motion"
+        radius = _rect_discussion_minimum_clearance_radius(
+            scene_state,
+            ordered_tables,
+            radius,
+            provisional_start_angle,
+        )
+        start_angle = _rect_discussion_movement_optimal_phase(center, ordered_tables, radius)
     angles = tuple(start_angle + (2.0 * math.pi * index) / len(ordered_tables) for index in range(len(ordered_tables)))
     rotations = tuple(
         long_axis_rotation_from_facing_vector((-math.cos(angle), -math.sin(angle)), reference_rot_deg=0.0)
         for angle in angles
     )
-    radius = _rect_discussion_radius(scene_state, ordered_tables, angles, rotations)
+    # Validate the selected continuous phase against the full footprint/ROI
+    # geometry.  For Rect tables the required radius is phase-invariant, but
+    # the validation remains explicit rather than relying on that fact.
+    radius = max(radius, _rect_discussion_radius(scene_state, ordered_tables, angles, rotations))
 
     targets = []
     for table, angle, rotation_deg in zip(ordered_tables, angles, rotations):
@@ -302,6 +554,9 @@ def _layout_rect_discussion_templates(
         "rect_template=discussion",
         f"rect_discussion_center=({center[0]:.1f},{center[1]:.1f})",
         f"rect_discussion_radius_cm={radius:.3f}",
+        f"rect_discussion_ring_phase_deg={math.degrees(start_angle):.3f}",
+        phase_strategy,
+        f"rect_discussion_singleton_clearance_depth_cm={DISCUSSION_SEAT_CLEARANCE_DEPTH_CM:.1f}",
     ]
 
 
@@ -330,6 +585,298 @@ def _source_angle_or_default(
     return math.atan2(dy, dx)
 
 
+def _rect_discussion_movement_optimal_phase(
+    center: tuple[float, float],
+    tables: list[TableState],
+    radius: float,
+) -> float:
+    """Choose the free ring phase that minimizes movement without crossings.
+
+    Tables retain their circular source order and therefore map to successive
+    ring slots; this is the non-crossing correspondence.  For that fixed
+    correspondence, each squared movement distance is a sinusoid of the free
+    global phase.  The minimax optimum can only occur at an individual
+    stationary point or where two such curves meet, so the finite candidate
+    set below is continuous rather than an angular raster.
+    """
+
+    count = len(tables)
+    if count <= 1:
+        return 0.0
+
+    terms: list[tuple[float, float, float]] = []
+    candidate_phases: set[float] = set()
+    for index, table in enumerate(tables):
+        dx = table.x - center[0]
+        dy = table.y - center[1]
+        source_radius = math.hypot(dx, dy)
+        source_angle = math.atan2(dy, dx) if source_radius > 1e-9 else 0.0
+        slot_angle = (2.0 * math.pi * index) / count
+        phase_offset = source_angle - slot_angle
+        constant = source_radius * source_radius + radius * radius
+        amplitude = 2.0 * radius * source_radius
+        # distance_squared = constant + u*cos(phase) + v*sin(phase)
+        u = -amplitude * math.cos(phase_offset)
+        v = -amplitude * math.sin(phase_offset)
+        terms.append((constant, u, v))
+        candidate_phases.add(_normalize_phase_rad(phase_offset))
+        candidate_phases.add(_normalize_phase_rad(phase_offset + math.pi))
+
+    for first_index, (first_constant, first_u, first_v) in enumerate(terms):
+        for second_constant, second_u, second_v in terms[first_index + 1 :]:
+            delta_constant = first_constant - second_constant
+            delta_u = first_u - second_u
+            delta_v = first_v - second_v
+            magnitude = math.hypot(delta_u, delta_v)
+            if magnitude <= 1e-9:
+                continue
+            cosine = -delta_constant / magnitude
+            if cosine < -1.0 - 1e-9 or cosine > 1.0 + 1e-9:
+                continue
+            offset = math.atan2(delta_v, delta_u)
+            crossing = math.acos(_clamp(cosine, -1.0, 1.0))
+            candidate_phases.add(_normalize_phase_rad(offset + crossing))
+            candidate_phases.add(_normalize_phase_rad(offset - crossing))
+
+    def phase_objective(phase: float) -> tuple[float, float, float, float]:
+        distances = [
+            math.sqrt(max(0.0, constant + u * math.cos(phase) + v * math.sin(phase)))
+            for constant, u, v in terms
+        ]
+        rotations = [
+            long_axis_rotation_from_facing_vector(
+                (-math.cos(phase + (2.0 * math.pi * index) / count),
+                -math.sin(phase + (2.0 * math.pi * index) / count)),
+                reference_rot_deg=0.0,
+            )
+            for index in range(count)
+        ]
+        rotation_change = sum(
+            abs(_normalize_angle_deg(rotation - table.rot_deg))
+            for table, rotation in zip(tables, rotations)
+        )
+        return max(distances), sum(distances), rotation_change, phase
+
+    return min(phase_objective(phase) for phase in candidate_phases)[3]
+
+
+def _normalize_phase_rad(value: float) -> float:
+    """Normalize a phase to a deterministic half-open turn."""
+
+    return value % (2.0 * math.pi)
+
+
+def _rect_discussion_minimum_clearance_radius(
+    scene_state: SceneState,
+    tables: list[TableState],
+    base_radius: float,
+    phase: float,
+) -> float:
+    """Increase a regular small-count ring only until singleton zones are clear."""
+
+    start = math.ceil(base_radius - 1e-9)
+    for radius_cm in range(start, int(math.floor(min(scene_state.roi.width, scene_state.roi.height) * 0.5)) + 1):
+        targets = _rect_discussion_ring_targets(tables, scene_state.roi.center, float(radius_cm), phase)
+        if _rect_discussion_singleton_clearances_valid(scene_state, targets):
+            return float(radius_cm)
+    raise ValueError("Der Rect-Discussion-Ring kann die 50-cm-Sitzflächen nicht im ROI halten.")
+
+
+def _rect_discussion_clearance_constrained_center_and_phase(
+    scene_state: SceneState,
+    tables: list[TableState],
+    radius: float,
+    *, candidate_filter=None, candidate_bounds=None,
+) -> tuple[tuple[float, float], float]:
+    """Fit five inward-facing singleton zones while retaining one common center.
+
+    Five 60-cm singleton zones cannot fit around a five-table ring in the
+    current ROI.  Discussion therefore uses its accepted 50-cm depth and
+    searches the free global phase together with the smallest center shift
+    needed to keep every complete zone in the room.  Table order stays angular
+    and no table is assigned across another table's path.
+    """
+
+    from aisi.analysis.rect_groupwork_adaptive_prototype import singleton_long_side_clearance_regions
+
+    nominal_center = scene_state.roi.center
+    best: tuple[tuple[float, float, float, float, float], tuple[float, float], float] | None = None
+    for sample in range(_DISCUSSION_CLEARANCE_PHASE_SAMPLES):
+        phase = math.tau * sample / _DISCUSSION_CLEARANCE_PHASE_SAMPLES
+        relative_targets = _rect_discussion_ring_targets(tables, (0.0, 0.0), radius, phase)
+        regions = [
+            region
+            for table, target in zip(tables, relative_targets)
+            for region in singleton_long_side_clearance_regions(
+                target,
+                table,
+                clearance_depth_cm=DISCUSSION_SEAT_CLEARANCE_DEPTH_CM,
+            )
+        ]
+        if candidate_bounds is not None:
+            regions.append(candidate_bounds(relative_targets))
+        min_x = min(x for region in regions for x, _ in region)
+        max_x = max(x for region in regions for x, _ in region)
+        min_y = min(y for region in regions for _, y in region)
+        max_y = max(y for region in regions for _, y in region)
+        center_x_min = scene_state.roi.x_min - min_x
+        center_x_max = scene_state.roi.x_max - max_x
+        center_y_min = scene_state.roi.y_min - min_y
+        center_y_max = scene_state.roi.y_max - max_y
+        if center_x_min > center_x_max or center_y_min > center_y_max:
+            continue
+        center = (
+            _clamp(nominal_center[0], center_x_min, center_x_max),
+            _clamp(nominal_center[1], center_y_min, center_y_max),
+        )
+        targets = _rect_discussion_ring_targets(tables, center, radius, phase)
+        if not _rect_discussion_singleton_clearances_valid(scene_state, targets):
+            continue
+        if candidate_filter is not None and not candidate_filter(targets):
+            continue
+        distances = [
+            math.hypot(table.x - target.target_x, table.y - target.target_y)
+            for table, target in zip(tables, targets)
+        ]
+        rotations = sum(
+            abs(_normalize_angle_deg(target.target_rot_deg - table.rot_deg))
+            for table, target in zip(tables, targets)
+        )
+        objective = (
+            max(distances),
+            sum(distances),
+            rotations,
+            math.hypot(center[0] - nominal_center[0], center[1] - nominal_center[1]),
+            phase,
+        )
+        if best is None or objective < best[0]:
+            best = (objective, center, phase)
+
+    if best is None:
+        raise ValueError("Der zentrische Rect-Discussion-Ring kann die 50-cm-Sitzflächen nicht im ROI halten.")
+    return best[1], best[2]
+
+
+def _rect_discussion_ring_targets(
+    tables: list[TableState],
+    center: tuple[float, float],
+    radius: float,
+    phase: float,
+) -> list[TableTarget]:
+    """Materialize source-angular tables on one inward-facing common-center ring."""
+
+    targets: list[TableTarget] = []
+    for index, table in enumerate(tables):
+        angle = phase + math.tau * index / len(tables)
+        rotation = long_axis_rotation_from_facing_vector(
+            (-math.cos(angle), -math.sin(angle)),
+            reference_rot_deg=0.0,
+        )
+        targets.append(
+            TableTarget(
+                table_id=table.table_id,
+                target_x=center[0] + math.cos(angle) * radius,
+                target_y=center[1] + math.sin(angle) * radius,
+                source_rot_deg=table.rot_deg,
+                target_rot_deg=rotation,
+                facing_target_x=center[0],
+                facing_target_y=center[1],
+            )
+        )
+    return targets
+
+
+def _rect_discussion_singleton_clearances_valid(
+    scene_state: SceneState,
+    targets: list[TableTarget],
+) -> bool:
+    """Require complete Discussion zones in the ROI and clear of other tables."""
+
+    from aisi.analysis.rect_groupwork_adaptive_prototype import singleton_long_side_clearance_regions
+
+    tables_by_id = {table.table_id: table for table in scene_state.tables}
+    footprints = {
+        target.table_id: table_world_footprint(
+            tables_by_id[target.table_id],
+            (target.target_x, target.target_y),
+            target.target_rot_deg,
+        )
+        for target in targets
+    }
+    for target in targets:
+        regions = singleton_long_side_clearance_regions(
+            target,
+            tables_by_id[target.table_id],
+            clearance_depth_cm=DISCUSSION_SEAT_CLEARANCE_DEPTH_CM,
+        )
+        for region in regions:
+            if not polygon_inside_roi(
+                region,
+                x_min=scene_state.roi.x_min,
+                y_min=scene_state.roi.y_min,
+                x_max=scene_state.roi.x_max,
+                y_max=scene_state.roi.y_max,
+            ):
+                return False
+            if any(
+                convex_polygons_intersect(region, footprint)
+                for table_id, footprint in footprints.items()
+                if table_id != target.table_id
+            ):
+                return False
+    return True
+
+
+def _rect_input_clearances_valid(
+    scene_state: SceneState,
+    targets: list[TableTarget],
+    presenter_id: str | None = None,
+    presentation_axis: tuple[float, float] | None = None,
+) -> bool:
+    if presenter_id is None or presentation_axis is None:
+        presenter, presentation_axis = _rect_input_presenter_and_axis(scene_state.tables)
+        presenter_id = presenter.table_id
+    tables_by_id = {table.table_id: table for table in scene_state.tables}
+    footprints = {
+        target.table_id: table_world_footprint(tables_by_id[target.table_id], (target.target_x, target.target_y), target.target_rot_deg)
+        for target in targets
+    }
+    regions = _rect_input_clearance_regions(targets, scene_state.tables, presenter_id, presentation_axis)
+    for footprint in footprints.values():
+        if not polygon_inside_roi(footprint, x_min=scene_state.roi.x_min, y_min=scene_state.roi.y_min, x_max=scene_state.roi.x_max, y_max=scene_state.roi.y_max):
+            return False
+    for target, region in zip(targets, regions):
+        if not polygon_inside_roi(region, x_min=scene_state.roi.x_min, y_min=scene_state.roi.y_min, x_max=scene_state.roi.x_max, y_max=scene_state.roi.y_max):
+            return False
+        if any(convex_polygons_intersect(region, footprint) for table_id, footprint in footprints.items() if table_id != target.table_id):
+            return False
+    return not any(
+        convex_polygons_intersect(region, other)
+        for index, region in enumerate(regions)
+        for other in regions[index + 1 :]
+    )
+
+
+def _rect_input_clearance_regions(
+    targets: list[TableTarget],
+    tables: list[TableState],
+    presenter_id: str,
+    presentation_axis: tuple[float, float],
+) -> list[tuple[tuple[float, float], ...]]:
+    from aisi.analysis.rect_groupwork_adaptive_prototype import single_long_side_clearance_region
+
+    tables_by_id = {table.table_id: table for table in tables}
+    return [
+        single_long_side_clearance_region(
+            target,
+            tables_by_id[target.table_id],
+            seat_direction=presentation_axis if target.table_id == presenter_id else (-presentation_axis[0], -presentation_axis[1]),
+            clearance_depth_cm=INPUT_SEAT_CLEARANCE_DEPTH_CM,
+        )
+        for target in targets
+    ]
+
+
 def _rect_discussion_radius(
     scene_state: SceneState,
     tables: list[TableState],
@@ -355,7 +902,6 @@ def _rect_discussion_radius(
         chord_factor = 2.0 * math.sin(math.pi / count)
         radius = max(radius, required / max(1e-6, chord_factor))
 
-    radius += INPUT_TABLE_GAP_CM
     max_radius = math.inf
     for table, angle, rotation_deg in zip(tables, angles, rotations):
         x_min, y_min, x_max, y_max = table_allowed_center_bounds(
@@ -439,7 +985,28 @@ def _evaluate_for_learning_format(
     targets: list[TableTarget],
     notes: list[str],
 ):
-    depth_factor = 0.65 if scene_state.learning_format == "input" else 0.80 if scene_state.learning_format == "discussion" else 1.0
+    rect_groupwork = (
+        scene_state.learning_format == "groupwork"
+        and 2 <= len(scene_state.tables) <= MAX_LAYOUT_TABLES
+        and all(table.table_type == "rect" for table in scene_state.tables)
+    )
+    # The adaptive Rect Groupwork solver has already validated its own
+    # singleton-strip and pair-ellipse clearances.  The generic evaluator is
+    # retained here for the shared footprint/ROI check, but must not reapply
+    # its superseded one-sided table clearance.
+    rect_input = (
+        scene_state.learning_format == "input"
+        and 1 <= len(scene_state.tables) <= MAX_LAYOUT_TABLES
+        and all(table.table_type == "rect" for table in scene_state.tables)
+    )
+    if rect_groupwork or rect_input:
+        depth_factor = 0.0
+    elif scene_state.learning_format == "input":
+        depth_factor = 0.65
+    elif scene_state.learning_format == "discussion":
+        depth_factor = 0.80
+    else:
+        depth_factor = 1.0
     return evaluate_hard_constraints(
         scene_state,
         targets,
@@ -458,7 +1025,7 @@ def _apply_hard_constraint_repair(
     generation_notes: list[str],
 ) -> tuple[list[TableTarget], list[str]]:
     if scene_state.learning_format == "input":
-        clearance_depth_factor = 0.65
+        clearance_depth_factor = 0.0
     elif scene_state.learning_format == "discussion":
         clearance_depth_factor = 0.80
     else:

@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "version": "pilot_v7",
+  "version": "pilot_v8",
   "status": "frozen_for_study",
-  "description": "Frozen pilot_v6 T1-T4 geometry plus non-experimental familiarization",
+  "description": "Frozen pilot_v7 with all T4 table poses shifted +11 cm in world Y; unchanged T1-T3 and familiarization",
   "familiarization": {
     "label": "FAMILIARIZATION",
     "table_type": "rect",
@@ -65,22 +65,22 @@
     },
     {
       "task_id": "T4", "variant": "A",
-      "source_pose": {"x_cm": 265.37464310054287, "y_cm": 53.30026150452769, "rotation_deg": 179.1565691228634},
-      "target_pose": {"x_cm": 234.84473024735843, "y_cm": 404.1752983481141, "rotation_deg": -91.7400727688127},
+      "source_pose": {"x_cm": 265.37464310054287, "y_cm": 64.30026150452769, "rotation_deg": 179.1565691228634},
+      "target_pose": {"x_cm": 234.84473024735843, "y_cm": 415.1752983481141, "rotation_deg": -91.7400727688127},
       "distractor_tables": [
-        {"x_cm": 200.27976364082878, "y_cm": 154.83289474640358, "rotation_deg": 173.23873712478508},
-        {"x_cm": 330.79043090699105, "y_cm": 393.6398110955178, "rotation_deg": -101.87692619306351}
+        {"x_cm": 200.27976364082878, "y_cm": 165.83289474640358, "rotation_deg": 173.23873712478508},
+        {"x_cm": 330.79043090699105, "y_cm": 404.6398110955178, "rotation_deg": -101.87692619306351}
       ],
       "participant_start_positions": [{"id": "P1", "x_cm": 55.0, "y_cm": 250.0, "radius_cm": 40}],
       "notes": "Dense, high-occlusion three-table configuration."
     },
     {
       "task_id": "T4", "variant": "B",
-      "source_pose": {"x_cm": 234.62535689945713, "y_cm": 53.30026150452769, "rotation_deg": -179.1565691228634},
-      "target_pose": {"x_cm": 265.1552697526416, "y_cm": 404.1752983481141, "rotation_deg": 91.7400727688127},
+      "source_pose": {"x_cm": 234.62535689945713, "y_cm": 64.30026150452769, "rotation_deg": -179.1565691228634},
+      "target_pose": {"x_cm": 265.1552697526416, "y_cm": 415.1752983481141, "rotation_deg": 91.7400727688127},
       "distractor_tables": [
-        {"x_cm": 299.7202363591712, "y_cm": 154.83289474640358, "rotation_deg": -173.23873712478508},
-        {"x_cm": 169.20956909300895, "y_cm": 393.6398110955178, "rotation_deg": 101.87692619306351}
+        {"x_cm": 299.7202363591712, "y_cm": 165.83289474640358, "rotation_deg": -173.23873712478508},
+        {"x_cm": 169.20956909300895, "y_cm": 404.6398110955178, "rotation_deg": 101.87692619306351}
       ],
       "participant_start_positions": [{"id": "P1", "x_cm": 445.0, "y_cm": 250.0, "radius_cm": 40}],
       "notes": "Projector-axis counterpart of T4A; dense, high-occlusion three-table configuration."
