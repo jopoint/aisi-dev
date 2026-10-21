@@ -818,23 +818,22 @@ class StudyControlUi:
         )
         self._task = tk.StringVar(value=initial_task); self._variant = tk.IntVar(value=int(controller.state.variant))
         self._participant_id = tk.StringVar(value=controller.participant_id)
-        self._target_x = tk.StringVar(value=str(controller.state.target_x)); self._target_y = tk.StringVar(value=str(controller.state.target_y)); self._target_rot = tk.StringVar(value=str(controller.state.target_rot)); self._summary = tk.StringVar()
+        self._summary = tk.StringVar()
         container = ttk.Frame(self.root, padding=12); container.grid(sticky="nsew")
+        self._add_radio_group(container, "MODE", self._mode, (("Tracking", StudyMode.TRACKING), ("Study", StudyMode.STUDY), ("AISI", StudyMode.AISI)), self._on_mode, 0)
+        self._study_controls = ttk.Frame(container)
+        self._study_controls.grid(row=1, column=0, columnspan=4, sticky="w")
+        container = self._study_controls
         ttk.Label(container, text="PARTICIPANT ID").grid(row=0, column=0, sticky="w", padx=(0, 8), pady=3)
         ttk.Entry(container, textvariable=self._participant_id, width=20).grid(row=0, column=1, sticky="w", pady=3)
         ttk.Button(container, text="Set", command=self._on_participant).grid(row=0, column=2, sticky="w", padx=4)
-        self._add_radio_group(container, "MODE", self._mode, (("Tracking", StudyMode.TRACKING), ("Study", StudyMode.STUDY), ("AISI", StudyMode.AISI)), self._on_mode, 1)
         self._add_radio_group(container, "TASK", self._task, (("Familiarization", "FAMILIARIZATION"), ("T1", "T1"), ("T2", "T2"), ("T3", "T3"), ("T4", "T4")), self._on_task_selection, 2)
         self._add_radio_group(container, "VARIANT", self._variant, (("A", StudyVariant.A), ("B", StudyVariant.B)), self._on_trial_selection, 3)
         self._add_radio_group(container, "STUDY CONDITION", self._condition, (("Floor Only", StudyCondition.FLOOR_ONLY), ("Dual Surface", StudyCondition.DUAL_SURFACE)), self._on_condition, 4)
         ttk.Label(container, text="TRIAL PHASE").grid(row=5, column=0, sticky="w", padx=(0, 8), pady=3)
         for column, (label, callback) in enumerate((("Home", self._on_home), ("Start", self._on_start), ("Complete", self._on_complete), ("Reset", self._on_reset), ("Abort", self._on_abort)), start=1):
             ttk.Button(container, text=label, command=callback).grid(row=5, column=column, sticky="w", padx=(0, 6), pady=3)
-        ttk.Label(container, text="STUDY TARGET (cm / deg)").grid(row=6, column=0, sticky="w", padx=(0, 8), pady=3)
-        for column, (label, variable) in enumerate((("X", self._target_x), ("Y", self._target_y), ("Rotation", self._target_rot)), start=1):
-            ttk.Label(container, text=label).grid(row=7, column=column, sticky="w", padx=(0, 3), pady=2); ttk.Entry(container, textvariable=variable, width=10).grid(row=8, column=column, sticky="w", padx=(0, 6), pady=2)
-        ttk.Button(container, text="Set Target", command=self._on_target_pose).grid(row=8, column=0, sticky="w", pady=2)
-        ttk.Separator(container, orient="horizontal").grid(row=9, column=0, columnspan=7, sticky="ew", pady=8); ttk.Label(container, textvariable=self._summary, justify="left").grid(row=10, column=0, columnspan=7, sticky="w")
+        ttk.Separator(container, orient="horizontal").grid(row=6, column=0, columnspan=7, sticky="ew", pady=8); ttk.Label(container, textvariable=self._summary, justify="left").grid(row=7, column=0, columnspan=7, sticky="w")
         self._status = ""
         if controller.familiarization is None:
             self._on_trial_selection()
@@ -875,9 +874,6 @@ class StudyControlUi:
             if self._controller.enter_familiarization():
                 self._mode.set(int(self._controller.state.mode))
                 self._condition.set(int(self._controller.state.condition))
-                self._target_x.set(str(self._controller.state.target_x))
-                self._target_y.set(str(self._controller.state.target_y))
-                self._target_rot.set(str(self._controller.state.target_rot))
                 self._status = "Familiarization loaded; switch Floor Only / Dual Surface as needed."
             elif not self._controller.participant_id:
                 self._status = "Set the participant ID before selecting Familiarization."
@@ -909,18 +905,17 @@ class StudyControlUi:
             self._status = f"No definition for {task.name}/{variant.name}; current trial is unchanged."
             self._refresh_summary(); return
         self._status = f"Loaded {task.name}/{variant.name}."
-        self._target_x.set(str(trial.target_x_cm)); self._target_y.set(str(trial.target_y_cm)); self._target_rot.set(str(trial.target_rotation_deg)); self._refresh_summary()
-
-    def _on_target_pose(self) -> None:
-        try: target_x, target_y, target_rot = float(self._target_x.get()), float(self._target_y.get()), float(self._target_rot.get())
-        except ValueError: self._summary.set("Target X, Y, and Rotation must be numeric."); return
-        self._controller.set_target_pose(target_x, target_y, target_rot); self._refresh_summary()
+        self._refresh_summary()
 
     def _sample_active_pose(self) -> None:
         self._controller.record_active_pose(); self.root.after(ACTIVE_POSE_LOG_INTERVAL_MS, self._sample_active_pose)
 
     def _refresh_summary(self) -> None:
         state = self._controller.state
+        if state.mode == StudyMode.STUDY:
+            self._study_controls.grid()
+        else:
+            self._study_controls.grid_remove()
         bindings = getattr(self._controller._active_track_selector, "bindings", {})
         arrival = "confirmed" if self._controller._arrival_confirmed else ("inside" if self._controller._arrival_entered_monotonic_s is not None else "outside/unavailable")
         allowed, reason = self._controller.can_start()
@@ -929,7 +924,7 @@ class StudyControlUi:
             if self._task.get() == StudyWorkflow.FAMILIARIZATION.value
             else f"task: {state.task.name}, variant: {state.variant.name}, condition: {state.condition.name}"
         )
-        self._summary.set("Current values\n" + f"participant: {self._controller.participant_id or 'MISSING'}\n" + f"session: {self._controller.session_id or 'not started'}\n" + task_summary + "\n" + f"phase: {state.phase.name}, attempt: {self._controller.attempt or '-'}\n" + f"setup bindings: {len(bindings)}/{len(state.setup_table_poses)}; active: {state.active_track_id or 'unresolved'}\n" + f"tracking: {'lost' if self._controller._tracking_lost_monotonic_s is not None else 'available'}; objective arrival: {arrival}\n" + f"START: {'available' if allowed else reason}\n" + f"target: x={state.target_x:g} cm, y={state.target_y:g} cm, rot={state.target_rot:g} deg" + (f"\n{self._status}" if self._status else ""))
+        self._summary.set("Current values\n" + f"participant: {self._controller.participant_id or 'MISSING'}\n" + f"session: {self._controller.session_id or 'not started'}\n" + task_summary + "\n" + f"phase: {state.phase.name}, attempt: {self._controller.attempt or '-'}\n" + f"setup bindings: {len(bindings)}/{len(state.setup_table_poses)}; active: {state.active_track_id or 'unresolved'}\n" + f"tracking: {'lost' if self._controller._tracking_lost_monotonic_s is not None else 'available'}; objective arrival: {arrival}\n" + f"START: {'available' if allowed else reason}" + (f"\n{self._status}" if self._status else ""))
 
     def run(self) -> None: self.root.mainloop()
 

@@ -7,6 +7,7 @@ from aisi.app.sim_scene_to_osc import (
     TrackingOnlyRotationUnwrapper,
     prepare_scene_output,
     send_live_rect_tables,
+    send_layout_source_presence,
     send_study_tracked_tables,
     send_tables,
     source_pose_targets,
@@ -37,6 +38,53 @@ def _rect_table(rotation_deg: float) -> dict:
 
 
 class TrackingOnlyOscTests(unittest.TestCase):
+    def test_missing_source_does_not_shift_frozen_target_slots(self) -> None:
+        old = [dict(_rect_table(0), id='a'), dict(_rect_table(0), id='b')]
+        scene = {'tables': [dict(_rect_table(35), id='b', x_cm=222),
+                            dict(_rect_table(0), id='new')]}
+        client = _RecordingOscClient()
+        send_layout_source_presence(client, scene, old, refresh_poses=True)
+        values = dict(client.messages)
+        self.assertEqual(values['/table/0/source_available'], 0)
+        self.assertEqual(values['/table/1/source_available'], 1)
+        self.assertEqual(values['/table/1/source_x'], 222)
+        self.assertEqual(values['/table/1/source_rot'], -35)
+        self.assertNotIn('/table/0/source_x', values)
+        self.assertFalse(any('target' in key or key == '/table/count' for key in values))
+        self.assertEqual([values[f'/table/{i}/source_available'] for i in range(2, 5)], [0, 0, 0])
+
+    def test_unknown_or_fully_missing_sources_are_unavailable(self) -> None:
+        for scene, old in (({'tables': [_rect_table(0)]}, []),
+                           ({'tables': []}, [_rect_table(0)])):
+            client = _RecordingOscClient()
+            send_layout_source_presence(client, scene, old, refresh_poses=True)
+            self.assertEqual(client.messages, [(f'/table/{i}/source_available', 0) for i in range(5)])
+
+    def test_empty_live_scene_clears_output_in_all_layout_formats(self) -> None:
+        for mode in ("input", "groupwork", "discussion"):
+            for metadata in ({"mode": "tables_only"}, {"mode": "tables_only", "frame_id": 9}):
+                scene = {"source": "vision_live_to_aisi_scene", "vision_live": metadata,
+                         "tables": [], "persons": [{"id": "stale"}], "chairs": [{"id": "stale"}]}
+                with self.subTest(mode=mode, metadata=metadata), patch(
+                    "aisi.app.sim_scene_to_osc.compute_synthetic_layout"
+                ) as synthesis:
+                    self.assertEqual(prepare_scene_output(scene, mode, 1.0, False,
+                        activity_parameters={"adaptive_layout_preview": True, "participants": 4}),
+                        ([], [], [], [], None))
+                    synthesis.assert_not_called()
+
+    def test_empty_simulation_scene_still_uses_layout_validation(self) -> None:
+        with patch("aisi.app.sim_scene_to_osc.compute_target_layout", return_value=[]) as synthesis:
+            prepare_scene_output({"tables": []}, "input", 1.0, False)
+            synthesis.assert_called_once()
+
+    def test_partial_live_scene_still_rejects_insufficient_discussion_tables(self) -> None:
+        scene = {"source": "vision_live_to_aisi_scene", "vision_live": {"mode": "tables_only"},
+                 "tables": [_rect_table(0)]}
+        with self.assertRaises(ValueError):
+            prepare_scene_output(scene, "discussion", 1.0, False,
+                activity_parameters={"adaptive_layout_preview": True, "participants": 4})
+
     def test_new_vision_frame_perf_uses_capture_and_scene_ready_timestamps(self) -> None:
         scene = {"vision_live": {"frame_id": 12, "perf": {
             "capture_wall_ns": 1_000_000_000,

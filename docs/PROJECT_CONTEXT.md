@@ -47,6 +47,96 @@ The calibration pipeline must not be changed as collateral work.
 
 ## 4. Main runtime paths
 
+Lab-Inbetriebnahme am 2026-10-19: bestehende Kamera-/Adapter-Pipeline geprüft,
+Tracking-only-Sender gezielt durch Layout-Sender ersetzt und Teilnehmer-Vorschau
+aktiviert. Live-Protokoll meldet zwei Tische und vier Chairs im Groupwork;
+physische Sichtprüfung noch offen. Startbefehl, Rückkehr zum Tracking-Betrieb
+und Git-Ausführungskontext: [Lab-Inbetriebnahme](LAB_INBETRIEBNAHME.md).
+Erste Raumprüfung meldet auf beiden Achsen gespiegelte AISI-Ausgabe. Die
+gespeicherte TD-Version 144 bestätigt entgegengesetzte Positionsvorzeichen
+zwischen AISI-Callbacks und Tracking-/Tischmasken. Rücknehmbare Korrektur
+vorbereitet und offline geprüft.
+Johannes bestätigt anschließend die manuelle Ausführung und reale Prüfung:
+Source-Konturen auf den Tischen, Ziele und Chairs korrekt ausgerichtet.
+Dieser Nachweis gilt für die aktuelle Zwei-Tisch-Groupwork-Stichprobe;
+Speichern/erneutes Öffnen und weitere Formatprüfungen bleiben offen.
+Johannes bestätigt anschließend auch Input, Discussion und Groupwork im Raum:
+Source-Konturen folgen den Tischen, Ziele/Chairs plausibel, ruhiges Bild.
+Qualitative erste Live-Stichprobe, keine vollständige Count-Matrix.
+AISI-Tabletop-Pfeile laufen bei großem Overlap über den Target-Mittelpunkt;
+rücknehmbare Begrenzung am Zielmittelpunkt offline geprüft und zur manuellen
+Live-Ausführung vorbereitet. Details im Lab-Handoff.
+Weitere Lab-Bestätigung am 2026-10-19: Pfeil-Endpunkt/Toleranz und weiße
+2,5-cm-Chair-Konturen manuell angewandt und im Raum bestätigt. Gemeinsamer
+Formatwechsel Input → Groupwork 4/2 → Discussion 4 mit zwei realen Tischen
+bestanden: vier Chairs, keine alten Elemente, folgende Source und ruhiges
+Bild. Count-/Gruppen- und Off/On-Stichproben im Lab-Handoff. Speicherung und
+erneuter Öffnungscheck der manuellen TD-Korrekturen weiterhin unbestätigt.
+Moduswechsel AISI → Tracking → AISI anschließend ebenfalls live bestätigt.
+Study-Control blendet auf neuen Auftrag alle Study-Bedienelemente außerhalb
+von Study aus und enthält keine manuelle Target-Eingabe mehr. Controller,
+Trial-Ziele und OSC unverändert; 30 Tests und Tkinter-Moduscheck bestanden.
+Johannes bestätigt anschließend Neustart und manuelle Sichtprüfung:
+Study-Einstellungen nur in Study, Target-Eingabe entfernt, Wechsel AISI →
+Study → Tracking → AISI funktioniert. Speicherung/erneutes Öffnen der
+manuellen TD-Korrekturen bleibt der nächste Prüfblock.
+Johannes hat anschließend `AISI_v2.146_lab_layout_validated.toe` manuell
+gespeichert. Die Korrekturen sind in einer temporär expandierten Kopie
+nachgewiesen (einschließlich Template und 16 Chair-Ringen). Dieser Stand
+ist der neue gespeicherte Lab-Prüfstand; erneutes Öffnen noch offen.
+Erneutes Öffnen von Version 146 anschließend durch Johannes bestätigt:
+Source-Folge, vier weiße Chairs, Discussion-Ziele und Pfeil-Endpunkt/Toleranz
+funktionieren ohne erneute Helferausführung. Weitere Count-/Parkprüfung folgt.
+Weitere Zwei-Tisch-Stichproben (Input bis sechs Personen, Groupwork 6/1 und
+6/2, Park-/Aktivwechsel, gebündelte Formatwechsel) sowie Sender-/Adapter-
+Wiederanlauf im Raum bestätigt; Einzelbelege im Lab-Handoff. Vor Vision-
+Neustart Runtime-Leerszenenfehler behoben: explizit geleerte Live-Szenen
+liefern Null-Counts statt Layout-Ablehnung. 37 OSC-/Adapter-Tests bestanden;
+neuer Sender aktiv. Vision-Neustart und anschließende Formatwechsel technisch
+bestanden, visuelle Gesamtbestätigung noch offen.
+Johannes bestätigt anschließend Vision- und gemeinsamen Python-Wiederanlauf
+visuell; regulärer Zwei-Tisch-Inbetriebnahmeblock abgeschlossen.
+Neuer Block: spontane Tischzugänge/-abgänge und fehlende Tische für neue
+Anfragen. Learning Format UI zeigt jetzt tatsächlichen Senderstatus und
+Planerfehler, ohne eigene Layoutberechnung. Auf Johannes' Entscheidung
+bleibt die letzte gültige Anzeige bei Ablehnung stehen und wird in der UI
+als veraltet gekennzeichnet. 47 Tests und Live-HTTP-Fehler/Recovery bestanden;
+physische Tischzahlwechsel noch offen. [Handoff](LAB_TISCHANZAHL.md).
+Johannes bestätigt anschließend den physischen Tischzahlwechsel: dritter
+Tisch hinein/heraus korrekt berücksichtigt, UI-Warnung bei Discussion 7
+und fehlenden Tischen; Warnung verschwindet bei geringerem Count oder
+Hinzufügen eines vierten Tisches. Prüfblock abgeschlossen. Lesender
+Endzustand: Discussion 6, drei reale Tische, sechs Chairs, Status ready.
+Anschließend vier reale Tische erkannt und Discussion 6 → 7 → 6 gebündelt
+technisch/live bestätigt: stabile Scene Order, Zweiergruppe/Parken ↔
+Vier-Tisch-Rechteck, keine beanstandeten Altlasten/Unruhe. Endzustand
+Discussion 6 mit vier realen Tischen; höhere Discussion-Counts noch offen.
+Discussion 8–12 einschließlich Eckplätzen und Rückkehr zu acht anschließend
+technisch/live bestätigt: plausible Ergänzung, vollständiges Entfernen,
+ruhiges Bild und keine alten Elemente. Groupwork mit vier Tischen folgt.
+Vier-Tisch-Groupwork (vier Gruppen/zwei Pairs, acht/zwölf Personen) sowie
+Fünf-Tisch-Discussion 12 → 13 → 14 → 15 → 12 danach live bestätigt.
+Kontrollviewer-Source-Auswahl war zwischenzeitlich leer; native Pfadauswahl
+repariert sie. Johannes bestätigt fünf folgende Source-Konturen nach fünftem
+Tischzugang, unveränderte Projektion und ruhige Topologie-/Chair-Wechsel.
+Aktuell gespeicherte TD-Version bleibt 146; neue Viewer-Korrektur noch nicht
+als gespeichert bestätigt. Fünf-Tisch-Input ist der nächste Prüfblock.
+Fünf-Tisch-Input 4 → 8 → 10 → 12 → 15 → 4 anschließend live bestätigt:
+plausibles Parken/Verdichten, alle 15 Chairs sichtbar, Rückkehr ohne alte
+Kreise und ruhiges Bild. Endzustand Input 4. Offene gebündelte Prüfblöcke
+stehen in TODO und im Tischanzahl-Handoff; als Nächstes Fünf-Tisch-Groupwork.
+Fünf-Tisch-Groupwork und gemeinsamer Fünf-Tisch-Format-/Modus-/15-Chair-Off/
+On-Test danach live bestätigt. Aktiver Tischabgang/-rückkehr technisch
+erfolgreich; Johannes präzisiert, dass nur Ziele veraltet stehen bleiben
+dürfen, während fehlende Sources verschwinden müssen. Sender/UI dafür
+erweitert (additive Source-Verfügbarkeit, ID-gebundene Slots, 51 Tests),
+neu geladen. Manueller AISI-Sichtbarkeitshelfer und Nachprüfung noch offen.
+Johannes bestätigt anschließend Helferausführung und Abgang-/Rückkehrtest
+als funktionierend. Fehlende Sources/Pfeile verschwinden, Live-Sources und
+veralteter Zielvorschlag sind getrennt. Neue manuelle TD-Sicherung der seit
+Version 146 angewandten Viewer-/Floor-Pfeil-/Source-Sichtbarkeitskorrekturen
+bleibt offen. Weitere Robustheits-/Projektionsprüfungen siehe TODO.
+
 ### General simulation/layout path
 
 ```text
@@ -405,3 +495,82 @@ Projektordner verifiziert; Version 140 stimmt per SHA-256 mit der
 unnumerierten Datei `AISI_v2_coherent_chairs_validated.toe` überein.
 Kein TD-Zugriff, automatisches Speichern oder erneutes Öffnen während der
 Offline-Validierung. Die physische Raumprüfung bleibt aufgeschoben.
+
+Johannes bestätigt am 2026-10-19 eine neue manuell gespeicherte TD-Version
+mit anschließendem erneutem Öffnen: alle jüngsten Live-Korrekturen funktionieren
+weiterhin. Versionsnummer/Dateipfad noch nicht erfasst; Version 146 ist deshalb
+nicht als diese neue Sicherung auszugeben. Nächster gebündelter Prüfblock:
+Verdeckung, Wiedererkennung und enge Tischbegegnung. Vor Beginn Discussion 8,
+vier erkannte Tische, Status ready, Sender-Fehlerlog leer. Raumprüfung dieses
+Robustheitsblocks noch offen; keine Trackingparameter geändert.
+
+Gebündelte Tracking-Robustheitsprüfung am 2026-10-19 durch Johannes im Raum
+bestanden: Nach Verdeckung, enger Begegnung und Abgang/Rückkehr folgen alle
+Source-Konturen wieder korrekt. Keine vertauschten oder eingefrorenen Konturen,
+ruhiges Bild. Qualitative Stichprobe; Erhalt derselben Track-ID über längere
+Abwesenheit nicht nachgewiesen. Anschließender Laufzeitcheck: Discussion 8,
+vier Tische, ready, Sender-Fehlerlog leer. Trackingparameter unverändert.
+Nächster offener Block: physische Projektion/Masken an ROI-Rändern und in
+der Projektorüberlappung; Kalibrierung bleibt geschützt.
+
+Projektions-/Maskenblock am 2026-10-19 durch Johannes im Raum bestanden:
+Auch in der Projektorüberlappung und an ROI-Rändern saubere Konturen und
+Helligkeit, keine Bodenpfeile auf Tischflächen, ruhiges Bild. Qualitative
+Stichprobe; Kalibrierung, Homographien und Edge-Blend nicht verändert.
+Laufender TD-Prozess öffnet laut CommandLine die manuell gesicherte Datei
+`C:\Users\johan\OneDrive\Dokumente\AISI_DEV\touchdesigner\AISI_v2.149_lab_layout_validated.toe`.
+Damit ist der zuvor unbekannte Versionspfad erfasst. Nächster Block:
+vollständiger Anwendungs-Wiederanlauf einschließlich TD und Bedienoberflächen,
+kein Windows-Neustart. Vorhandene Startargumente bleiben maßgeblich.
+
+Vollständiger Anwendungs-Wiederanlauf am 2026-10-19 technisch durchgeführt:
+TD und Study-Control durch Johannes geschlossen. Vision-Fenster-Schließen
+beendet die cv2.imshow-Schleife nicht; Q/Esc beendet regulär. Kein nachgewiesener
+Supervisor-Neustart. Verbliebene fünf AISI-Prozessketten gezielt beendet,
+Nullbestand einschließlich TD geprüft, danach alle fünf mit gesicherten
+Argumenten neu gestartet. Startbefehle: full_restart.before.json; neue Logs:
+full.<Modul>.stdout/stderr.log im bestehenden Lab-Debugordner.
+Discussion 8 automatisch wieder ready mit vier Tischen/acht Chairs, alle fünf
+Fehlerlogs leer. TD-Version 149 interaktiv geöffnet und Learning-Format-Seite
+im Codex-Browser angefordert. Play, sichtbare Study-Control und physischer
+Wiederanlauf-/Format-/Modustest noch durch Johannes zu bestätigen.
+
+## Abschluss der Lab-Inbetriebnahme — 2026-10-19
+
+Johannes bestätigt den vollständigen Anwendungs-Wiederanlauf einschließlich
+TouchDesigner und Bedienoberflächen im Raum: Sources folgen, alle Formatwechsel
+und Tracking → AISI funktionieren sauber, keine alten Elemente, ruhiges Bild.
+Der Inbetriebnahmeblock ist damit auf ausdrücklichen Auftrag abgeschlossen.
+Gesicherter TD-Prüfstand: `AISI_v2.149_lab_layout_validated.toe` im bekannten
+physischen TouchDesigner-Verzeichnis. Kein erneuter Helferaufruf erforderlich.
+Abschlusscheck: Discussion 8, vier erkannte Tische, Status ready; alle fünf
+`full.*.stderr.log` leer. Dokumentationsdiff geprüft; keine neue Codeänderung.
+
+Abgedeckt sind die dokumentierten Rect-Stichproben mit zwei bis fünf Tischen,
+Input/Discussion/Groupwork, Chairs/Moduswechsel, dynamischer Tischanzahl,
+veraltetem Zielvorschlag mit aktuellen Sources, Verdeckung/enger Begegnung,
+ROI-Rändern/Projektorüberlappung und Wiederanlauf. Keine Vollmatrix oder
+Identitätserhaltung über beliebig lange Abwesenheit behauptet. Kalibrierung,
+Homographien, Edge-Blend und Layout-Regeln im Inbetriebnahmeblock unverändert.
+Separat offen bleibt die vollständige Study-/Pilot-Validierung; ein Windows-
+Neustart ist nicht Bestandteil des bestätigten Anwendungs-Wiederanlaufs.
+
+Johannes erklärt am 2026-10-19 die separate Study-/Pilot-Validierung für
+nicht mehr erforderlich. Sie ist damit kein offener Folgeauftrag der
+abgeschlossenen Inbetriebnahme; daraus wird keine zusätzliche physische
+Study-Testbestätigung abgeleitet. Study-Code und Trialdefinitionen unverändert.
+
+## Git-Übergabe — 2026-10-21
+
+Die abgeschlossene Lab-Inbetriebnahme wird mit Integrationscode, TD-Helfern,
+106 erneut bestandenen fokussierten Tests und Projektdokumentation gesichert.
+Laufzeitdaten, Debug-Ausgaben und Kalibrierungsdateien bleiben ausgeschlossen;
+auch die lokale TD-Datei Version 149 wird nicht über Git übertragen.
+Die zuvor vorhandenen Vision-Änderungen und die simulierte Live-Szene bleiben
+unverändert außerhalb dieses Commits.
+
+Der lokale Branch enthält vier ältere, noch nicht gepushte Commits, darunter
+Study-Auswertungen und Debug-Plots. Deshalb erfolgt die datenfreie Übergabe
+auf `codex/lab-inbetriebnahme-20261021`, direkt auf Basis von
+`origin/vision/wip-dark-proposals`, ohne diese älteren Daten-Commits.
+Der ursprüngliche lokale Branch und seine Historie bleiben erhalten.

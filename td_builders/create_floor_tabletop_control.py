@@ -13,14 +13,14 @@ ROLES = ('table_source_geo', 'table_motion_line_tabletop_geo')
 
 
 def geometry_expression():
-    """Resolve the five supported table slots directly, without a child scan."""
-    slots = ', '.join('op(%r)' % (LAYOUT_PATH+'/item%d' % index) for index in range(1,6))
-    return (
-        "' '.join(geo.path for item in (%s) "
-        "if item is not None and item.par.Tabletype.eval() == 'rect' "
-        "for name in %r for geo in [item.op(name)] if geo is not None)"
-        % (slots, ROLES)
-    )
+    """Compatibility expression without dynamic Python operator lookups."""
+    return repr(geometry_paths())
+
+
+def geometry_paths():
+    """Native OP selection survives slot creation/removal without cached lookups."""
+    return ' '.join(LAYOUT_PATH + '/item%d/' % index + role
+                    for index in range(1, 6) for role in ROLES)
 
 
 def restore_control_renderer(backup):
@@ -70,7 +70,7 @@ def resolve_camera(renderer):
 def configure_overlay(overlay, renderer, camera):
     """Keep Tabletop render settings with transparent Source/Motion content."""
     overlay.par.camera = camera.path
-    overlay.par.geometry.expr = geometry_expression()
+    overlay.par.geometry = geometry_paths()
     for name in ('resmode', 'resw', 'resh', 'resmult', 'pixelformat'):
         parameter = getattr(overlay.par, name, None)
         if parameter is not None and getattr(renderer.par, name, None) is not None:

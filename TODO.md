@@ -1,10 +1,165 @@
 # AISI TODO
 
-Stand: 2026-10-15
+Stand: 2026-10-19
 
 Use this file to choose the next coherent task. Do not execute all items automatically. Completed implementation history belongs in Git and the handoff documents, not in this checklist.
 
 ## NOW — Participant-based Input / TouchDesigner integration
+
+Inbetriebnahmeblock am 2026-10-19 abgeschlossen. Die folgenden Lab-Prüfblöcke
+sind technisch und durch Johannes im Raum für die geprüften Stichproben bestanden:
+
+1. Fünf-Tisch-Groupwork 5/5 → 15/5 → 15/2 → 4/1 → 10/5 technisch/live
+   bestanden: Gruppen/Pairs, hohe Belegung, Park-Rückkehr und Sources ruhig.
+2. Gemeinsamer Fünf-Tisch-Format-/Moduswechsel samt 15 Chairs Off/On live
+   bestanden. Aktiver Tischabgang/-rückkehr bei Discussion 15 technisch
+   bestanden (5/ready → 4/invalid → 5/ready). Auf Johannes' Präzisierung
+   fehlende Source separat ausblenden: Sender aktualisiert Source-Verfügbarkeit
+   bei veraltetem Zielvorschlag, 51 Tests bestanden, Sender/UI neu geladen.
+   TD-Helfer ausgeführt und Abgang-/Rückkehrtest durch Johannes live bestätigt.
+3. Gebündelte Tracking-Stichprobe bei Verdeckung, enger Begegnung und
+   Abgang/Rückkehr durch Johannes live bestanden: Sources folgen wieder,
+   keine vertauschten/eingefrorenen Konturen, ruhiges Bild. Keine Aussage
+   über unveränderte Track-IDs nach längerer Abwesenheit.
+4. Physische Projektions-/Maskenstichproben an ROI-Rändern und in der
+   Projektorüberlappung durch Johannes bestanden: saubere Konturen/Helligkeit,
+   keine Bodenpfeile auf Tischflächen, ruhiges Bild. Kalibrierung unverändert.
+5. Neue manuelle TD-Sicherung inklusive jüngster Kontrollviewer-, Bodenpfeil-
+   und Source-Verfügbarkeitskorrekturen sowie erneuter Öffnungscheck durch
+   Johannes bestätigt; laufende Datei `AISI_v2.149_lab_layout_validated.toe`
+   über Prozessargument nachgewiesen. Vollständiger Anwendungs-Wiederanlauf
+   einschließlich TD und Bedienoberflächen technisch und live bestanden:
+   Sources folgen, alle Formatwechsel und Tracking → AISI sauber, keine alten
+   Elemente, ruhiges Bild. Kein Windows-Neustart geprüft.
+
+Die separate Study-/Pilot-Validierung ist laut Johannes am 2026-10-19 nicht
+mehr erforderlich und kein offener Folgeauftrag der Inbetriebnahme.
+Neuer Auftrag: AISI-Bodenpfeil bis Target-Mittelpunkt. Nach Screenshots mit
+fehlenden Pfeilen alte pauschale Overlap-Ausblendung offline reproduziert;
+Helfer erweitert auf vorwärts gerichtete Source-Kante→Zielmitte-Strecke.
+Elf Tests/96 reale Callback-Fälle bestanden; Johannes bestätigt Teil-Overlap
+und Zielmitten-Ende live, ruhiges Bild. Neue TD-Sicherung und erneutes Öffnen
+anschließend durch Johannes bestätigt.
+Historische offene Einzelpunkte sind durch die aktuellen Live-Nachweise nur
+für die tatsächlich geprüften Stichproben abgedeckt; keine Vollmatrix behaupten.
+
+- [x] Lab-PC am 2026-10-19 inspiziert: bestehenden Tracking-only-Sender durch
+  genau einen Layout-Sender ersetzt, Teilnehmer-Vorschau aktiviert. Laufendes
+  Groupwork meldet zwei Ziele/vier Chairs; 46 fokussierte Tests und drei
+  Offline-Format-/OSC-Stichproben bestanden. Kalibrierung unverändert.
+  [Startpfad und Rückkehr](docs/LAB_INBETRIEBNAHME.md).
+- [x] Reale Groupwork-Ausgabe und gebündelte Zwei-/Vier-Tisch-Formatwechsel
+  nach Senderwechsel bestätigt; Fünf-Tisch-Groupwork bleibt eigener Block.
+- [x] Erste Raumprüfung meldet Spiegelung auf beiden Achsen und fehlende
+  Source-Konturen im Projektorausgang. Abweichende AISI-/Tracking-Positions-
+  ausdrücke in gespeicherter TD-Version 144 nachgewiesen. Rücknehmbare
+  Callback-Korrektur vorbereitet, 27 Tests bestanden; manuelle Live-Ausführung
+  und aktuelle Zwei-Tisch-Raumprüfung durch Johannes bestätigt. Details im Lab-Handoff.
+- [x] Johannes bestätigt nach manueller Achsenkorrektur: Source-Konturen auf
+  realen Tischen, Ziele und Chairs richtig ausgerichtet (Zwei-Tisch-Groupwork).
+  Speicherung/erneutes Öffnen und weitere Formate noch nicht bestätigt.
+- [x] Anschließenden Anzeige-Stillstand eingegrenzt: Python-Pipeline lief
+  weiter, TD-Timeline war pausiert. Johannes bestätigt Behebung durch Play;
+  kein OSC-Neustart nötig. Physische Input-Einzelprüfung bleibt offen.
+- [x] Johannes bestätigt danach Input, Discussion und Groupwork im Raum:
+  Source-Konturen folgen Tischen, Ziele/Chairs plausibel, Bild ruhig.
+  Qualitative erste Live-Stichprobe; keine vollständige Count-/Gruppenmatrix.
+- [x] Einzeltischbewegung im Input live bestätigt: Source-/Tischzuordnung
+  stabil, ruhiges Bild. Kontinuierliche quelladaptive Zielneuberechnung
+  beobachtet; keine Ziel-Fixierung ergänzt. Messstichprobe im Lab-Handoff.
+- [x] Input 4 → 3 live bestätigt: drei Kreise, stabile Source-/Tischzuordnung.
+  Auf Auftrag wieder vier aktiviert, Sender meldet vier Chairs.
+- [x] Chair-Konturen weiß und 2,5 cm wie Ziel-Tischkonturen: Helfer
+  `repair_chair_visual_style.py` vorbereitet, fünf Tests und 16 echte
+  gespeicherte Ring-Callbacks geprüft. Johannes bestätigt vier weiße Kreise
+  und gute Lesbarkeit im Raum; damit Rückkehr 3 → 4 ebenfalls bestätigt.
+- [x] Groupwork 4/1 mit zwei Tischen live bestätigt: Pair, vier Chairs,
+  Source-Konturen und ruhiges Bild. Vergleich 4/2 ebenfalls live bestätigt:
+  zwei getrennte Gruppen mit je zwei Chairs, Source folgt, ruhiges Bild.
+- [x] Discussion 6 mit zwei realen Tischen live bestätigt: Spalt, vier
+  Längsseiten-/zwei Stirnplätze, Source-Konturen und ruhiges Bild passend.
+  Rückwechsel 6 → 4 ebenfalls live bestätigt: nur Stirn-Chairs entfernt,
+  Tischziele/Längsseitenplätze unverändert und Bild ruhig.
+- [x] Chair-Sichtbarkeit Off über echte OSC-Nullradien live bestätigt: alle
+  vier Kreise verschwinden, Source-/Zielkonturen und Pfeile bleiben aktiv.
+  On ebenfalls bestätigt: alle vier Kreise an denselben Plätzen, ruhiges Bild.
+- [x] Gemeinsamer Zwei-Tisch-Formatwechsel Input → Groupwork 4/2 →
+  Discussion 4 live bestätigt: vier Chairs je Format, keine alten Ziele/Pfeile,
+  Source folgt, ruhiges Bild. Endzustand Discussion. Höhere Tischzahlen offen.
+- [x] Modustrennung AISI → Tracking → AISI live bestätigt: nur reale
+  Konturen in Tracking, Discussion/Pfeile/vier Chairs in AISI; Source folgt.
+- [x] Study-Control auf Auftrag vereinfacht: Study-Einstellungen nur in Study,
+  manuelle Target-Eingabe entfernt. 30 Tests und Tkinter-Moduscheck bestanden.
+- [x] Neue Study-Control nach manuellem Neustart live bestätigt:
+  Study-Einstellungen nur in Study, Target-Eingabe entfernt,
+  AISI → Study → Tracking → AISI funktioniert.
+- [x] Korrigierten TD-Graphen manuell als neue Version sichern; tatsächlichen
+  Pfad bestätigen, gespeicherte Korrekturen offline prüfen und erneut öffnen.
+- [x] Johannes speichert `AISI_v2.146_lab_layout_validated.toe` manuell;
+  Achsen, Pfeilkorrekturen in Template/zwei Instanzen, 16 Chair-Ringe mit
+  Stärke/Radiusbindung und weißes Material offline nachgewiesen.
+- [x] Version 146 erneut geöffnet und auf Play live bestätigt: Source folgt,
+  vier weiße Chairs/Discussion-Ziele, Pfeil-Endpunkt/Toleranz korrekt,
+  ohne Helfer-Wiederholung. Weitere Format-/Count-Stichprobe folgt separat.
+- [x] Input 2 nach erneutem Öffnen live bestätigt: zwei Chairs am aktiven
+  Ziel, zweites Ziel ohne Chairs am Rand geparkt, beide Sources folgen,
+  keine alten Elemente und ruhiges Bild.
+- [x] Input 2 → 4 live bestätigt: beide Tische aktiv, vier Chairs,
+  Parkziel verschwunden, Sources folgen und ruhiges Bild.
+- [x] Input 6 mit zwei Tischen live bestätigt: je drei Chairs, keine Parkpose,
+  folgende Sources und ruhiges Bild.
+- [x] Groupwork 6/2 live bestätigt: zwei getrennte Ziele/je drei Chairs,
+  Source folgt, ruhiges Bild.
+- [x] Groupwork 6/1 live bestätigt: gemeinsames Pair/sechs Chairs,
+  keine alten Gruppen, Source folgt und Bild ruhig.
+- [x] Gebündelter Format-/Count-/Parkdurchlauf live bestätigt: insgesamt
+  ruhig, keine hängen gebliebenen Elemente; technische Prüfung fehlerfrei.
+- [x] Layout-Sender-Wiederanlauf und Format-/Countwechsel technisch und
+  visuell bestanden: selbstständige Erholung, ruhiger Durchlauf.
+- [x] Adapter-Wiederanlauf samt gebündelten Wechseln technisch und visuell
+  bestätigt: selbstständige Rückkehr von Tracking/Darstellung, ruhiges Bild.
+- [x] Leere Vision-Live-Szene im Layout-Sender repariert: explizite
+  Null-Counts statt Layout-Ablehnung mit alten TD-Daten; 37 Tests bestanden.
+- [x] Vision-Wiederanlauf samt Formatwechseln technisch und visuell bestätigt:
+  Ausgabe verschwindet bei Unterbrechung, kommt selbstständig korrekt zurück,
+  Wechsel ruhig. Endzustand Discussion 4.
+- [x] Gemeinsamen Wiederanlauf Vision/Adapter/Layout-Sender technisch und
+  visuell bestätigt: selbstständige Rückkehr, ruhiger Formatdurchlauf.
+  Regulärer Zwei-Tisch-Inbetriebnahmeblock damit abgeschlossen.
+- [x] Hinweis auf fehlende Tische implementiert: tatsächlicher Senderstatus
+  in Learning Format UI, Tischanzahl/Planerfehler und veraltete letzte Anzeige.
+  47 Tests und Live-HTTP-Fehler-/Recoveryprüfung bestanden.
+- [x] Tischzugang/-abgang und UI-Hinweis im Raum bestätigt: dritter Tisch
+  hinein/heraus korrekt berücksichtigt; Discussion-7-Warnung bei fehlenden
+  Tischen, Recovery bei vier Personen oder Hinzufügen eines vierten Tisches.
+  [Nachweise und aktueller Endzustand](docs/LAB_TISCHANZAHL.md).
+- [x] Vier-Tisch-Discussion 6 → 7 → 6 technisch und live bestätigt:
+  vier stabile IDs, ready in allen Stufen, 6/7/6 Chairs, Fehlerlog leer.
+  Endzustand Discussion 6; Nachweise im Tischanzahl-Handoff.
+- [x] Discussion 8 → 9 → 10 → 11 → 12 → 8 technisch und live bestätigt:
+  technisch vier stabile IDs, korrekte Counts, alle Stufen ready, Fehlerlog
+  leer; Tischziele offline innerhalb der Stufe exakt gleich. Endzustand 8.
+- [x] Vier-Tisch-Groupwork 8/4 → 12/4 → 12/2 → 8/2 live bestätigt:
+  vier Gruppen/zwei Pairs plausibel, Chair-Wechsel vollständig, Bild ruhig.
+- [x] Kontrollviewer-Source-Auswahl repariert: native Pfade statt zu None
+  aufgelöster Expression. Johannes bestätigt vier folgende blaue Konturen,
+  Projektorausgabe unverändert. Manuelle Speicherung dieser Reparatur offen.
+- [x] Discussion 12 → 13 → 14 → 15 → 12 technisch/live bestätigt:
+  Pentagon/Plätze plausibel, Rückkehr/Parken sauber, fünf Sources folgen,
+  ruhiges Bild. Kontrollviewer nach fünftem Tischzugang ebenfalls bestätigt.
+- [x] Fünf-Tisch-Input 4 → 8 → 10 → 12 → 15 → 4 live bestätigt:
+  Parken/Aktivieren und Verdichtung plausibel, alle 15 Chairs sichtbar,
+  Rückwechsel ohne alte Kreise und ruhiges Bild.
+- [x] AISI-Tabletop-Pfeile bei großem Overlap am Target-Mittelpunkt begrenzen:
+  Helfer `repair_aisi_arrow_endpoint.py` vorbereitet, vier Tests und 1152
+  Offline-Fälle auf gespeicherten TD-Callbacks bestanden. Manuelle Ausführung
+  und Annäherung live bestätigt; Anleitung im Lab-Handoff.
+- [x] Johannes bestätigt die AISI-Pfeil-Endpunktkorrektur als passend.
+- [x] AISI-Pfeile bei ≤ 8 cm und ≤ 5° ausblenden, Spitzen mit Schaft verkleinern:
+  `repair_aisi_arrow_arrival.py` vorbereitet, 23 Tests und 300 Fälle auf zwölf
+  gespeicherten Callbacks bestanden. Johannes bestätigt kleiner werdende
+  Pfeile, Ausblenden innerhalb der Toleranz und Wiedererscheinen beim Entfernen.
+  Study unverändert, Endpunktkorrektur erhalten. Anleitung im Lab-Handoff.
 
 Johannes bestätigt am 2026-10-15 Input für den Moment als in Ordnung. Dies ist
 eine qualitative Freigabe der aktuellen Anzeige, kein zusätzlicher Nachweis
@@ -139,6 +294,10 @@ Synthetische Chairs sind für Input und Groupwork umgesetzt. Die aktuelle Groupw
 - [ ] Perform remaining physical room validation for Input, Groupwork, and Discussion after virtual checks are stable.
 
 ## NEXT — Pilot / Study readiness
+
+Status 2026-10-19: Die separate Study-/Pilot-Validierung ist auf Johannes'
+Anweisung nicht mehr erforderlich. Die nachfolgenden historischen Prüfpunkte
+werden nicht als aktueller Auftrag verfolgt; dies ist keine Testbestätigung.
 
 - [ ] Validate Familiarization in the authoritative TouchDesigner project and physical room, including live switching between Floor-only and Dual-surface.
 - [ ] Alle acht experimentellen `pilot_v8`-Trials in beiden Bedingungen im Raum prüfen; insbesondere T4 nach der Verschiebung um `+11 cm` in Welt-Y.
