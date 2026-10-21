@@ -37,6 +37,19 @@ def _frame(frame_id: int, tables: list[tuple[str, float, float, float]]) -> Fram
 
 
 class VisionLiveToAisiSceneTests(unittest.TestCase):
+    def test_unsolicited_table_arrival_departure_and_return_keep_known_order(self) -> None:
+        adapter = VisionSceneAdapter(missing_frames=2)
+        first = [("table_02", 300.0, 300.0, 0.0), ("table_01", 100.0, 100.0, 0.0)]
+        adapter.apply_frame(_frame(1, first))
+        adapter.apply_frame(_frame(2, [("table_00", 400.0, 100.0, 0.0)] + first))
+        self.assertEqual([t['id'] for t in adapter.scene()['tables']], ['table_01', 'table_02', 'table_00'])
+        adapter.apply_frame(_frame(3, first))
+        self.assertEqual(len(adapter.scene()['tables']), 3)
+        adapter.apply_frame(_frame(4, first))
+        self.assertEqual([t['id'] for t in adapter.scene()['tables']], ['table_01', 'table_02'])
+        adapter.apply_frame(_frame(5, first + [("table_00", 410.0, 100.0, 0.0)]))
+        self.assertEqual([t['id'] for t in adapter.scene()['tables']], ['table_01', 'table_02', 'table_00'])
+
     def test_world_coordinates_and_angle_are_preserved_in_scene_units(self) -> None:
         adapter = VisionSceneAdapter()
         theta = -2.281257696612159

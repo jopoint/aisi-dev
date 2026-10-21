@@ -16,6 +16,7 @@ from typing import Any
 
 from aisi.app.sim_layout_rules import compute_synthetic_layout, compute_target_layout
 from aisi.app.study_tracking import StudyActiveTrackBindingStore, StudyTableTrackBindingStore
+from aisi.app.layout_runtime_status import LayoutStatusPublisher, request_key
 from aisi.core.table_geometry import TABLE_TYPE_IDS, TABLE_TYPE_NAMES
 
 try:
@@ -430,6 +431,17 @@ def prepare_scene_output(
         # This mode deliberately neither reads people/chairs nor calls layout synthesis.
         return selected_tables, [], [], source_pose_targets(selected_tables), reason
 
+    # A cleared live adapter scene means no current physical tables, not an
+    # impossible participant-layout request. Publish zero counts so TD can
+    # remove stale targets/chairs while vision reconnects or loses the stream.
+    if (
+        scene.get("source") == "vision_live_to_aisi_scene"
+        and isinstance(scene.get("vision_live"), dict)
+        and scene["vision_live"].get("mode") == "tables_only"
+        and scene.get("tables") == []
+    ):
+        return [], [], [], [], None
+
     preview_enabled = bool(activity_parameters and activity_parameters.get("adaptive_layout_preview") is True)
     if preview_enabled:
         layout = compute_synthetic_layout(
@@ -543,6 +555,24 @@ def send_live_rect_tables(client: SimpleUDPClient, scene: dict[str, Any]) -> Non
         client.send_message(f"/vision/table/{index}/x", float(table.get("x_cm", 0.0)))
         client.send_message(f"/vision/table/{index}/y", float(table.get("y_cm", 0.0)))
         client.send_message(f"/vision/table/{index}/rot", float(table.get("rotation_deg", 0.0)))
+
+
+def send_layout_source_presence(client: SimpleUDPClient, scene: dict[str, Any],
+                                layout_tables: list[dict[str, Any]], refresh_poses: bool = False) -> None:
+    """Keep source availability bound to the last proposal's IDs, never slot-shift it."""
+    tracks = {str(table.get("id")): table for table in scene.get("tables", [])
+              if isinstance(table, dict) and str(table.get("id", "")).strip()}
+    for index in range(5):
+        source = tracks.get(str(layout_tables[index].get("id"))) if index < len(layout_tables) else None
+        client.send_message(f"/table/{index}/source_available", int(source is not None))
+        if source is not None and refresh_poses:
+            for field, alias, value in (
+                ("source_x", "x", float(source.get("x_cm", 0.0))),
+                ("source_y", "y", float(source.get("y_cm", 0.0))),
+                ("source_rot", "rot", -float(source.get("rotation_deg", 0.0))),
+            ):
+                client.send_message(f"/table/{index}/{field}", value)
+                client.send_message(f"/table/{index}/{alias}", value)
 
 
 def send_persons(client: SimpleUDPClient, persons: list[dict[str, Any]], show_persons: bool) -> None:
@@ -676,6 +706,9 @@ def main() -> None:
     perf_window_started = time.perf_counter()
     perf_samples: list[tuple[float, float]] = []
     fresh_live_scene_seen = not args.require_fresh_live_scene
+    status_publisher = LayoutStatusPublisher()
+    previous_request = None
+    last_valid_layout_tables: list[dict[str, Any]] = []
     sender_started_wall_ns = time.time_ns()
 
     try:
@@ -736,6 +769,13 @@ def main() -> None:
             with state_lock:
                 layout_mode = current_layout_mode
 
+            status_request = request_key(layout_mode, transformation_strength, activity_parameters)
+            available_tables = len(scene.get("tables", []))
+            if not args.tracking_only and (status_request, available_tables) != previous_request:
+                status_publisher.publish(status_request, "calculating", available_tables,
+                                         "Layout wird für die aktuelle Tischanzahl berechnet.")
+                previous_request = (status_request, available_tables)
+
             binding_present, active_track_id = (
                 study_active_binding.read() if study_active_binding is not None else (False, None)
             )
@@ -754,11 +794,15 @@ def main() -> None:
                     activity_parameters=activity_parameters,
                 )
             except ValueError as exc:
-                # Reject the whole invalid participant preview before any OSC sends.
-                # Keep the loop alive so a corrected request can recover.
+                if not args.tracking_only:
+                    status_publisher.publish(status_request, "invalid", available_tables, str(exc))
+                    send_layout_source_presence(client, scene, last_valid_layout_tables, refresh_poses=True)
+                    send_live_rect_tables(client, scene)
+                    send_study_tracked_tables(client, scene, study_bindings)
+                # Preserve the last target/chair proposal, but keep physical sources live.
                 now = time.monotonic()
                 if now - last_bad_json_notice >= 1.0:
-                    print(f"Layout-Anfrage abgelehnt; keine OSC-Ausgabe: {exc}")
+                    print(f"Layout-Anfrage abgelehnt; Ziele unverändert, Live-Sources aktualisiert: {exc}")
                     last_bad_json_notice = now
                 time.sleep(args.interval)
                 continue
@@ -792,10 +836,16 @@ def main() -> None:
             client.send_message("/person/count", len(persons))
             client.send_message("/chair/count", len(chairs))
             summaries = send_tables(client, tables, targets)
+            if not args.tracking_only:
+                last_valid_layout_tables = [dict(table) for table in tables]
+                send_layout_source_presence(client, scene, last_valid_layout_tables)
             send_study_tracked_tables(client, scene, study_bindings)
             send_live_rect_tables(client, scene)
             send_persons(client, persons, show_persons)
             send_chairs(client, chairs, show_chairs)
+            if not args.tracking_only:
+                status_publisher.publish(status_request, "ready" if tables else "waiting", available_tables,
+                    "Layout aktiv." if tables else "Keine Tische in der aktuellen Szene. Bitte Tische in den ROI bringen.")
             now = time.monotonic()
             if now - last_debug_print >= DEBUG_INTERVAL_SECONDS:
                 debug_message = (

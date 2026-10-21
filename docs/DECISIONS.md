@@ -250,6 +250,21 @@ Status: **Accepted**
 - Die interaktive Room-Editor-/TouchDesigner-Sichtprüfung bleibt ein eigener Schritt, wenn sie nicht automatisiert ausführbar ist.
 - Ein kurzer formatübergreifender Durchlauf folgt erst nach den Einzelprüfungen.
 
+Ergänzung am 2026-10-19 für die Live-Integration: Wenn nach Tischabgang oder
+einer neuen Anfrage kein gültiges Layout möglich ist, bleibt auf Johannes'
+ausdrückliche Entscheidung die letzte gültige Anzeige sichtbar. Die Learning
+Format UI kennzeichnet sie als veraltet und zeigt aktuelle Tischzahl sowie
+Planerfehler. Keine automatische Anpassung fachlicher Eingaben oder Ausgabe
+eines ungültigen neuen Layouts. Explizit vollständig geleerte Vision-Szenen
+senden weiterhin Null-Counts. Details: [Tischanzahl-Handoff](LAB_TISCHANZAHL.md).
+
+Präzisierung durch Johannes nach aktivem Tischabgang: nur der letzte gültige
+Ziel-/Chairvorschlag bleibt stehen. Sources folgen weiter den aktuellen
+Tracks; fehlende Source-Konturen und zugehörige Pfeile müssen verschwinden,
+sobald der Adapter die ID entfernt. Alte Zielslots bleiben ihren IDs gebunden;
+keine Ersetzung durch einen anderen erkannten Tisch. Additive Verfügbarkeit
+`/table/<index>/source_available` verbindet Sender und AISI-Sichtbarkeit.
+
 ## D009 — Discussion topology
 
 Status: **Accepted**
@@ -313,7 +328,10 @@ Status: **Accepted — expliziter Auftrag von Johannes am 2026-10-07**
   Source-Kontur, weiße gestrichelte Zielkontur und weiße Bewegungspfeile.
 - Vorhandene AISI-Item-Geometrien und gemeinsame Study-Konturfunktionen
   verwenden; keine parallele Tischpipeline aufbauen.
-- Die Chair-Gestaltung bleibt unverändert, bis sie separat spezifiziert wird.
+- Johannes spezifiziert am 2026-10-19 für synthetische Chair-Konturen: Weiß
+  und dieselbe Stärke wie die Ziel-Tischkonturen (aktuell 2,5 cm).
+  Außenradius und Positionen bleiben erhalten. Johannes bestätigt nach
+  manueller Korrektur vier weiße Kreise und gute physische Lesbarkeit.
 - Study-/Tracking-Zweige, Masken, Kalibrierung und Projektorkonfiguration
   bleiben geschützt; physische Raumvalidierung bleibt separat.
 

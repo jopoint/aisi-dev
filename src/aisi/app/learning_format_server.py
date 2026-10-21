@@ -13,6 +13,7 @@ import socket
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
+from aisi.app.layout_runtime_status import read_status
 
 
 DEFAULT_PORT = 8080
@@ -283,6 +284,9 @@ def build_html(
 <body>
   <h1>AISI Learning Format</h1>
   <p>Choose the current learning format for the simulation.</p>
+  <div id="layout-status" role="status" aria-live="polite" style="max-width:420px;padding:16px;border:1px solid #777;border-radius:12px">
+    Status wird geladen …
+  </div>
   <form class=\"buttons\" method=\"post\" action=\"/set\">
     <button class=\"input\" type=\"submit\" name=\"learning_format\" value=\"input\">1. Input</button>
     <button class=\"groupwork\" type=\"submit\" name=\"learning_format\" value=\"groupwork\">2. Groupwork</button>
@@ -338,6 +342,23 @@ def build_html(
       const format = "{current_format}";
       document.getElementById("groupwork-parameters").style.display = format === "groupwork" ? "block" : "none";
       document.getElementById("input-parameters").style.display = format === "input" ? "block" : "none";
+      async function updateLayoutStatus() {{
+        const box = document.getElementById("layout-status");
+        try {{
+          const response = await fetch("/layout-status", {{cache: "no-store"}});
+          if (!response.ok) throw new Error("Status nicht verfügbar");
+          const status = await response.json();
+          const count = Number.isInteger(status.available_tables) ? "Erkannte Tische: " + status.available_tables + ". " : "";
+          box.textContent = count + (status.state === "invalid" ? "Kein gültiger neuer Layoutvorschlag: " : "") + status.message +
+            (status.state === "invalid" ? " Letzter gültiger Zielvorschlag bleibt stehen und ist veraltet. Source-Anzeige folgt weiter den erkannten Tischen." : "");
+          box.style.borderColor = status.state === "invalid" ? "#ffb454" : "#777";
+        }} catch (error) {{
+          box.textContent = "Keine aktuelle Rückmeldung vom Layout-Sender.";
+          box.style.borderColor = "#ffb454";
+        }}
+      }}
+      updateLayoutStatus();
+      setInterval(updateLayoutStatus, 1000);
     </script>
 </body>
 </html>"""
@@ -348,6 +369,15 @@ class LearningFormatHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         """Return the HTML page."""
+        if urlparse(self.path).path == "/layout-status":
+            payload = json.dumps(read_status(read_state()), ensure_ascii=False).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+            return
         if urlparse(self.path).path not in {"/", ""}:
             self.send_error(404, "Not found")
             return
