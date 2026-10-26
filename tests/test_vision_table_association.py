@@ -11,6 +11,10 @@ import numpy as np
 from src.vision.calibration.tabletop import TabletopCalibration
 from src.vision.pipeline import (
     RECT_TABLE_OBVIOUSLY_OVERSIZED_AREA_CM2,
+    RECT_TABLE_LONG_SIDE_CM_MAX,
+    RECT_TABLE_LONG_SIDE_CM_MIN,
+    RECT_TABLE_SHORT_SIDE_CM_MAX,
+    RECT_TABLE_SHORT_SIDE_CM_MIN,
     VisionPipeline,
     update_table_obb_yaw,
 )
@@ -409,7 +413,7 @@ class VisionTableAssociationTests(unittest.TestCase):
             "aspect_ratio": 2.0,
         })
 
-    def test_calibrated_160_by_80_rect_candidate_is_allowed_for_creation(self) -> None:
+    def test_calibrated_160_by_80_rect_candidate_passes_world_size_gate(self) -> None:
         pipeline = _pipeline()
         pipeline.calibration_profile = TabletopCalibration(np.eye(3, dtype=np.float64))
         candidate = _obb_det([0, 0, 160, 80], 160.0, 80.0)
@@ -424,9 +428,19 @@ class VisionTableAssociationTests(unittest.TestCase):
             "area_cm2": 12800.0,
             "aspect_ratio": 2.0,
         })
-        self.assertEqual(pipeline._new_table_world_size_rejection_reasons(metrics), ())
+        self.assertEqual(pipeline._table_obb_world_size_rejection_reasons(metrics), ())
 
-    def test_calibrated_oversized_phantom_candidate_is_rejected_for_creation(self) -> None:
+    def test_calibrated_noisy_but_plausible_rect_candidate_passes_world_size_gate(self) -> None:
+        pipeline = _pipeline()
+        candidate = _obb_det([0, 0, 185, 100], 185.0, 100.0)
+
+        metrics = pipeline._table_obb_world_metrics(candidate)
+
+        self.assertEqual(metrics["long_side_cm"], 185.0)
+        self.assertEqual(metrics["short_side_cm"], 100.0)
+        self.assertEqual(pipeline._table_obb_world_size_rejection_reasons(metrics), ())
+
+    def test_calibrated_oversized_phantom_candidate_is_rejected_before_association(self) -> None:
         pipeline = _pipeline()
         pipeline.calibration_profile = TabletopCalibration(np.eye(3, dtype=np.float64))
         phantom = _obb_det([0, 0, 320, 160], 320.0, 160.0)
@@ -435,23 +449,62 @@ class VisionTableAssociationTests(unittest.TestCase):
 
         self.assertGreater(metrics["area_cm2"], RECT_TABLE_OBVIOUSLY_OVERSIZED_AREA_CM2)
         self.assertEqual(
-            pipeline._new_table_world_size_rejection_reasons(metrics),
-            ("world_area_too_large",),
+            pipeline._table_obb_world_size_rejection_reasons(metrics),
+            (
+                "world_long_side_too_large",
+                "world_short_side_too_large",
+                "world_area_too_large",
+            ),
         )
 
-    def test_confirmed_track_association_does_not_use_new_birth_size_gate(self) -> None:
+    def test_calibrated_small_candidate_is_rejected_by_world_size_gate_after_existing_pixel_filter(self) -> None:
         pipeline = _pipeline()
-        pipeline.calibration_profile = TabletopCalibration(np.eye(3, dtype=np.float64))
-        confirmed = _track([100, 100, 420, 260])
-        confirmed["table_confirmed"] = True
-        oversized = _obb_det([100, 100, 420, 260], 320.0, 160.0)
+        small = _obb_det([0, 0, 100, 45], 100.0, 45.0)
 
         self.assertEqual(
-            pipeline._greedy_track_match(
-                [oversized], {"table_00": confirmed}, ["table_00"], {0}, "table"
+            pipeline._table_obb_world_size_rejection_reasons(
+                pipeline._table_obb_world_metrics(small)
             ),
-            {"table_00": 0},
+            ("world_long_side_too_small", "world_short_side_too_small"),
         )
+
+    def test_world_size_limits_are_the_documented_permissive_rect_bounds(self) -> None:
+        self.assertEqual(
+            (
+                RECT_TABLE_LONG_SIDE_CM_MIN,
+                RECT_TABLE_LONG_SIDE_CM_MAX,
+                RECT_TABLE_SHORT_SIDE_CM_MIN,
+                RECT_TABLE_SHORT_SIDE_CM_MAX,
+            ),
+            (140.0, 200.0, 70.0, 110.0),
+        )
+
+    def test_projected_floor_target_from_lab_measurement_is_rejected(self) -> None:
+        pipeline = _pipeline()
+        # Frame 260943: same detector and unchanged tabletop calibration as
+        # the live pipeline. Projection is confidently detected as a table.
+        projected = _obb_det([653, 577, 855, 890], 128.3918, 66.0607)
+        self.assertEqual(
+            pipeline._table_obb_world_size_rejection_reasons(
+                pipeline._table_obb_world_metrics(projected)
+            ),
+            ("world_long_side_too_small", "world_short_side_too_small"),
+        )
+        real_table = _obb_det([882, 272, 1216, 670], 164.6843, 82.9593)
+        self.assertEqual(pipeline._table_obb_world_size_rejection_reasons(
+            pipeline._table_obb_world_metrics(real_table)), ())
+
+    def test_minimum_edges_are_independent_and_include_the_boundary(self) -> None:
+        pipeline = _pipeline()
+        for long_side, short_side, expected in (
+            (140.0, 70.0, ()),
+            (139.9, 80.0, ("world_long_side_too_small",)),
+            (160.0, 69.9, ("world_short_side_too_small",)),
+        ):
+            with self.subTest(long_side=long_side, short_side=short_side):
+                self.assertEqual(pipeline._table_obb_world_size_rejection_reasons(
+                    pipeline._table_obb_world_metrics(_obb_det(
+                        [0, 0, 160, 80], long_side, short_side))), expected)
 
     def test_full_size_candidate_near_or_far_remains_plausible(self) -> None:
         pipeline = _pipeline()

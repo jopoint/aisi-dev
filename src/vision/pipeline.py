@@ -23,11 +23,19 @@ from src.aisi_sensing.core.timebase import now_iso
 from src.vision.calibration.tabletop import TabletopCalibration, project_axis_angle, project_point
 
 
-# The current physical Rect table is 160 x 80 cm. This deliberately broad
-# creation-only ceiling rejects only a clearly impossible (>2x) tabletop-plane
-# footprint; it is not an association or track-update tolerance.
+# The current physical Rect table is 160 x 80 cm. These permissive limits are
+# applied only to calibrated Rect-OBB detections before table association, so
+# a floor-spanning OBB cannot update an established track or create a new one.
+# Generic detections and uncalibrated operation remain unchanged.
 RECT_TABLE_NOMINAL_AREA_CM2 = 160.0 * 80.0
 RECT_TABLE_OBVIOUSLY_OVERSIZED_AREA_CM2 = 2.0 * RECT_TABLE_NOMINAL_AREA_CM2
+# The projected floor target measured 128.4 x 66.1 cm on this unchanged
+# tabletop calibration (lab frame 260943, 2026-10-26). Keep a lower bound
+# at 87.5% of each nominal Rect edge, before association and track birth.
+RECT_TABLE_LONG_SIDE_CM_MIN = 140.0
+RECT_TABLE_LONG_SIDE_CM_MAX = 200.0
+RECT_TABLE_SHORT_SIDE_CM_MIN = 70.0
+RECT_TABLE_SHORT_SIDE_CM_MAX = 110.0
 
 
 class LatestFrameCameraCapture:
@@ -1266,7 +1274,7 @@ class VisionPipeline:
         A table-only OBB describes its tabletop boundary, so its four corners
         can use the existing ``rect_tabletop`` calibration directly.  A generic
         bare homography has no guaranteed centimetre unit contract, therefore
-        this creation gate intentionally stays inactive without a calibration
+        this physical-size gate intentionally stays inactive without a calibration
         profile rather than introducing a parallel pixel-size heuristic.
         """
 
@@ -1311,20 +1319,47 @@ class VisionPipeline:
         }
 
     @staticmethod
-    def _new_table_world_size_rejection_reasons(
+    def _table_obb_world_size_rejection_reasons(
         world_metrics: Optional[Dict[str, float]],
     ) -> tuple[str, ...]:
-        """Reject only an obviously oversized calibrated Rect-table birth."""
+        """Return calibrated physical-size failures for a Rect-table OBB.
+
+        This is deliberately evaluated before table association.  It therefore
+        protects both existing tracks and new births, but only when the
+        detection has a four-corner OBB and the current-room tabletop
+        calibration can express it in centimetres.
+        """
 
         if world_metrics is None:
             return ()
         try:
+            long_side_cm = float(world_metrics["long_side_cm"])
+            short_side_cm = float(world_metrics["short_side_cm"])
             area_cm2 = float(world_metrics["area_cm2"])
         except (KeyError, TypeError, ValueError):
             return ()
+        reasons: list[str] = []
+        if long_side_cm < RECT_TABLE_LONG_SIDE_CM_MIN:
+            reasons.append("world_long_side_too_small")
+        elif long_side_cm > RECT_TABLE_LONG_SIDE_CM_MAX:
+            reasons.append("world_long_side_too_large")
+        if short_side_cm < RECT_TABLE_SHORT_SIDE_CM_MIN:
+            reasons.append("world_short_side_too_small")
+        elif short_side_cm > RECT_TABLE_SHORT_SIDE_CM_MAX:
+            reasons.append("world_short_side_too_large")
+        # Retain the pre-existing broad footprint ceiling as an independent
+        # guard and as useful debug provenance for extreme floor phantoms.
         if area_cm2 > RECT_TABLE_OBVIOUSLY_OVERSIZED_AREA_CM2:
-            return ("world_area_too_large",)
-        return ()
+            reasons.append("world_area_too_large")
+        return tuple(reasons)
+
+    @staticmethod
+    def _new_table_world_size_rejection_reasons(
+        world_metrics: Optional[Dict[str, float]],
+    ) -> tuple[str, ...]:
+        """Backward-compatible alias for the calibrated Rect OBB size gate."""
+
+        return VisionPipeline._table_obb_world_size_rejection_reasons(world_metrics)
 
     def _table_obb_plausibility_reasons(
         self,
@@ -4041,6 +4076,7 @@ class VisionPipeline:
         frame_area = float(frame_w * frame_h) if frame_w > 0 and frame_h > 0 else 1.0
         raw_table_dets = sum(1 for det in raw_detections if det.get("label") == "table")
         rejected_small_table_dets = 0
+        rejected_implausible_world_size_table_dets = 0
         rejected_geom_person_dets = 0
         min_table_area_px = float(self.table_min_bbox_area)
         min_table_dim_px = self.table_min_bbox_minside
@@ -4144,6 +4180,34 @@ class VisionPipeline:
                             "shape": {
                                 "bbox_px": [x1, y1, x2, y2],
                                 "reject_reason": reject_reason,
+                            },
+                        })
+                    continue
+
+                # Rect OBB detector candidates in the calibrated current-room
+                # path must have plausible physical tabletop dimensions before
+                # they reach association or track birth.  ``None`` means this
+                # is not a calibrated four-corner OBB, so legacy/generic table
+                # detections retain their existing behavior.
+                world_metrics = self._table_obb_world_metrics(det)
+                world_size_rejection_reasons = self._table_obb_world_size_rejection_reasons(
+                    world_metrics
+                )
+                if world_size_rejection_reasons:
+                    rejected_implausible_world_size_table_dets += 1
+                    if self.debug_dir:
+                        rejected_table_overlay_items.append({
+                            "id": (
+                                "table_reject_world_size_"
+                                f"{rejected_implausible_world_size_table_dets:03d}"
+                            ),
+                            "label": "table_reject",
+                            "mask": None,
+                            "score": score,
+                            "shape": {
+                                "bbox_px": [x1, y1, x2, y2],
+                                "reject_reason": "|".join(world_size_rejection_reasons),
+                                "world_metrics": world_metrics,
                             },
                         })
                     continue
@@ -5232,7 +5296,9 @@ class VisionPipeline:
                 f"[YOLO table size] frame={frame_id} "
                 f"raw_table_dets={raw_table_dets} "
                 f"kept_table_dets={kept_table_dets} "
-                f"rejected_small_table_dets={rejected_small_table_dets}"
+                f"rejected_small_table_dets={rejected_small_table_dets} "
+                "rejected_implausible_world_size_table_dets="
+                f"{rejected_implausible_world_size_table_dets}"
             )
             print(
                 f"[YOLO person] frame={frame_id} "
@@ -5306,6 +5372,10 @@ class VisionPipeline:
                 if isinstance(_raw_bbox, list) and len(_raw_bbox) == 4:
                     _raw_width = int(_raw_bbox[2]) - int(_raw_bbox[0])
                     _raw_height = int(_raw_bbox[3]) - int(_raw_bbox[1])
+                _world_metrics = self._table_obb_world_metrics(_det)
+                _world_size_reasons = self._table_obb_world_size_rejection_reasons(
+                    _world_metrics
+                )
                 _raw_tables.append({
                     "raw_detection_index": int(_raw_index),
                     "score": float(_det.get("score", 0.0)),
@@ -5316,6 +5386,9 @@ class VisionPipeline:
                     "width_px": _raw_width,
                     "height_px": _raw_height,
                     "obb": self._table_obb_metrics(_det),
+                    "world_metrics": _world_metrics,
+                    "world_size_rejection_reasons": list(_world_size_reasons),
+                    "world_size_accepted": not bool(_world_size_reasons),
                 })
             _dbg_payload = {
                 "frame_id": int(frame_id),
@@ -5329,6 +5402,9 @@ class VisionPipeline:
                 "blocked_new_table_births_near_lost": int(dbg_blocked_new_table_births_near_lost),
                 "suppressed_table_fragment_births": int(dbg_suppressed_table_fragment_births),
                 "rejected_physical_table_births": int(dbg_rejected_physical_table_births),
+                "rejected_implausible_world_size_table_detections": int(
+                    rejected_implausible_world_size_table_dets
+                ),
                 "recoverable_lost_table_track_count": int(dbg_recoverable_lost_table_track_count),
                 "table_associations": dbg_table_associations,
                 "table_anchor_reacquisition_candidates": dbg_table_anchor_reacquisition_candidates,
