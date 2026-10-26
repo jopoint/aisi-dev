@@ -32,7 +32,8 @@ class LayoutRuntimeStatusTests(unittest.TestCase):
             LayoutStatusPublisher(path).publish(request_key('groupwork', 1, state), 'ready', 2)
             for field, value in (('learning_format', 'input'), ('participants', 9),
                                  ('number_of_groups', 3), ('presentation_side', 'north'),
-                                 ('adaptive_layout_preview', True), ('transformation_strength', .5)):
+                                 ('adaptive_layout_preview', True), ('transformation_strength', .5),
+                                 ('layout_revision', 1)):
                 with self.subTest(field=field):
                     self.assertEqual(read_status(dict(state, **{field: value}), path)['state'], 'pending')
 

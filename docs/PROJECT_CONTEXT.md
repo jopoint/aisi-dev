@@ -1,6 +1,20 @@
 # AISI Project Context
 
-Stand: 2026-10-08
+Stand: 2026-10-26
+
+Aktueller abgeschlossener Lab-Prüfstand:
+`C:\Users\johan\OneDrive\Dokumente\AISI_DEV\touchdesigner\AISI_v2.151_tabletop_targets_validated.toe`.
+Johannes bestätigt Speicherung und erneutes Öffnen: Sources folgen flüssig,
+nur eigene Zielkonturen auf Tabletops, alles korrekt. Stabile Vorschläge,
+Format-/Count-/Moduswechsel und unveränderte Bodenausgabe zuvor gebündelt
+live bestätigt; 125 fokussierte Tests bestanden. Kalibrierung/Homographien/
+Edge-Blend unverändert. Folgeblock abgeschlossen, keine weiteren Live-Schritte
+daraus offen. Die folgenden Zwischenberichte sind historischer Verlauf.
+Git-Übergabe des Folgeblocks am 2026-10-26 auf
+`codex/lab-inbetriebnahme-20261021`, anschließend an `cac6365`.
+Nur produktive Quellen, Tests und Projektdokumentation; Laufzeitdaten,
+Debug-Ausgaben, Kalibrierung und fremde Vision-Änderungen ausgeschlossen.
+Die physische TD-Datei 151 ist nicht Bestandteil der Git-Übergabe.
 
 ## 1. Purpose and workstreams
 
@@ -574,3 +588,266 @@ Study-Auswertungen und Debug-Plots. Deshalb erfolgt die datenfreie Übergabe
 auf `codex/lab-inbetriebnahme-20261021`, direkt auf Basis von
 `origin/vision/wip-dark-proposals`, ohne diese älteren Daten-Commits.
 Der ursprüngliche lokale Branch und seine Historie bleiben erhalten.
+
+## Neustartbefund am 2026-10-21: falscher Sender-Startpfad
+
+Nach manuellem Pipeline-Neustart meldet Johannes nur einen Tisch und fehlenden
+Layoutstatus. Prozessargumente belegen den Start über
+`scripts/run_current_room_tracking_only.ps1`: `--tracking-only` und
+`--tracking-table-id table_00`. Vision und Adapter liefern gleichzeitig fünf
+aktuelle Tische. Der Tracking-only-Sender veröffentlicht absichtlich keinen
+Layoutstatus; MODE AISI in Study-Control ändert diese Prozessoptionen nicht.
+
+Nur die Senderkette wurde durch den oben dokumentierten Layout-Sender ersetzt,
+mit beiden Study-Bindings, `--require-fresh-live-scene` und `--interval 0.05`.
+Vision/Adapter/TD und fachliche UI-Eingaben unverändert. Anschließend HTTP-Status
+`ready`, Input 8, fünf Tische und acht gesendete Chairs; Senderfehlerlog leer.
+Sicherung/Protokolle lokal unter `data/aisi/debug/restart_sender_20261021/`.
+Physische Sichtbestätigung nach diesem Austausch noch offen.
+
+Für künftigen AISI-Layoutbetrieb den Vision→Scene→OSC-Layoutpfad verwenden,
+nicht `run_current_room_tracking_only.ps1`. Der vorhandene
+`scripts/run_current_room_vision_to_osc.ps1` ist der Layout-Launcher; er startet
+weder Study-Control noch Learning-Format-Server. Vollständige validierte
+Senderargumente stehen im Abschnitt „Geprüfter Startpfad“. Bestehende Pipeline
+vor erneutem Launcheraufruf beenden, damit kein zweiter Sender entsteht.
+
+## Tischbezogene Tabletop-Zielkonturen — Umsetzung vorbereitet, 2026-10-21
+
+Auf Johannes' Auftrag neuer rücknehmbarer Textport-Helfer:
+`td_builders/isolate_aisi_tabletop_targets.py`. Untersuchung einer temporären
+Expansion der unveränderten TD-Version 149 bestätigt gemeinsame Tabletop-
+Zielausgabe, gemeinsame physische Maske und passende lokale Tischflächen in
+Template/vier gespeicherten Instanzen. Der laufende Count kann davon abweichen;
+der Helfer adressiert fünf native Item-Pfade und funktioniert ohne Neubau bei
+Count-Wechseln. Fehlende Instanzen/Source-Verfügbarkeit sperren ihren Zielanteil.
+
+Neuer isolierter COMP `aisi_own_tabletop_targets`: fünf Target-Render TOPs,
+jeweils bestehende Tabletop-Kamera, Source-Flächengeometrie desselben Items,
+Masken-Render TOP und kopierte bisherige Reorder-/Maskenoperation. Erst nach
+Einzelbeschneidung addieren. Sources/Tabletop-Pfeile bleiben im separaten
+bisherigen gemeinsamen Maskenzweig erhalten. Nur Eingang von
+`null_tabletop_masked` (Null TOP) auf neuen Modus-Switch umstecken; bei
+Tracking/Study unverändert den ursprünglichen `mask_tabletop` (Composite TOP)
+verwenden. Originalrenderer und physische Maskenkette bleiben unangetastet.
+
+Vorbedingungen prüfen Verschaltung/Kamera/Geometrien. Vor Anschluss fertig
+aufbauen; bei Fehlern ursprünglichen Eingang wieder verbinden und nur eigenen
+neuen COMP entfernen. Parameter-/Verbindungsfingerprint für Kalibrierung,
+Projektorausgabe, originale Floor-/Tabletop-Renderer und Masken vor/nachher.
+Kein Force-Cook, keine Speicherung. Rücknahme:
+`restore_aisi_tabletop_targets(op)`; Sicherung enthält dauerhafte Operatorpfade.
+
+59 fokussierte Tests bestanden, darunter synthetischer Bildfluss mit zwei
+Zielen, die beide Tischflächen schneiden: pro Fläche nur eigenes Ziel statt
+Summe beider Ziele; auch Source-Abgang/Count-Reduktion. Weitere Tests prüfen
+Originalpfad in Tracking/Study, wiederholten Aufruf, Rücknahme und Rollback
+bei Erstellfehler. Gespeicherte Template-/Instanzgeometrien separat gelesen.
+Diese Checks belegen noch keine reale Projektion oder GPU-Performance.
+Manuelle Anwendung, gebündelte Raumprüfung und neue TD-Sicherung offen.
+
+Manuell im TD-Python-Textport:
+
+```python
+exec(compile(open(r'C:\dev\Promotion_Prototypen\AISI\td_builders\isolate_aisi_tabletop_targets.py', encoding='utf-8').read(), 'isolate_aisi_tabletop_targets.py', 'exec'))
+```
+
+Gebündelt prüfen: eigene/fremde Zielkontur bei Teilüberlappung, mehrere Tische
+bewegen/drehen, Tischabgang/Rückkehr und Count-Wechsel, Formatwechsel sowie
+Tracking → AISI. Source-/Pfeildarstellung und Floor unverändert, keine fremden
+Zielkonturen auf Tabletop, keine neuen Aussetzer/Flackern; GPU-Belastung live
+beobachten. Kalibrierung, Homographien und Edge-Blend unverändert.
+
+Erster manueller Aufruf des Tabletop-Isolationshelfers bricht beim Transparent-
+TOP ab: `par[name] = 0` wird von TD nicht als Wertzuweisung akzeptiert.
+Korrigiert auf `par[name].val = 0`; Testdouble lehnt die falsche API nun ebenfalls
+ab. 59 fokussierte Tests erneut bestanden. Fehler liegt vor Anschluss des neuen
+Zweigs und im abgesicherten Rücknahmeblock; tatsächlicher TD-Rückfallzustand
+nicht automatisch gelesen. Erneute Helferausführung/Liveprüfung noch offen.
+
+Zweiter Live-Aufruf zeigt zusätzlich fehlenden Constant-TOP-Parameter bei
+der angenommenen RGBA-Namensfolge. Helfer löst RGB und Alpha nun vollständig
+vor Wertzuweisung auf (insbesondere alpha statt colora). Fehlende Parameter
+liefern verfügbare Namen statt None-Zugriff. Testdouble erfindet keine Parameter
+mehr; beide Alpha-Varianten und fehlender Kanal geprüft. 60 Tests bestanden,
+erneute manuelle Anwendung offen. Keine reale Erfolgsbestätigung behauptet.
+
+Live-Anwendung meldet erfolgreichen Aufbau, Johannes sieht danach jedoch keine
+Tabletop-Informationen. Rücknahme sofort angeleitet; deren Ausführung noch nicht
+bestätigt. Konkreter Kontextfehler gefunden: die kopierte Source-/Pfeil-Geometrie-
+Expression verwendet parent().findChildren und sucht im neuen Unter-COMP statt
+im Layout-COMP. Korrigiert auf native absolute Pfade für alle fünf Source-/
+Pfeilpaare, vor Anschluss echte OP-Auswahl prüfen, ebenso aktive Ziele/Masken.
+62 Tests bestanden. Dies erklärt die fehlenden Sources/Pfeile; vollständige
+Bildkorrektheit ist noch nicht physisch nachgewiesen.
+
+Der manuelle Helfer bereitet ab jetzt standardmäßig nur eine getrennte Vorschau
+vor und lässt den ursprünglichen Ausgang aktiv. Eigene ältere aktive Version
+wird zunächst zurückgenommen. Vorschau-TOP:
+`comp_layout_proposal/aisi_own_tabletop_targets/slot4_add`.
+Erst nach Sichtprüfung `activate_aisi_tabletop_targets(op)` verwenden; bekannte
+Operatorfehler verhindern die Aktivierung. Keine neue Live-Erfolgsbehauptung.
+
+## Renderzweig verworfen; Polygon-Clipping vorbereitet — 2026-10-21
+
+Johannes meldet starke Verzögerung bereits bei vorbereiteter Vorschau. Weiterhin
+sichtbare fremde Ziele sind im nicht aktivierten Vorschauzustand erwartbar, da
+der ursprüngliche Ausgang aktiv bleibt. Sofortige vollständige Rücknahme des
+Vorschauzweigs angeleitet. Zusätzliche Render-/Maskenpässe sind verworfen.
+
+Neuer Helfer `td_builders/clip_aisi_tabletop_targets.py`: ausschließlich
+Tabletop-Target-SOP-Callbacks in Template/Instanzen ergänzen. Ursprüngliche
+Kontur erzeugen, ihre Polygone geometrisch an der vorhandenen kanonischen
+Source-Fläche desselben Items beschneiden. Source-Fläche mit bestehenden
+Source-/Target-Geo-Posen ins Target-Lokalsystem transformieren; kein neuer
+Footprint, keine neuen Koordinatenkonventionen. Fehlende Source sperrt Target.
+Tracking/Study umgehen die Beschneidung. Keine zusätzlichen Renderer, keine
+Änderung an bestehenden Render-, Masken- oder Projektorparametern. Alter eigener
+Vorschauzweig wird vor Anwendung entfernt und ursprünglicher Ausgang verbunden.
+Kein Force-Cook/Speichern; Callback-Rücknahme mit
+`restore_clipped_aisi_tabletop_targets(op)`, auch für inzwischen neue Replikate.
+
+49 fokussierte Tests bestanden; zusätzlich 240 Fälle mit echten gespeicherten
+TD-149-Target-Callbacks und Style-DAT geprüft. Live-Anwendung/Performance und
+physische Zielisolation noch offen. Der alte Renderzweig-Helfer lässt sich nicht
+mehr versehentlich direkt aktivieren. Keine Erfolgsbehauptung für neue Variante.
+
+```python
+exec(compile(open(r'C:\dev\Promotion_Prototypen\AISI\td_builders\clip_aisi_tabletop_targets.py', encoding='utf-8').read(), 'clip_aisi_tabletop_targets.py', 'exec'))
+```
+
+Lag-Eingrenzung am 2026-10-21: Johannes bestätigt Rücknahme des Renderzweigs,
+Lag bleibt. GPU-Stichprobe 45 %, ca. 4.5/10 GiB belegt, keine belegte GPU-Sättigung.
+Konkrete Offline-Messung derselben aktuellen Fünf-Tisch-Discussion-8-Szene:
+prepare_scene_output bei Stärke 0.95 ca. 2287.9 ms, bei 1.0 ca. 0.3 ms.
+Die laufende UI hatte 0.95 gespeichert; auf vorgesehenen 100-%-Betrieb über
+bestehenden /set-Endpunkt zurückgestellt. Dies ist eine belegte Senderbremse,
+kein vollständiger Ende-zu-Ende-Latenznachweis.
+Währenddessen öffnet Johannes TD-Version 149 neu und startet Layout-Launcher;
+zuvor laufende Adapter/Sender blieben offen, daher zwei Ketten je Modul.
+Alle Adapter-/Senderprozesse gezielt bereinigt und genau eine validierte Kette
+mit beiden Bindings/frischer Szene/0.05-s-Intervall gestartet; neue Vision/TD
+beibehalten. Protokolle lokal `data/aisi/debug/lag_diagnosis_20261021/`.
+Danach Discussion 8/100 %, fünf Tische, ready. Clipping-Helfer noch nicht live
+angewendet, physische Lag-Bestätigung nach Bereinigung noch offen.
+
+## Discussion-Lag: Live-Versand von Planung entkoppelt — 2026-10-21
+
+Johannes grenzt den weiterhin sichtbaren Lag ein: Vision direkt, TD/Projektion
+verzögert; Input flüssig, Discussion langsam. Die frühere Einordnung allein
+über 95 % war unvollständig: neue Fünf-Tisch-Discussion-8-Szene braucht auch bei
+100 % ca. 2068 ms ohne Profiler. cProfile weist den Hauptanteil _solve_topology,
+_attach_parking und _compact_park_targets zu. Posegenaue Cache-Schlüssel werden
+bei Trackingrauschen neu; keine Cache-Quantisierung/Layout-Regeländerung.
+
+`aisi.app.live_layout_worker`: genau ein Hintergrundauftrag, keine anwachsende
+Queue. Der Discussion-Vorschaupfad im Sender wartet nicht mehr synchron auf
+Layoutberechnung. Währenddessen aktuelle Sources auf letzten gültigen Slots,
+Live-Occupancy und bestehende Study-Track-Kanäle weiter senden; letzte Ziele/
+Chairs erhalten. Ergebnisse bei veränderter Anfrage, IDs/Reihenfolge, ROI,
+Geometrie oder aktiver Bindung verwerfen. Source-Posen eines abgeschlossenen
+Vorschlags vor Versand auf aktuellen Stand bringen, ohne Slotpermutation.
+Leere Szenen/Tracking-only/Input/Groupwork bleiben auf bisherigen direkten
+Pfaden. Bei Formatwechsel Ergebnis invalidieren. Ziele können weiterhin langsamer
+neu berechnet werden; keine Echtzeitgarantie für Discussion-Planung behauptet.
+
+68 fokussierte Tests bestanden, darunter blockierter Planner bei fortlaufenden
+Source-Nachrichten, keine Warteschlange, veraltete Anfrage, Invalidierung,
+Fehler/Recovery und Erhalt der ID-Bindung. Offline-Integration mit realer Szene:
+92 Source-Updates in fünf Sekunden, Median 51.0 ms, maximal 65.7 ms Abstand.
+Nur Sender mit unveränderten Argumenten neu geladen; Input 8, fünf Tische, ready,
+Fehlerlog leer. Logs lokal `data/aisi/debug/discussion_async_20261021/`.
+Physische Discussion-Prüfung noch offen; neuer Polygon-Clipping-Helfer bleibt
+bis dahin unangewendet. Kalibrierung/Geometrie/Layout-Regeln unverändert.
+
+## Neuer Auftrag: Vorschläge nach Generierung stabil halten — 2026-10-21
+
+Johannes erklärt die fortlaufende quelladaptive Neuberechnung ausdrücklich für
+nicht notwendig: nur Sources sollen nach der Generierung weiterlaufen; der
+Vorschlag bleibt stabil. Umsetzung für Input, Groupwork und Discussion im
+Layout-Vorschaupfad: einmal gültigen vollständigen Vorschlag pro Anfrage und
+Inventar speichern, aktuelle Source-Posen per ID bei jedem Versand auffrischen.
+Target-/Chairdaten bleiben bei Bewegung/Rotation/Jitter unverändert. Bei
+geänderter Anfrage, ROI, Tischinventar/-reihenfolge/-geometrie oder manueller
+Generierungsrevision neue Planung. Count/Abgang und veraltete Ziele weiterhin
+explizit behandeln. Tracking-only und Legacy-Passthrough unverändert.
+
+Format-UI bietet „Neu generieren“. Additiver lokaler State layout_revision wird
+UI/Sender/Status konsistent mitgeführt; keine OSC-Vertragsänderung. Sichtbarkeits-
+toggles lösen keine Neuplanung aus. Nebenfehler korrigiert: POST ohne
+presentation_side darf bestehende Vortragsseite nicht leeren, sonst würde etwa
+Chairs Off/On unabsichtlich Layout-Eingaben ändern.
+
+73 Tests bestanden; synthetische Source-Bewegung/-Rotation hält Ziele und
+Chairs unverändert, Revision/Inventar invalidieren, UI-Button/Persistenz geprüft.
+Offline-Integration reale Discussion-Szene: initial 1945.1 ms, anschließend 100
+bewegte Source-Updates bei identischen Zielen/Chairs, im Mittel 0.144 ms je Update.
+Sender und UI mit bisherigen Argumenten neu geladen; aktueller Zustand Input 8,
+100 %, fünf Tische, ready, neuer Knopf im HTTP-HTML, Senderfehlerlog leer.
+Logs lokal `data/aisi/debug/stable_proposal_20261021/`.
+Gebündelte physische Prüfung und Rückkehr zum noch unangewendeten Polygon-
+Clipping stehen aus. Frühere Beobachtung kontinuierlich quelladaptiver Ziele
+ist damit bewusst abgelöst, nicht rückwirkend als Implementierungsfehler gewertet.
+
+Johannes bestätigt am 2026-10-21 die neue Vorschlagsbindung im Raum:
+Vorschläge bleiben stabil, Sources folgen flüssig. Rückkehr zum Tabletop-Fix
+explizit beauftragt. Aktueller HTTP-Zustand Groupwork 15/4, fünf Tische, 100 %,
+Revision 1, ready; diesen Zustand nicht ungefragt ändern. Polygon-Clipping-
+Helfer erneut fokussiert geprüft; vor Callback-Mutation jetzt vorhandene Source-
+Punkte und tatsächliche TD-Primitive-vertices-API prüfen. Keine zusätzlichen
+Renderer. Manuelle Anwendung und physische Prüfung weiterhin ausstehend.
+
+Erster manueller Polygon-Clipping-Aufruf bricht vor Mutation in der neuen
+Vorprüfung ab: echte TD-Poly besitzt keine .vertices-Eigenschaft. Umgestellt
+auf direkte Vertex-Iteration (for vertex in primitive); Testdouble enthält
+keine erfundene vertices-Eigenschaft mehr. 16 fokussierte Checks bestanden.
+Vorheriger Graph durch diesen Aufruf unverändert; erneute Anwendung offen.
+
+Polygon-Clipping manuell angewendet: sechs Callbacks, keine zusätzlichen
+Renderer. Johannes meldet anschließend keine Zielrechtecke mehr auf Tabletop,
+Sources/Pfeile aber weiterhin sichtbar. Ursache noch offen: keine eigene
+geometrische Überlappung, falsche Beschneidung oder TD-Callbackfehler unterscheiden.
+Lesender Helfer inspect_tabletop_target_clip.py vorbereitet: aktuelle Source-/
+Target-Posen, SOP-Fehler und tatsächliche Primitive; ungeclippte Kontur in reinem
+Python-Recorder mit Originalfunktion nachbilden, erwarteten eigenen Schnitt
+ermitteln. Keine TD-SOP-/Operator-Mutation, kein Force-Cook. Bericht nach
+manueller Ausführung lokal data/aisi/debug/tabletop_target_clip.json auswerten.
+
+Lesender Livebericht tabletop_target_clip.json beweist Ursache für leere Ziele:
+Source-SOP enthält acht Punkte, aber die kanonische Fläche referenziert nur vier.
+Vier zusätzliche unreferenzierte appendPoly-Defaultpunkte wurden fälschlich als
+zusätzliche Randvertices verwendet. Alle fünf erwarteten Schnitte deshalb leer,
+obwohl Source-/Target-Posen nahezu deckungsgleich; keine Callbackfehler.
+Korrektur v2 verwendet ausschließlich Vertices des einen Source-Flächenpolygons,
+keine Änderung am vorhandenen Surface-SOP oder physischer Maskenkette. Regressions-
+fixture bildet zusätzliche unbenutzte Punkte ab. 18 fokussierte Tests bestanden;
+Replay aller fünf berichteten Posen liefert wieder sichtbare Zielsegmente.
+Helfer aktualisiert bestehende v1-Callbacks ohne doppelten Wrapper und behält die
+ursprüngliche Rückfallkopie. Erneute manuelle Ausführung/Liveprüfung noch offen.
+
+Johannes bestätigt Polygon-Clipping v2 live am 2026-10-21: eigene Zielkonturen
+wieder sichtbar, fremde erscheinen nicht mehr auf Tischplatten. Sources und
+Pfeile bleiben flüssig. Erste physische Zielisolation damit bestanden; noch
+keine neue TD-Sicherung. Laufzeitabgleich Groupwork 15/4, fünf Tische, 100 %,
+Revision 1, ready; Senderfehlerlog leer. Nächster gebündelter Liveblock:
+Formate bei gleichbleibend 15 Personen wechseln, Sources über eigene/fremde
+Ziele bewegen/drehen, Tischabgang/Rückkehr, Chairs Off/On und Tracking → AISI.
+Erwartung: Vorschlag bei reiner Bewegung stabil, eigene Tabletop-Ziele korrekt
+beschnitten, keine fremden Ziele/alten Elemente, nach Wechsel/Rückkehr ruhiges
+Bild. Testresultat dieses Folgeblocks noch offen; Kalibrierung unverändert.
+
+## Gebündelte Tabletop-Abnahme bestanden — 2026-10-21
+
+Johannes bestätigt Formatwechsel, Tischabgang/-rückkehr, Chairs Off/On und
+Tracking → AISI: nur eigene Zielkonturen auf den Tabletops, Bodenausgabe
+unverändert, Sources/Pfeile und gesamte Darstellung flüssig. Polygon-Clipping
+v2 und stabile Vorschläge damit für diesen gebündelten Lab-Durchlauf bestanden.
+Aktueller Laufzeitstatus Input 15, fünf Tische, 100 %, Revision 1, ready;
+Senderfehlerlog leer. Kalibrierung/Homographien/Edge-Blend unverändert.
+
+Johannes möchte den Stand sichern. Neue manuelle TD-Sicherung und anschließender
+Öffnungscheck noch ausstehend. Im TD-Ordner existiert bereits
+`AISI_v2.150_Grafik_überarbeitet.toe`; diese Datei nicht überschreiben.
+Vorschlag für neue Sicherung: `AISI_v2.151_tabletop_targets_validated.toe`.
+Prozessargument nennt weiterhin die beim Prozessstart geladene Version 149;
+dies beweist nicht den aktuellen Save-As-Pfad. Keine automatische TD-Speicherung.

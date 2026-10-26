@@ -15,9 +15,17 @@ def status_path() -> Path:
 
 def request_key(mode: str, strength: float, parameters: dict) -> dict:
     return {'learning_format': mode, 'transformation_strength': float(strength),
+            'layout_revision': request_revision(parameters),
             **{name: parameters.get(name, default) for name, default in (
                 ('participants', 4), ('number_of_groups', 2),
                 ('presentation_side', None), ('adaptive_layout_preview', False))}}
+
+
+def request_revision(parameters):
+    try:
+        return max(0, int(parameters.get('layout_revision', 0)))
+    except (TypeError, ValueError):
+        return 0
 
 
 class LayoutStatusPublisher:

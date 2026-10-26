@@ -32,6 +32,7 @@ Statuses:
 - D011 Physical calibration protection
 - D012 TouchDesigner source of truth
 - D012a Gemeinsame AISI-/Study-Gestaltung
+- D012b Tischbezogene AISI-Tabletop-Zielkonturen
 - D013 Rendering backends
 
 ### Study
@@ -267,6 +268,16 @@ keine Ersetzung durch einen anderen erkannten Tisch. Additive Verfügbarkeit
 
 ## D009 — Discussion topology
 
+Laufzeitpräzisierung durch Johannes am 2026-10-21, für alle drei Formate:
+Die initiale Generierung darf die aktuellen Sources verwenden; anschließend
+bleiben Ziel-Tische und Chairs stabil. Reine Source-Bewegung/-Rotation und
+Trackingrauschen lösen keine Neuplanung aus. Neue fachliche Layout-Eingaben,
+geändertes Tischinventar/Geometrie/ROI oder „Neu generieren“ erzeugen einen
+neuen Vorschlag. Sichtbarkeit Off/On ändert die Planung nicht. Source-Posen und
+Pfeile folgen unabhängig weiter; Source-/Target-ID-Bindung bleibt erhalten.
+Johannes bestätigt anschließend live: Vorschläge bleiben stabil, Sources folgen
+flüssig. Damit ist die neue Laufzeitsemantik in dieser Stichprobe bestätigt.
+
 Status: **Accepted**
 
 Johannes präzisiert die teilnehmerabhängige Chair-Vorschau am 2026-10-15.
@@ -334,6 +345,24 @@ Status: **Accepted — expliziter Auftrag von Johannes am 2026-10-07**
   manueller Korrektur vier weiße Kreise und gute physische Lesbarkeit.
 - Study-/Tracking-Zweige, Masken, Kalibrierung und Projektorkonfiguration
   bleiben geschützt; physische Raumvalidierung bleibt separat.
+
+## D012b — Tischbezogene AISI-Tabletop-Zielkonturen
+
+Ergänzung am 2026-10-21 auf ausdrücklichen Auftrag: Auf einer physischen
+Tischfläche darf im AISI-Modus nur die zu diesem Tisch gehörige Tabletop-
+Zielkontur erscheinen. Zielgeometrie vor dem gemeinsamen Rendern jeweils an der
+Source-Fläche desselben OSC-Slots beschneiden. Fehlende Sources sperren ihren
+Zielanteil; keine Neuzuordnung bei veraltetem Vorschlag. Bestehende Source-
+Konturen/Pfeile bleiben erhalten; Study/Tracking verwenden den bisherigen Pfad.
+Kalibrierung, Homographien und Edge-Blend bleiben unverändert. Johannes bestätigt
+die erste Live-Stichprobe am 2026-10-21: eigene Ziele sichtbar, fremde auf den
+Tischplatten ausgeblendet, Sources und Pfeile flüssig. Anschließend gebündelt
+Formatwechsel, Tischabgang/-rückkehr, Chairs Off/On und Tracking → AISI bestätigt:
+nur eigene Tabletop-Ziele, Boden unverändert, flüssige Ausgabe.
+Gespeicherte Version 151 anschließend erneut geöffnet und durch Johannes
+bestätigt: eigene Ziele und flüssige Sources erhalten, Folgeblock abgeschlossen.
+Der zunächst erprobte zusätzliche Renderzweig ist wegen starker Live-Verzögerung
+verworfen; Polygon-Clipping nutzt die bestehenden Target-SOPs und Source-Flächen.
 
 ## D013 — Rendering backends
 

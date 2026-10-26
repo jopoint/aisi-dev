@@ -11,12 +11,14 @@ import json
 import sys
 import threading
 import time
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
 from aisi.app.sim_layout_rules import compute_synthetic_layout, compute_target_layout
 from aisi.app.study_tracking import StudyActiveTrackBindingStore, StudyTableTrackBindingStore
-from aisi.app.layout_runtime_status import LayoutStatusPublisher, request_key
+from aisi.app.layout_runtime_status import LayoutStatusPublisher, request_key, request_revision
+from aisi.app.live_layout_worker import LiveLayoutWorker, StableLayoutProposal, layout_job_key, current_source_poses
 from aisi.core.table_geometry import TABLE_TYPE_IDS, TABLE_TYPE_NAMES
 
 try:
@@ -270,7 +272,8 @@ def load_activity_parameters(path: Path) -> dict[str, object]:
         with path.open("r", encoding="utf-8") as handle:
             data = json.load(handle)
     except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return {"participants": 4, "number_of_groups": 2, "presentation_side": None, "adaptive_layout_preview": False}
+        return {"participants": 4, "number_of_groups": 2, "presentation_side": None, "adaptive_layout_preview": False,
+                "layout_revision": 0}
     try:
         participants = max(1, int(data.get("participants", 4)))
         groups = max(1, int(data.get("number_of_groups", 2)))
@@ -283,6 +286,7 @@ def load_activity_parameters(path: Path) -> dict[str, object]:
         "number_of_groups": groups,
         "presentation_side": side if side in {"north", "east", "south", "west"} else None,
         "adaptive_layout_preview": preview_enabled,
+        "layout_revision": request_revision(data),
     }
 
 
@@ -709,6 +713,8 @@ def main() -> None:
     status_publisher = LayoutStatusPublisher()
     previous_request = None
     last_valid_layout_tables: list[dict[str, Any]] = []
+    layout_worker = LiveLayoutWorker()
+    stable_proposal = StableLayoutProposal()
     sender_started_wall_ns = time.time_ns()
 
     try:
@@ -783,16 +789,45 @@ def main() -> None:
                 study_table_tracks_binding.read() if study_table_tracks_binding is not None else (False, None, {})
             )
             try:
-                tables, persons, chairs, targets, tracking_rejection = prepare_scene_output(
-                    scene,
-                    layout_mode,
-                    transformation_strength,
-                    tracking_only=args.tracking_only,
+                prepare_kwargs = dict(tracking_only=args.tracking_only,
                     tracking_table_id=args.tracking_table_id,
                     study_active_binding_present=binding_present,
                     study_active_track_id=active_track_id,
-                    activity_parameters=activity_parameters,
-                )
+                    activity_parameters=activity_parameters)
+                retain_proposal = (not args.tracking_only
+                    and activity_parameters.get('adaptive_layout_preview') is True and bool(scene.get('tables')))
+                job_key = layout_job_key(scene, status_request, binding_present, active_track_id)
+                if retain_proposal:
+                    cached_output = stable_proposal.get(job_key)
+                else:
+                    stable_proposal.clear()
+                    cached_output = None
+                if cached_output is not None:
+                    layout_worker.invalidate()
+                    tables, persons, chairs, targets, tracking_rejection = cached_output
+                elif retain_proposal and layout_mode == 'discussion':
+                    ready, output = layout_worker.poll(
+                        job_key,
+                        prepare_scene_output, deepcopy(scene), layout_mode, transformation_strength,
+                        **deepcopy(prepare_kwargs))
+                    if not ready:
+                        # Schwere Discussion-/Parkplanung darf das Live-Tracking nicht anhalten.
+                        send_layout_source_presence(client, scene, last_valid_layout_tables, refresh_poses=True)
+                        send_live_rect_tables(client, scene)
+                        send_study_tracked_tables(client, scene, study_bindings)
+                        status_publisher.publish(status_request, 'calculating', available_tables,
+                            'Discussion wird berechnet; Live-Sources laufen weiter, letzte Ziele bleiben sichtbar.')
+                        time.sleep(args.interval)
+                        continue
+                    tables, persons, chairs, targets, tracking_rejection = output
+                else:
+                    layout_worker.invalidate()
+                    tables, persons, chairs, targets, tracking_rejection = prepare_scene_output(
+                        scene, layout_mode, transformation_strength, **prepare_kwargs)
+                if retain_proposal:
+                    if cached_output is None:
+                        stable_proposal.store(job_key, (tables, persons, chairs, targets, tracking_rejection))
+                    tables = current_source_poses(tables, scene)
             except ValueError as exc:
                 if not args.tracking_only:
                     status_publisher.publish(status_request, "invalid", available_tables, str(exc))
@@ -860,6 +895,8 @@ def main() -> None:
             time.sleep(args.interval)
     except KeyboardInterrupt:
         print("\nBeendet.")
+    finally:
+        layout_worker.close()
 
 
 if __name__ == "__main__":

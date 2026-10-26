@@ -1,10 +1,30 @@
 # AISI TODO
 
-Stand: 2026-10-19
+Stand: 2026-10-26
 
 Use this file to choose the next coherent task. Do not execute all items automatically. Completed implementation history belongs in Git and the handoff documents, not in this checklist.
 
 ## NOW — Participant-based Input / TouchDesigner integration
+
+Folgeblock 2026-10-21 abgeschlossen: stabile Vorschläge und pro Tisch isolierte
+Tabletop-Zielkonturen einschließlich gebündelter Liveprüfung, manueller TD-
+Sicherung als `AISI_v2.151_tabletop_targets_validated.toe` und erneutem Öffnen.
+Zwischenblock Discussion-Lag: schwere Planung vom Live-OSC-Versand entkoppelt,
+auf neuen Auftrag gültige Vorschläge anschließend bei Source-Bewegung stabil
+halten (alle drei Formate). Neu-generieren-Knopf ergänzt; 73 Tests/100 Bewegungs-
+updates offline bestanden. Johannes bestätigt anschließend live: Vorschläge
+bleiben stabil, Sources folgen flüssig. Zwischenblock abgeschlossen.
+Zusätzlicher Renderzweig nach Live-Verzögerung verworfen. Neuer rücknehmbarer
+Helfer `td_builders/clip_aisi_tabletop_targets.py` beschneidet Zielpolygone an
+der bestehenden Source-Fläche, ohne weitere Renderer. Alter Vorschauzweig wird
+entfernt. Polygon-Clipping v2 durch Johannes angewendet und gebündelt live
+bestanden: eigene Ziele auf Tabletop isoliert, Formatwechsel, Abgang/Rückkehr,
+Chairs Off/On und Tracking → AISI korrekt, Boden unverändert, alles flüssig.
+Version 151 durch Johannes gespeichert und erneut geöffnet: Sources flüssig,
+nur eigene Tabletop-Ziele, alles korrekt. Kein weiterer Prüfschritt dieses Blocks
+offen. Git-Sicherung des Folgeblocks am 2026-10-26 beauftragt, Übergabe auf
+`codex/lab-inbetriebnahme-20261021`; Laufzeit-/Debug-/Kalibrierungsdaten und
+fremde Vision-Änderungen ausgeschlossen. TD-Datei 151 bleibt außerhalb von Git.
 
 Inbetriebnahmeblock am 2026-10-19 abgeschlossen. Die folgenden Lab-Prüfblöcke
 sind technisch und durch Johannes im Raum für die geprüften Stichproben bestanden:
