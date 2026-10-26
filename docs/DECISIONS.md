@@ -92,6 +92,15 @@ Status: **Accepted**
 - Repair may override the visually requested strength when required by hard constraints.
 - Invalid collision/ROI results must not be silently reported as valid.
 
+## D005a — Aktivierte Motion-Layouts bleiben fest
+
+Status: **Accepted — ausdrückliche Präzisierung durch Johannes am 2026-10-23**
+
+- Beim expliziten Aktivieren eines Vorschlags darf der bestehende Generator aus den aktuellen Istposen berechnen.
+- Danach bleiben Tischziele und Stuhlpositionen gemeinsam bis zur nächsten erfolgreichen Aktivierung eingefroren. Laufende Tischbewegung und Änderungen der Lernformat-Einstellungen aktivieren keinen neuen Vorschlag.
+- Eine neue erfolgreiche Aktivierung übernimmt die vollständige ID-gebundene Ziel-/Chair-Menge und erhöht genau einmal die Layoutrevision. Fehlgeschlagene Berechnung erhält den bisherigen Vorschlag.
+- Diese Regel wird zunächst im neuen Motion-Simulationsanschluss umgesetzt. Bestehende Generatorregeln, Study-/Tracking-Pfade und die Laborinstallation werden dadurch nicht verändert.
+
 ## D006 — Maximum layout capacity
 
 Status: **Accepted**

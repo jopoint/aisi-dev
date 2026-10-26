@@ -426,7 +426,7 @@ def reset_items(items: list[dict], initial_items: list[dict]) -> None:
     items[:] = copy.deepcopy(initial_items)
 
 
-def print_help() -> None:
+def print_help(path: Path | None = None) -> None:
     """Print the keyboard and mouse controls."""
     print("Bedienung:")
     print("  T: Typ des ausgewählten Tischs wechseln")
@@ -441,7 +441,7 @@ def print_help() -> None:
     print("  J: Jitter für Personen/Stühle an/aus")
     print("  O: Occlusion-Dropout für Personen/Stühle an/aus")
     print("  ESC: beenden")
-    print(f"Autosave: {scene_file_path()}")
+    print(f"Autosave: {path if path is not None else scene_file_path()}")
 
 
 def table_label(table: dict) -> str:
@@ -465,9 +465,10 @@ def cycle_table_type(table: dict) -> str:
 class SimRoomEditor:
     """Small tkinter-based room editor."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, scene_path: Path | None = None) -> None:
         global SCALE_PX_PER_CM, WINDOW_WIDTH_PX, WINDOW_HEIGHT_PX
 
+        self.scene_path = Path(scene_path) if scene_path is not None else scene_file_path()
         self.root = tk.Tk()
         self.root.title("AISI Sim Room Editor")
         self.root.configure(bg=BG_COLOR)
@@ -565,7 +566,7 @@ class SimRoomEditor:
     def save_now(self) -> None:
         """Save immediately and refresh the autosave timer."""
         save_scene(
-            scene_file_path(),
+            self.scene_path,
             self.tables,
             self.chairs,
             self.persons,
@@ -893,7 +894,7 @@ class SimRoomEditor:
             8,
             28,
             anchor="nw",
-            text=f"Autosave: {scene_file_path().name}",
+            text=f"Autosave: {self.scene_path.name}",
             fill=TEXT_COLOR,
             font=("TkDefaultFont", 10),
         )
@@ -917,7 +918,7 @@ class SimRoomEditor:
         now = time.monotonic()
         if now - self.last_save_time >= SAVE_INTERVAL_SECONDS:
             save_scene(
-                scene_file_path(),
+                self.scene_path,
                 self.tables,
                 self.chairs,
                 self.persons,
@@ -930,7 +931,7 @@ class SimRoomEditor:
 
     def run(self) -> None:
         """Start the tkinter event loop."""
-        print_help()
+        print_help(self.scene_path)
         self.save_now()
         self.redraw()
         self.autosave_tick()
