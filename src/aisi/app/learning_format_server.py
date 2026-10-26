@@ -13,7 +13,7 @@ import socket
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
-from aisi.app.layout_runtime_status import read_status
+from aisi.app.layout_runtime_status import read_status, request_revision
 
 
 DEFAULT_PORT = 8080
@@ -54,6 +54,7 @@ def default_state() -> dict[str, object]:
         "number_of_groups": DEFAULT_NUMBER_OF_GROUPS,
         "presentation_side": None,
         "adaptive_layout_preview": False,
+        "layout_revision": 0,
     }
 
 
@@ -111,6 +112,7 @@ def read_state() -> dict[str, object]:
     side = data.get("presentation_side")
     state["presentation_side"] = side if side in VALID_PRESENTATION_SIDES else None
     state["adaptive_layout_preview"] = data.get("adaptive_layout_preview") is True
+    state["layout_revision"] = request_revision(data)
 
     return state
 
@@ -142,6 +144,7 @@ def write_state(state: dict[str, object]) -> bool:
     side = state.get("presentation_side")
     payload["presentation_side"] = side if side in VALID_PRESENTATION_SIDES else None
     payload["adaptive_layout_preview"] = state.get("adaptive_layout_preview") is True
+    payload["layout_revision"] = request_revision(state)
 
     path = state_file_path()
     temp_path = path.with_suffix(".tmp")
@@ -292,6 +295,9 @@ def build_html(
     <button class=\"groupwork\" type=\"submit\" name=\"learning_format\" value=\"groupwork\">2. Groupwork</button>
     <button class=\"discussion\" type=\"submit\" name=\"learning_format\" value=\"discussion\">3. Discussion</button>
   </form>
+  <form method="post" action="/set">
+    <button type="submit" name="action" value="regenerate">Neu generieren</button>
+  </form>
   <form class="slider-card" method="post" action="/set">
     <label style="display:flex; gap:10px; align-items:center; font-size:1.15rem">
       <input type="checkbox" name="adaptive_layout_preview" value="on" {'checked' if adaptive_layout_preview else ''} onchange="this.form.submit()">
@@ -406,7 +412,7 @@ class LearningFormatHandler(BaseHTTPRequestHandler):
 
         content_length = int(self.headers.get("Content-Length", "0"))
         body = self.rfile.read(content_length).decode("utf-8")
-        form_data = parse_qs(body)
+        form_data = parse_qs(body, keep_blank_values=True)
         selected = form_data.get("learning_format", [""])[0]
         toggle = form_data.get("toggle", [""])[0]
         transformation_strength_raw = form_data.get("transformation_strength", [""])[0]
@@ -417,6 +423,10 @@ class LearningFormatHandler(BaseHTTPRequestHandler):
 
         state = read_state()
         changed = False
+
+        if form_data.get('action', [''])[0] == 'regenerate':
+            state['layout_revision'] = request_revision(state) + 1
+            changed = True
 
         if selected in VALID_LEARNING_FORMATS:
             state["learning_format"] = selected
@@ -442,7 +452,7 @@ class LearningFormatHandler(BaseHTTPRequestHandler):
         if groups_raw != "":
             state["number_of_groups"] = _positive_int(groups_raw, DEFAULT_NUMBER_OF_GROUPS)
             changed = True
-        if presentation_side in VALID_PRESENTATION_SIDES or presentation_side == "":
+        if 'presentation_side' in form_data and (presentation_side in VALID_PRESENTATION_SIDES or presentation_side == ""):
             state["presentation_side"] = presentation_side or None
             changed = True
         # An unchecked checkbox is omitted by HTML forms; this field belongs to
