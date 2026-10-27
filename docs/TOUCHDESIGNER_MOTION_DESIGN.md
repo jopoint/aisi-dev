@@ -1,5 +1,453 @@
 # AISI Motion Design — Integrationsstand
 
+## Untertisch-Versuch pausiert — 2026-10-27
+
+Johannes möchte den zeitaufwendigen Versuch vorerst zurückstellen. Aktueller
+Arbeitsstand, geprüfte Modelle, tatsächliche TD-2022-Diagnose und konkreter
+Wiedereinstieg sind in [der Untertisch-Übergabe](TOUCHDESIGNER_UNDER_TABLE_HANDOFF.md)
+gesichert. Keine weitere Arbeit ohne neuen Auftrag. Bestehende Motion-Ausgabe
+weiterhin unverändert, kein Untertisch-Produktivpatch oder Raumversuch, keine
+Kalibrierungs-/Maskenänderung oder automatische Speicherung. Neuer Folgeauftrag
+autorisiert ausschließlich Commit/Push: Grafikänderungen, Helfer, Tests und diese
+Übergabe einschließlich der unvollständigen nativen Probe werden gemeinsam
+gesichert. Untertisch-Versuch bleibt pausiert und nicht produktiv installiert.
+Motion-Prüfung zur Sicherung erneut 345 bestanden, sieben optionale GPU-Fälle
+übersprungen. Laufzeit-/Kalibrierungsdaten und lokale Simulationsszene ausgenommen. Wiederaufnahme
+bei nativer Format-/Chair-Auflösungsvorbereitung, erfolgreiche Weltbild- und
+Float32-Projektorprüfungen nicht unnötig wiederholen.
+
+## Aktuell: native Ausgabe plus finale Tabletop-Komposition vorbereitet — 2026-10-27
+
+Neuer ausdrücklich beauftragter isolierter Helfer
+`prepare_motion_under_table_native_probe.py` mit `prepare(op,projector=0/1)`,
+`check(op)`, `cleanup(op)`, ohne produktive Installationsfunktion. Eigener
+Simulations-State und Kopien tatsächlicher Motion-Renderer, nativer Select-
+Resampling-Stufen und Masken-/Floor-/Tabletop-Komposition. Chair-Quelle als
+einmaliger Bildsnapshot, damit der Vorher-/Nachhervergleich keine Live-Animation
+zwischen Messungen enthält; tatsächliche Ziele/Chairs werden nicht verändert.
+Rohe Originalmasken-Alpha-Konvention wird lesend als konstant eins oder Coverage
+erkannt und im synthetischen Maskenraster nachgebildet; sonst Abbruch. Reorder-
+Einstellungen, Masken-Multiply und Null-/Select-Stufen kopiert. Content-/Layer-
+Steuerung nur gelesen; Content mit beiden Ebenen erforderlich, keine automatische
+Umschaltung. Eigene Konstanten für bestätigte Index-/Auflösungsausdrücke, sonst
+unbekannte dynamische Parameter ablehnen.
+
+Native effektive Formate/Raster aus aktuellen TOPs, keine Float32-Erzwingung.
+RGBA8/16 fixed, RGBA16/32 float unterstützt, unbekannte Speicherung abgelehnt.
+Eigene Kopien nach GPU-Kochen gegen Originalformat/Raster geprüft. Original-
+Out/Output-Null müssen unveränderte Weitergabe des finalen Composite bestätigen.
+Projektorabhängige Transformations-/Warp-/Blend-/Maskenoperationen und finale
+Tabletop-Over-Komposition kopiert, Shader und aktive Uniformkonstanten direkt
+vom laufenden Graph; keine Kalibrierung aus DATs neu anwenden.
+
+Messung: sechs Posefälle je Projektor plus completed und Source ungültig.
+Native Tabletop-Renderer-Vergleich, tatsächliche Front/Floor-Finalbilder und
+premultiplizierte Over-Referenz mit ausgewiesener formatabhängiger Rundungsgrenze.
+Gesperrte Maskenbereiche und opake Frontpixel erlauben höchstens 1e-06 RGB-
+Zusatz/Änderung unabhängig von dieser Rundungsgrenze. Gemeinsame Original-
+Signaturen inklusive Shader-/Kalibrierungs-DATs sowie native Spezifikationen,
+Steuerwerte und Engine/Reader/Revision schützen die Produktion. Ein Projektor
+pro Probe, keine Window-/Projektorverbindung, kein Speichern. Cleanup wiederholbar.
+337 Offline-Tests bestanden, sieben optionale GPU-Fälle übersprungen.
+TD-GPU- und physischer Nachweis dieser Folgestufe noch offen.
+
+Erster nativer `prepare(op,projector=0)`-Aufruf scheitert vor Einbau an unbekannter
+roher Masken-Alpha-Konvention (`raw_mask_alpha`). Eigener COMP im Fehlerpfad
+entfernt. Beide bisher unterstützten Fälle (Alpha konstant 1 oder Alpha≈Rot)
+reichen für den tatsächlich laufenden Raw-Render nicht aus. Rohe/reorderte
+RGBA-Verteilung und tatsächliche Reorder-Kanalzuordnung zuerst lesend diagnostizieren;
+keine Kalibrierungs-/Maskenänderung, keine ungeprüfte Alpha- oder Toleranzanpassung.
+
+Nach tatsächlicher Diagnose korrigiert: Raw-RGB ist nur ca. 0,098–0,102 im
+Tischinneren, während Alpha dort 1 und im Hintergrund 0 ist. Der aktive
+Reorder kopiert Alpha auf alle drei RGB-Ausgänge und setzt A auf Eins
+(`chanmask=15`, `format=useinput`). Raw-/Reorder-Pixel in gleicher Auflösung
+und genaue Parameter werden vor Modellaufbau geprüft; kein Alpha=Rot mehr
+vorausgesetzt. Im synthetischen Raw-TOP nur Coverage in A nachgebildet, RGB=0
+weil diese Kanäle nach bestätigtem Reorder verworfen werden. Kein Eingriff in
+Originalmaterial oder Renderlicht. Nachfolgende native Kopie des Reorders
+übernimmt tatsächliche Einstellungen.
+TD-2022-Fallback ergänzt: fehlende PixelFormat-Eigenschaften durch eindeutig
+belegte `useinput`-Kette auflösen, mehrere Inputs nur bei identischem Format,
+Select-Referenz folgen; unklare In-Reihenfolge/Zyklen/gemischte Formate ablehnen.
+341 Offline-Tests bestanden, sieben optionale GPU-Fälle übersprungen. Eigener
+Teilzweig des fehlgeschlagenen Versuchs war entfernt; Modul neu laden und native
+Vorbereitung erneut ausführen, GPU-Nachweis noch offen.
+
+Zweiter nativer `prepare`-Aufruf stoppt am Formatresolver des echten
+`simulation_chairs_switch` (Switch TOP) vor Chair-Snapshot. Unterschiedliche
+Formate an Switch-Eingängen sind bei eindeutiger Auswahl kein gleichzeitiger
+Mischfall. Resolver folgt jetzt nur bei deaktiviertem Blending und gültigem
+ganzzahligem Index dem gewählten Eingang, entsprechend Switch-Dokumentation.
+Ungewählte Formate nicht gleichsetzen oder erzwingen; Blending/Bruchindizes/
+ungültige Auswahl und unbekannte Composite-Mischfälle bleiben Sperrgründe.
+Kein Schreiben an Original-Switch oder Ausgabe; eigener Teilzweig entfernt.
+345 Offline-Tests bestanden, sieben optionale GPU-Fälle übersprungen.
+Neue Vorbereitung und native GPU-Prüfung weiterhin offen.
+
+Dritter nativer Versuch stoppt nach Chair-Snapshot an unbekannter Dynamik von
+`composite_floor_with_synth_chairs` (Composite TOP), eigener Teilzweig entfernt.
+Keine Originalparameter geändert. Neuer Sammelbericht `inspect_stages(op)`
+liest sämtliche vorgesehenen Kopierstufen auf dynamische Parameter und ungelöste
+Formate; liefert Namen/Modi/evaluierte Werte/Ausdrücke/Bindungen. Dadurch gezielt
+nur bestätigte Abhängigkeiten in eigenen Kopien einfrieren; keine pauschale
+Freigabe aller dynamischen Parameter. Kein Aufbau, kein explizites Kochen,
+kein Speichern. 17 fokussierte native Offline-Tests bestanden, TD-Nachweis offen.
+
+## Aktuell: Weltbildvergleich und beide kalibrierten Float32-Proben bestanden — 2026-10-27
+
+Projektor 1 vollständig zurückgemeldet mit `passed: true`: sechs Fälle,
+zusätzliche Pixel 103279–238112 (klar freier Maskenbereich 93838–230741),
+RGB-Gleichungsfehler maximal 8,195639e-08. Gesperrte Pixel
+670013/671904/671294/0/2346/37780, maximaler Zusatz 7,748604e-07 ≤ 1e-06.
+Bei (320,350)/0 Grad keine vollständig gesperrten Pixel, dort kein Sperrnachweis.
+Projektor-0-Probe laut `removed: true` zuvor entfernt; Originalkalibrierung,
+Masken und Ausgabe unverändert. Beide Proben inzwischen abwesend: Weltbild-
+Cleanup meldet `removed: true`, Ausgabe unverändert, nicht gespeichert;
+erneute Cleanup-Aufrufe melden für beide Pfade fehlende Probe, keine weitere
+Entfernung nötig. Beide Modelle zeigen zusätzliche projizierbare Zielanteile
+innerhalb des vertikalen Footprints, bei erhaltener Projektormaskierung.
+Nur Modellnachweis im isolierten Float32-Floor nach Maske, vor finalem Tabletop-
+Composite; keine physische Freigabe. Nächster Block native Formate und finale
+Komposition, erst anschließend möglicher Raumversuch. Keine Produktivinstallation.
+
+Projektor-0-Folgenachweis im laufenden TD bestanden: sechs Float32-Fälle
+(180,150)/(320,350), je 0/33/90 Grad; RGB-Gleichungsfehler maximal
+6,705523e-08, zusätzliche Pixel 49109–192815, vollständig freier Maskenanteil
+49109–183186. Bei (180,150) kein vollständig gesperrter Bildpixel erfasst;
+kein dortiger Sperrnachweis. Bei (320,350) gesperrte Pixel
+832113/835269/833759, Zusatz maximal 0/7,748604e-07/0 (Toleranz 1e-06).
+Originalmasken/Kalibrierung unverändert, unverbundene Simulation, nichts
+gespeichert. Projektor-0-Zweig entfernt und Projektor-1-Nachweis oben ergänzt.
+Native Ausgabequantisierung, finale Tabletop-Komposition und Raumvalidierung offen.
+
+Weltbild-Probe laut vollständiger TD-Ausgabe `passed: true`: zwölf GPU-Gruppen,
+neun Überlappungsfälle (0/33/90 Grad, ein/fünf Tische, Reveal). Zusätzliche
+Zielpixel 28946–164068, maximaler Muster-Floatfehler 5,9604645e-08,
+RGBA8-Abweichung 0; Tabletop Floatfehler 0. Sonderfälle und Erfolg/Redisplay
+bestanden. Unverbundene Simulation, keine produktive Shader-/Masken-/
+Kalibrierungsänderung oder Speicherung, keine physische Validierung.
+
+Nächste eigene Probe `prepare_motion_under_table_projector_probe.py` kopiert
+nur statische relevante TOPs und Shader aus tatsächlichen Projektorzweigen:
+Floor-/Masken-Homographie, aktive Uniformkonstanten, für Projektor 1 bestehende
+Floor-/Masken-Transformationen, Invert-Level und Floor-Multiply. Vorhandene
+Blend-Quellen nur lesend referenziert; keine COMPs/Callbacks kopiert und keine
+Kalibrierungs-DATs ausgeführt oder neu angewendet. Unbekannte dynamische
+Parameter/Raster/Verbindungen führen zum Abbruch. TOP-Netzwerkgrenzen mit eigenen
+Select TOPs überbrückt. Eigene Float32-Kopien bei 3840×2160 zur Isolierung von
+nativer Quantisierung; Originalformate bleiben unverändert. Ein Projektor pro
+Vorbereitung, eigene Probe vor dem anderen entfernen.
+
+Messstufe nach Floor-Maskierung und vor finalem Tabletop-Over: Differenz
+Nachher−Vorher = transformierter, geblendeter, maskierter Zusatzanteil;
+vollständig gesperrte Maskenpixel ohne Zusatzlicht. Zwei simulierte Positionen,
+drei Drehungen je Projektor. Referenz sind aktive Parameter und tatsächliche
+Shader/Korrekturen, keine idealisierten Homographien aus Buildern.
+328 Offline-Tests bestanden, sieben optionale GPU-Fälle übersprungen.
+TD-Vorbereitung/-Prüfung dieser Stufe offen. Native Ausgabequantisierung,
+finale Komposition und tatsächliche Untertischprojektion noch nicht nachgewiesen.
+
+## Aktuell: isolierter Untertisch-Contentvergleich vorbereitet — 2026-10-27
+
+Autorisiert: isolierter Versuch nur Bodenzielgrafik vom frühen Footprint-Ausschluss
+ausnehmen, bestehende Projektormaske/Kalibrierung erhalten. Neuer Helfer
+`prepare_motion_under_table_probe.py`, eigener Container COMP
+`/project1/comp_aisi_motion_under_table_probe`, Schnittstellen ausschließlich
+`prepare(op)`, `check(op)`, `cleanup(op)`. Kein Installieren oder Aktivieren.
+Vorher-/Nachher-Shader aus tatsächlichem produktivem Text, synthetischer State-TOP.
+Neue Weltbild-Floor-Ausgabe: bisherige Ausgabe unverändert plus separat überlagerte
+Ziel-Füllanteile × gemeinsame Source-Footprint-Belegung. Reveal-/Erfolgs- und
+Wiedereinblendungsfaktoren pro Ziel erhalten. Pfeile/Reveal-Welle bleiben
+ausgeschlossen, Tabletop-Code und produktiver Standardshader unberührt.
+
+Diagnostik-TOP codiert Footprint-Belegung, akkumuliertes Zielalpha und deren
+Produkt; GPU-Differenzprüfung gegen ausschließlich diesen Zusatzanteil.
+Teilweise geglättete SDF-Kanten mit bestehender enger AA-Toleranz und maximal
+einer RGBA8-Stufe, flache Regionen streng; Tabletop mit bestehendem Float32-
+Epsilon-/exaktem RGBA8-Vergleich. Fälle: 0/33/90 Grad, ein/fünf Tische,
+Reveal/Erfolg/Redisplay sowie ungültig/inaktiv/completed/ausgeblendet/ohne Überlappung.
+Prüfung ausschließlich eigener TOPs. Projektorzweige inklusive Matrizen,
+Korrektur- und Kalibrierungs-DATs/Shader/Transforms/Blending vor und nach Vergleich
+signaturgeschützt. Keine produktive Verdrahtung, keine Speicherung.
+319 Offline-Tests bestanden, sieben optionale GPU-Fälle übersprungen.
+TD-GPU-Test noch offen; Weltbildvergleich beweist keine kalibrierte
+Projektorbildraum-Erreichbarkeit oder tatsächliche Untertischprojektion.
+
+## Boden unter Tisch: laufenden Projektorgraph lesend geprüft — 2026-10-27
+
+Lesender Abschluss aus dritter Ausgabe: Tabletop und Tabletop-Maske je Projektor
+verwenden dieselben neun evaluierten h0/h1/h2-Komponenten und identischen
+Shader-Vorspann einschließlich hardcodierter lokaler Korrekturfunktion.
+Vollständige `main`-Funktionen unterscheiden sich ausschließlich im Alpha bei
+UV außerhalb ROI (Tabletop 0, Maske 1). Projektorpixel → inverse Homographie →
+`physicalCorrection` → Input-UV identisch. Lokaler Vergleich der gelieferten
+Texte bestätigt beide Projektoren; kein GPU- oder neuer physischer Test.
+Aktive Uniform-Konstanten statt abweichend genauer Matrix-DATs als Referenz
+verwenden, keine bestehende Kalibrierung neu anwenden.
+
+Die getrennte Floor-/Tabletop-Abbildung und nachgeschaltete invertierte
+Tabletop-Maske können bereits geometrisch erreichbare Bodenstrahlen unterscheiden.
+Pauschaler Motion-Footprint-Ausschluss ist zusätzlicher, früherer Informationsverlust.
+Ein künftiger Versuch sollte ausschließlich die Bodenzielgrafik davor bewahren,
+die bestehende Projektormaske und sämtliche Kalibrierung unverändert erhalten.
+Nicht die gesamte `occupied`-Verwendung entfernen (Reveal/Pfeile/Preview betroffen).
+Kein Aufbau oder Produktivpatch im ausschließlich lesenden Auftrag; tatsächliche
+Untertischfläche und Tischplattenfreiheit physisch noch nicht geprüft.
+
+Zweite Ausgabe: Tabletop-/Masken-`homography_matrix`, `homography_matrix_inv`
+und `correction_points` (Table DATs) je Projektor textgleich. Beide Masken-Outs
+direkt am `homography_warp` (GLSL TOP), Floor-/Tabletop-Outs zusätzlich durch
+Blend-Multiply; diese getrennte Behandlung erhalten. Eingebetteter Motion-
+Shader bestätigt pauschale Footprint-Ausblendung `(1.0-occupied)` vor Warps.
+Homographie-Shader besitzen zusätzlich hardcodierte `physicalCorrection`-
+Raster, deren einzelne Werte von Korrektur-DATs abweichen; keine Änderung
+daraus ableiten. Die auf 100 Zeilen begrenzte Ausgabe enthält die Shader-
+Hauptfunktionen nicht vollständig. Effektive h0/h1/h2-Uniformwerte ebenfalls
+noch nicht ausgegeben. Folgeschritt ausschließlich vollständige Main-Abschnitte,
+Uniformbindungen und direkter Tabletop-/Masken-Korrekturfunktionsvergleich.
+
+Arbeitsdatei laut Textport: `AISI_v3.2_motion_lab_checkpoint_20261026.12.toe`.
+Beide tatsächlichen Projektorzweige verwenden getrennte Floor-/Tabletop-/
+Tabletop-Masken-Homographie-COMPs. Masken-Out → Level TOP (Invert=1) →
+`floor_masked_warped1` (Composite TOP, Multiply mit Floor-Homographie-Out).
+Danach Tabletop-Homographie-Out über Boden in `composite_final` (Composite TOP,
+Over) → `out1` (Out TOP). Projektor 1 erhält vorgeschaltete 180-Grad-Transform-TOPs;
+sein `comp_homography_floor_alt` gehört nicht zum berichteten aktiven Ausgangspfad.
+Die mit aufgelisteten `window_projector_0/1` sind Window COMPs.
+
+Projektorabhängige Maskierung damit strukturell vorhanden; geometrische
+Korrektheit und identische Tabletop-/Masken-Korrekturpfade noch nicht bewiesen.
+Nächste lesende Untersuchung: sechs aktive Homographie-Teilgraphen samt
+Shadern/Matrixreferenzen sowie tatsächlicher Motion-Footprint-Ausschluss.
+Kein Aufbau/Bypass/Testlicht, keine erzwungenen Cooks und keine Änderungen oder
+Speicherung. Untertisch-Erreichbarkeit nicht physisch geprüft.
+
+## Aktuell: Haken-Pop-out statt Fade installiert und abgenommen — 2026-10-27
+
+Folgewunsch: akzeptiertes Aufploppen erhalten, nach einer Sekunde ähnlich
+verschwinden, ohne Fade. Neuer Helfer `update_motion_success_pop_out.py` ersetzt
+nur das bestehende Haken-Overlay. Bis Sekunde eins unveränderte Eingangsskalierung,
+danach zeitliche Umkehr über 0,32 s; Deckkraft vollständig weiß statt langsamem
+Alpha-Abfall. Ab 1,32 s unsichtbar. Bestehende Ausrichtung und Mitte, Erfolgszeit,
+Source-Maske, Führungsrückkehr, Boden und Kalibrierung bleiben erhalten.
+Eigene Probe/Sitzung/Sicherung. GPU-Prüfplan: Eintrittsgeometrie gegen bisherige
+Variante nach Entfernung nur des alten Alpha-Fades, zeitlich gespiegelte
+Ein-/Ausgangsformen, Endzeit und volle Deckkraft bei drei Rotationen;
+Guidance/Source-Ungültigkeit/Wiedereinblendung und Bodenausgabe erhalten.
+312 Offline-Tests bestanden, sieben optionale GPU-Fälle übersprungen.
+Johannes meldet Installation `passed: true` und bestätigt am realen Tisch
+Aufploppen und Verschwinden nach einer Sekunde mit Pop-Bewegung; „Passt so“.
+Pop-out ist damit gestalterischer Standard und löst den Drei-Sekunden-Fade ab.
+Vollständiger GPU-Report nicht geliefert. Separate aktuelle Live-Prüfung nach
+diesem Patch und Speicherung noch offen; keine umfassende Raumabnahme ableiten.
+
+## Aktuell: Haken-Pop/Fade installiert und gestalterisch abgenommen — 2026-10-27
+
+Dauer durch Johannes geklärt: drei Sekunden, nicht Minuten. Neuer eigenständiger
+Helfer `update_motion_success_pop.py` patcht nur Haken-Overlay und ergänzt
+`successPop(age)`: Ease-out-back über 0,32 s mit knapp 10 % Übergröße, anschließend
+exakt ursprüngliche Endgröße. Alpha von Beginn an `clamp(1-age/3,0,1)`, kein
+spätes Abblenden oder Halteintervall. Skalierung um Source-Navigationszentrum,
+bisherige Leserichtung aus Zielpose unverändert. Vorhandene Erfolgsanimation,
+Source-Ungültigkeit und weiche Führungsrückkehr bleiben erhalten.
+Eigene GPU-Probe, Sitzung und hash-gesicherte Rücknahme; bestehende Haken-Sicherung
+nicht umgeschrieben. GPU-Prüfplan: messbare Übergröße/Rückfederung, Alphaverlauf,
+Weiß/Premultiplikation, Ausrichtung, Guidance/Source-Ungültigkeit/Wiedereinblendung
+und unveränderte Bodenausgabe. 307 Offline-Tests bestanden, sieben optionale
+GPU-Fälle übersprungen. Johannes meldet Installation `passed: true` und bestätigt
+am realen Tisch Aufploppen und Fade innerhalb von drei Sekunden; „Passt so“.
+Vollständige GPU-Ausgabe nicht geliefert. Separate aktuelle Live-Prüfung nach
+diesem Patch und Speicherung noch offen; keine umfassende Raumabnahme ableiten.
+
+## Aktuell: weißer Erfolgshaken vorbereitet — 2026-10-27
+
+Nähe-Fade von Zielkreis und Strichen durch Johannes im Raum abgenommen und TD
+manuell gespeichert. Neuer Versuch: weißer Haken an der Source-Navigationsmitte,
+drei Sekunden ab bestehender Zielerreichung (einschließlich 0,18 s Ein- und
+0,2 s Ausblendung). `update_motion_success_check.py` fügt nur eine Zeichenfunktion
+und einen Tabletop-Overlay nach dem bisherigen Erfolgszweig ein, damit der Haken
+auch in `completed` bis Sekunde drei sichtbar bleibt. Bestehende Erfolgsauflösung,
+Bodenausgabe und weiche Rückkehr zur Führung bleiben erhalten. Keine neue
+Runtime-Uhr, Engine-Instanz, Revision, Zielberechnung oder Maskenverdrahtung.
+
+Leserichtung: von der zur ROI-Mitte gewandten Längsseite; die Hochachse des
+Hakens steht senkrecht auf der Längsseite. Gewählt anhand der eingefrorenen
+Zielpose, Position am bisherigen Source-Navigationszentrum. Bei Gleichstand
+feste lokale +Y-Längsseite. Haken 3 cm Strichbreite mit runden Kappen,
+etwa 23 × 18 cm Außenmaß, weiß und premultipliziert, an bestehende Source-Maske
+und Wiedereinblendung gebunden. Ungültige Source oder neue Führungsphase zeigt
+keinen Erfolgshaken. Eigene Probe/Sitzung/Sicherung und streng begrenzter Patch.
+299 Offline-Tests bestanden, sieben optionale GPU-Fälle übersprungen.
+GPU-Prüfplan: Dauer über beide Erfolgsphasen, reine Weißdarstellung,
+Leserichtung bei 0/33/90/180/270 Grad und mehreren ROI-Positionen,
+ungültige Source, Wiedereinblendung und unveränderte Bodenausgabe.
+Noch nicht in TD installiert; GPU-/Live-/Raumabnahme und Speicherung offen.
+
+Erster Installationsversuch stoppt vor produktiver Änderung mit
+„Haken zur ROI-Längsseite falsch ausgerichtet“. Prüfcode leitete Array-Y direkt
+aus Welt-Y ab. Korrektur ausschließlich am Prüfcode: unabhängige vorhandene
+Masken-Renderausgabe bei (180,180) bestimmt X-/Y-Arrayrichtung eindeutig über
+Flächenschwerpunkt. Anschließend unverändert strenge Prüfung der vier
+Haken-Strichpunkte bei fünf Drehungen und fünf ROI-Positionen; Fehler nennt
+jetzt Position/Drehung/Punkt/Alpha. Keine Toleranzlockerung oder Shaderänderung.
+Vier Array-Achsenkombinationen sowie leere/mehrdeutige Prüfmasken offline geprüft;
+Motion-Suite 308 Fälle, 301 bestanden, sieben optionale GPU-Fälle übersprungen.
+Bestehende Probe bleibt nutzbar; erneuter GPU-Nachweis in TD noch offen.
+
+Nachtrag: Johannes meldet danach Installation `passed: true`; vollständige
+GPU-Ausgabe nicht übernommen. Erster physischer Eindruck „schon nicht schlecht“.
+Folgewunsch: Haken stärker aufploppen lassen und sofort langsam ausfaden.
+Zeitangabe drei Minuten widerspricht den vorherigen drei Sekunden; Klärung
+angefragt. Dauerabhängiger Folgepatch noch nicht implementiert. Separate aktuelle
+Live-Prüfung und manuelle Speicherung des Hakens nicht bestätigt.
+
+## Aktuelle Ergänzung: Zielkreis wie Ausrichtungshilfen einblenden — 2026-10-27
+
+Vorbereitet: mittige Zielringschablone mit bestehendem `guides`-Faktor über
+45→15 cm einblenden. Source-Navigationskreis und akzeptierte solide Zielfläche
+ohne Trennstrich unverändert. 293 Offline-Tests bestanden, sieben optionale
+GPU-Fälle übersprungen. In TD installiert, sieben GPU-Prüfgruppen bestanden;
+separate aktive Live-Prüfung bestanden (Revision 3, `table_01`, drei Chairs,
+Indizes 1/1/0/1). Physische Abnahme des Nähe-Fades und Speicherung offen.
+
+## Abgenommener Standard: solide Zielfläche ohne Trennstrich — 2026-10-27
+
+Johannes bestätigt direkten Vergleich ohne Trennstrich als deutlich besser und
+legt diese Darstellung wieder als Standard fest. Repository-Shader entsprechend
+gesetzt: solide weiße Zielgrundfläche ohne zusätzliche Rahmen-/Trennlinien,
+ursprünglicher Footprint und übrige Motion-Grafik erhalten. Sieben neue
+Schutz-/Übernahmetests bestanden; Motion-Suite 294 Fälle, 287 bestanden und sieben
+optionale GPU-Fälle übersprungen. Laufende Vergleichsansicht noch per
+`divider_compare.adopt_as_default(op)` übernehmen; separate abschließende
+Live-Prüfausgabe und manuelle TD-Speicherung noch offen. Keine neue Aktivierung.
+
+## Temporärer Direktvergleich ohne Trennlinie — 2026-10-27
+
+Auf Johannes’ Wunsch reversiblen Ein-Befehl-Vergleich vorbereitet:
+`compare_motion_target_divider.hide(op)`/`show(op)`. Nur `targetLines` auf null
+setzen beziehungsweise vollständigen tatsächlichen Originalshader hash-gesichert
+wiederherstellen; Shader-Grunddarstellung ansonsten unverändert. Eigener
+COMP-Speicher, keine Layout-/Runtime-/Maskenänderung oder automatische Speicherung.
+Kompilierung aller drei eigenen Renderer mit Fehler-Rücknahme und unveränderter
+Engine/Reader/Revision geprüft. Offline nur Syntax/Text-Roundtrip bestätigt;
+manueller TD-Aufruf und Sichtvergleich noch offen. Vor weiteren Shaderpatches
+Vergleich zurücksetzen oder bewusst finalisieren.
+
+## Aktueller letzter Linienversuch — 2026-10-27
+
+Vorbereitet: Trennlinie wieder dünn (0,4 cm), auf Boden und Tabletop innen;
+weißer Randstreifen weiter 2,5 cm, weißer Kern erhalten. Boden-Außenrahmen entfällt,
+kein zusätzlicher Rahmen über ursprünglichen Tisch-Footprint hinaus.
+280 Offline-Tests bestanden, sieben optionale GPU-Fälle übersprungen. In TD
+installiert, fünf GPU-Prüfgruppen bestanden; separate aktive Live-Prüfung und
+physische Abnahme offen, nichts gespeichert.
+
+## Aktuelle gleiche Streifenbreiten und Verdeckungsbefund — 2026-10-27
+
+Neue Grafik inzwischen installiert: acht TD-GPU-Prüfungen bestanden, alle
+Streifen je 2,5 cm, Außenrahmen bei deckungsgleicher Source-Maske sichtbar,
+Erfolg/Fade erhalten. Maximaler Muster-Floatfehler 8,147955e-05 an geglätteten
+Kanten, maximal eine RGBA8-Stufe. Engine/Ziele/Masken unverändert. Freigaben
+weiter aus; frischen Maskenabgleich, kontrollierte Freigabe für Revision 3 und
+separate aktive/physische Prüfung noch durchführen. Nichts gespeichert.
+
+Wiederaufnahme inzwischen ausgeschaltet geprüft: bewusste neue Input-Aktivierung
+durch Johannes, Controller zeigt `table_01`/Revision 3/drei Chairs. Separater
+`live_output.verify(op)`-Check passed, Session 2610399/Revision 3, Main/Chairs
+Frame 69385, Rasterframe 69371. Originalmaske `rect_setup_mask_geo_00`, Kantenfehler
+maximal 0,063567 cm, keine Pixel außerhalb Ein-Pixel-Grenze, Indizes weiter 0.
+Erste noch alte Statusausgabe vor diesem Check nicht als aktuellen Zustand
+verwenden. Keine Prozessneustarts oder automatischen ID-/Zieländerungen.
+Neue Grafik jetzt bei gesperrter Ausgabe vorbereiten; Freigabe danach offen.
+
+Johannes bestätigt nach Deaktivierung: Indizes 0, Motion frisch, Session 2610399/
+Revision 2/Frame 65770, ID `table_00` valid=False. Neue Kamera-ID `table_01`
+noch nicht explizit aktiviert. Bestehende Ziele bleiben dadurch geschützt.
+Kontrollierte Wiederaufnahme erfordert bewusste neue Aktivierung (einmalig neue
+Ziele/Chairs/Revision), danach ausgeschalteten Originalmaskenabgleich; keine
+automatische ID-Umhängung oder Neustarts.
+
+Rahmenstreifen und transparente Trennung auf Johannes’ Wunsch gleich breit wie
+bestehende Ausrichtungshilfen: 2,5 cm. Weißer Kern bleibt; Bodenrahmen außen,
+Tabletop-Rahmen innen. Offline vorbereitet, 274 Motion-Tests bestanden, sieben
+optionale GPU-Fälle übersprungen. Noch nicht in TD installiert.
+Nach gemeldeter Verdeckung laufen alle Backend-Prozesse weiter; aktuelle Szene
+Frame 58531 mit `table_01` statt bisherigem `table_00`. Keine automatische
+Neuberechnung/ID-Umhängung oder Neustarts. Freigaben/Stream-/Maskenzuordnung vor
+nächstem Live-Grafiktest per manuellem Textport prüfen, nichts speichern.
+
+## Aktuelle Präzisierung: 4-cm-Rahmenstreifen — 2026-10-27
+
+Der letzte 0,3-cm-Linienentwurf ist verworfen: Johannes meint den weißen
+Rahmenstreifen, nun 4 cm, auf Boden außen und auf Tabletop innen. Repository-
+Oberflächenpatch gezielt zurückgenommen, vorheriger Einzel-Linienzustand
+hergestellt; sieben fokussierte Tests bestanden. Tatsächlicher TD-Rollback noch
+nicht bestätigt. Johannes bestätigt anschließend weiße Innenfläche mit feiner
+Trennlinie. Korrigierter 4-cm-Patch vorbereitet: Bodenrahmen außen (0–4 cm),
+Tabletop-Rahmen innen (0–4 cm), feine Linie wieder 0,6 cm. 268 Offline-Tests
+bestanden, sieben optionale GPU-Fälle übersprungen. Noch nicht in TD installiert,
+GPU-/Live-/physische Abnahme offen; keine automatische Speicherung.
+
+## Aktueller Oberflächen-Linienentwurf — 2026-10-27
+
+Vorbereitet: Linienbreite 0,3 cm; Bodenlinie 1 cm außerhalb ursprünglicher
+Zielfläche, Tabletop-Linie weiter 10 cm innerhalb. Bestehende Masken/Erfolgslogik
+unverändert. 260 Offline-Tests bestanden, sieben optionale GPU-Fälle übersprungen.
+GPU soll besonders hypothetisch deckungsgleiche Source-/Zielposen prüfen;
+TD-Einbau, aktive Live-Prüfung und physische Abnahme noch offen.
+
+## Aktueller Einzel-Linien-Entwurf — 2026-10-27
+
+Johannes bestätigt Drei-Linien-Installation `passed: true` und sichtbares Muster;
+gestalterisch nun nur äußerste Linie gewünscht. Vorbereitet: Linie bei 10 cm
+Randabstand auf 0,6 cm verschmälert, innere Linien entfernt. Weiße Füllung und
+Rundung bleiben. 253 Offline-Tests bestanden, sieben optionale GPU-Fälle
+übersprungen. Neuer Folgepatch noch nicht in TD installiert, GPU-/Live-/physische
+Abnahme offen; nichts gespeichert.
+
+## Aktueller Linienversuch — 2026-10-27
+
+Rahmen durch weiße Füllung mit drei gerundeten transparenten Rechtecklinien
+ablösen, gemäß Johannes’ neuer Referenz. Erstentwurf 10/20/30 cm innenliegend,
+1 cm Breite, Ecken aller Linien kanonisch gerundet. Auf Boden und Tabletop.
+245 Offline-Tests bestanden, sieben optionale GPU-Fälle übersprungen; neuer
+Linienversuch noch nicht in TD installiert. GPU-/Live-/physische Abnahme offen.
+Vorherigen Rahmen hat Johannes als sichtbar bestätigt, detaillierter GPU-Bericht
+wurde nicht geliefert. Keine Speicherung.
+
+## Aktueller Konturversuch — 2026-10-27
+
+Zielfüllung auf Boden und Tabletop auf Johannes’ Wunsch als dicke Kontur
+vorbereitet: 8 cm nach innen, äußerer Umriss unverändert, Außen-/Innenecken
+abgerundet. Feedback bleibt im ursprünglichen Zielumriss; Zielschablone/-striche
+im offenen Inneren weiß. 239 Offline-Tests bestanden, sieben optionale GPU-Fälle
+übersprungen. Noch nicht in TD installiert: GPU-/Live-Prüfung und physische
+Abnahme offen, nichts gespeichert.
+
+## Wiederaufnahme — 2026-10-27
+
+Alle sechs Backend-Komponenten auf Wunsch gestartet, keine Doppelinstanz;
+TD bereits mit Startargument `AISI_v3.2_motion_lab_checkpoint_20261026.8.toe`
+aktiv. Kamera-/Szenenstream schreitet mit `table_00` fort, HTTP 8080=200,
+UDP 9000 bei TD. Kalibrierungshash unverändert; alte Kamera-JSONL vor Writer-
+Neustart gesichert, großes temporäres OBB-Debuglogging nicht aktiviert.
+Protokolle/Startargumente unter `data/aisi/debug/startup_20261027_074804/`.
+Johannes hat neuen Vorschlag inzwischen explizit aktiviert. Ausgeschalteter
+`live_output.verify(op)`-Nachweis passed: Session 2610399/Revision 2,
+Main/Chairs Frame 2768, Rasterframe 2755, `table_00`, drei Chairs,
+Originalmaske aktiv, alle Indizes 0. Kein Pixel außerhalb Ein-Pixel-Grenze;
+maximaler Konturkantenfehler 0,0000216 cm, sechs doppelte Referenzen erhalten.
+Kontrollierte Freigabe und separate aktive Prüfung anschließend bestanden:
+Session 2610399/Revision 2, Main/Chairs Frame 7132, Rasterframe 7118, drei Chairs,
+Indizes 1/1/0/1, Originalmaske aktiv, Konturkantenfehler 0 cm und keine Pixel
+außerhalb Ein-Pixel-Grenze. Johannes bestätigt Motion-Grafik/drei Chairs sichtbar,
+Source/Feedback folgen, Ziele/Chairs fest. Wiederanlauf abgeschlossen; kein
+vollständiger neuer Raum-/Projektornachweis.
+Tatsächlicher Dateiname per Textport noch nicht geliefert, nur Startargument bekannt.
+Keine automatische TD-Speicherung, kein Bildschirmzugriff, kein neuer
+physischer Projektionsnachweis. Git-Quellenstand `a9cb57a` unverändert.
+
 ## Aktueller Windows-Stand — 2026-10-26
 
 Tagesabschluss: Johannes bestätigt die weiche Wiedereinblendung mit „passt“ und
@@ -1745,6 +2193,337 @@ Lokale Runtime-/Debug-/Kalibrierungs-/Trainingsdaten einschließlich simulierter
 Verfügbarkeits-/Laufzeitstatusimplementierung bleibt erhalten. Nächster Start:
 manuell gespeicherten TD-Checkpoint öffnen, tatsächlichen Dateinamen und
 `live_output.verify(op)` erfassen.
+
+## Abgerundete Zielkontur statt weißer Füllung — vorbereitet 2026-10-27
+
+Nach erfolgreich bestätigtem Wiederanlauf wünscht Johannes anhand eines
+Referenzbilds eine dicke weiße Kontur mit gleichem Umriss und abgerundeten Ecken
+anstelle der gefüllten Zielfläche, ausdrücklich auch auf dem Tabletop.
+Erstentwurf 8 cm innenliegend. `targetOutline` verwendet dieselbe lokale
+Zielkoordinate, kanonische Shape-Daten und bestehende `roundedRect`-/Coverage-
+Funktionen: Originalkontur minus innenliegendes abgerundetes Rechteck. Äußerer
+Umriss einschließlich Ecken unverändert; innere Ecken behalten den bestehenden
+Rundungsradius, begrenzt auf innere Halbabmessungen. Keine neue physische Maske
+oder parallele Footprint-Definition. Bodenpfeile verwenden weiter ursprünglichen
+äußeren Zielrand, keine Änderung der Zielgeometrie oder Kalibrierung.
+
+Weiße Grunddarstellung auf beiden Oberflächen verwendet die Kontur. Die
+semantische Zielmaske bleibt für Feedbackclip, Zielringschablone und Zielstriche
+erhalten. Grünes Feedback darf weiter innerhalb der ganzen ursprünglichen
+Zielfläche wachsen. Damit die Einpasshilfen im nun transparenten Inneren nicht
+verschwinden, dort weiß komponieren; auf dem weißen Rand weiter ausgespart.
+Source-Striche bleiben weiß. Navigationskreis, Pfeil, Schatten, Erfolgsauflösung
+und akzeptierte 0,35-s-Wiedereinblendung bleiben erhalten. Keine Layoutaktivierung,
+Runtime-/OSC-/Revisions-/Chair-Änderung.
+
+`update_motion_target_outline.py`: tatsächlichen lokalen Shader lesen, nur
+bekannte Blöcke patchen; eigener Prüfzweig und eigene Hash-Sicherung. GPU-Prüfung
+vor Installation: 0/33/90 Grad, Außenumriss und weiße Randpixel erhalten,
+Bodeninneres offen, Tabletop-Füllung entfernt, sichtbare Einpasshilfen,
+Feedback weiter vorhanden/begrenzt, Tabletop-Erfolg erhalten, Reveal endlich
+und Wiedereinblendung proportional. Frühere Boden-Pixelgleichheit insgesamt
+ist hier kein Kriterium: die Bodendarstellung wird ausdrücklich geändert;
+Pixel außerhalb des ursprünglichen Zielumrisses bleiben geschützt.
+Rücknahme bei Bedarf zuerst Konturversuch, danach ältere Shaderänderungen.
+
+Sechs neue fokussierte Tests bestanden; gesamte Motion-Suite 246 Fälle,
+239 bestanden und sieben optionale native GPU-Fälle übersprungen. Historische
+Einpasshilfen-Testfixture normalisiert die spätere Konturänderung, um weiterhin
+den ursprünglichen Upgradepfad zu prüfen. Keine TD-Installation oder Speicherung
+bisher; tatsächlicher GPU-Nachweis, aktive Live-Prüfung und physischer Sichtbefund
+stehen noch aus.
+
+## Weiße Zielfüllung mit gerundeten Trennlinien — vorbereitet 2026-10-27
+
+Johannes bestätigt den dicken Rahmen sichtbar und ersetzt den Gestaltungsauftrag:
+wieder weiße Fläche, aufgeteilt durch ineinanderliegende Linien gemäß neuer
+Referenz. Alle Ecken dieser Rechtecke sauber abgerundet. Für den Rahmenversuch
+liegt kein detaillierter Installations-/GPU-Bericht vor; nur Sichtbarkeit belegt.
+
+Erstentwurf drei geschlossene transparente Linien mit 10/20/30 cm Abstand vom
+ursprünglichen Außenrand und 1 cm Breite. `targetDividers` nutzt bestehendes
+`roundedRect`/Coverage und denselben kanonischen Shape-Rundungsradius für jedes
+Rechteck, auf die jeweilige Halbabmessung begrenzt. Keine unterschiedlich frei
+gezeichneten Ecken. Weiße Zwischenflächen wieder gefüllt; äußerer Zielumriss und
+alle Masken/Projektor-/Weltparameter unverändert. Gleiches Muster für Boden und
+Tabletop. Trennlinien auf dem Tabletop nach dem grünen Feedback ausgespart;
+Navigation, Schatten, Source-Striche und Zielhilfen anschließend darüber.
+Zielhilfen auf Weiß dunkel/transparent, an einer Trennlinie weiß für Kontrast.
+Erfolgsdarstellung und 0,35-s-Wiedereinblendung bleiben erhalten.
+
+`update_motion_target_divisions.py`: gezielter Folgepatch vom tatsächlichen
+Rahmen-Shader, eigene Probe und eigene Hash-Sicherung. GPU-Prüfung vor Einbau:
+0/33/90 Grad, mehrheitlich weiße Fläche und sichtbare Trennlinien, Außenbereich
+unverändert, Tabletop-Füllung wiederhergestellt, alle drei Linien und weißen
+Zwischenflächen vorhanden, Zielhilfen kontrastreich, Feedback/Erfolg/Reveal/
+Wiedereinblendung erhalten. Eigene Rücknahme stellt zunächst Rahmen wieder her;
+für ursprüngliche Füllung danach Rahmen-Rollback ausführen. Keine automatische
+Layoutaktivierung oder Speicherung.
+
+Sechs neue fokussierte Tests bestanden; gesamte Motion-Suite 252 Fälle,
+245 bestanden und sieben optionale native GPU-Fälle übersprungen. Historische
+Rahmen-/Einpasshilfen-Testfixtures normalisieren späteren Linienpatch. Neuer
+Linienversuch noch nicht in TD installiert, tatsächlicher GPU-/Live-Nachweis und
+physischer Sichtbefund offen.
+
+## Linienversuch: geglättete GPU-Kante im Vergleich — 2026-10-27
+
+Einbau vor produktiver Änderung gestoppt: Boden-/Diagnosemuster zunächst mit
+1e-6 verglichen. Johannes bestätigt produktiven Shader unverändert; Diagnose
+bei Ziel (300,300,0): maximale Abweichung 6,330013275146484e-05 bei Pixel (711,440),
+Boden 0,47930270433425903 gegenüber Diagnose 0,4793660044670105, kein Pixel
+über 1/255. Das Maximum liegt im Antialias-Zwischenbereich und entspricht der
+Größenordnung unabhängiger GLSL-SDF-Auswertung an einer geglätteten Kante.
+
+Prüfung nur dort präzisiert: maximal 1e-4 absolut bei Zwischenwerten, weiße oder
+transparente Bereiche unverändert streng mit 1e-6; quantisierter Unterschied
+höchstens eine RGBA8-Stufe. Keine Behauptung bitgleicher Bilder zwischen
+unabhängigen Diagnose-/Produktionsshadern. Geometrieverschiebungen, Änderungen
+flacher Bereiche, NaN und Kantenfehler über 1e-4 werden abgewiesen. Schutz des
+Außenbereichs bleibt unverändert. Shader selbst nicht geändert, bestehender
+Probe bleibt. Drei gezielte Regressionstests und gesamte Motion-Suite bestanden:
+255 Fälle, 248 bestanden, sieben optionale native GPU-Fälle übersprungen.
+Erneuter TD-Einbau noch offen, nichts gespeichert.
+
+## Einzelne dünnere äußere Trennlinie — vorbereitet 2026-10-27
+
+Johannes berichtet erfolgreiche Drei-Linien-Installation (`passed: true`) und
+bestätigt weiße Fläche mit drei gerundeten Linien sichtbar. Vollständige
+GPU-Ausgabe nicht geliefert. Neuer Gestaltungswunsch: nur die äußerste Linie
+behalten und etwas dünner machen. Folgeentwurf bei 10 cm Randabstand, von
+1 auf 0,6 cm Breite; Linien bei 20/30 cm entfernen. Ausschließlich bekannte
+`targetDividers`-Hilfsfunktion ersetzt, gleicher kanonischer Rundungsradius und
+äußerer Zielumriss. Weiße Füllung, Zielhilfe-Kontrast, Source-Grafik, Feedback,
+Erfolg und Wiedereinblendung unverändert. Kein Runtime-/OSC-/Layout-Eingriff.
+
+`update_motion_target_single_line.py` mit eigenem GPU-Prüfzweig und eigener
+Hash-Sicherung. Prüfung vor Einbau: 0/33/90 Grad, einzelne dünne gerundete Linie,
+weiße Füllung und unveränderter Außenbereich, an beiden früheren inneren
+Linienpositionen wieder Weiß, äußerste Linie schmaler noch sichtbar; Feedback,
+Erfolg und proportionaler Fade erhalten. Frühere Kanten-Diagnosetoleranz bleibt
+unverändert. Rücknahme stellt zunächst drei Linien wieder her, ältere
+Rücknahmen nur anschließend ausführen. Keine automatische Speicherung.
+
+Fünf neue fokussierte Tests und gesamte Motion-Suite bestanden: 260 Fälle,
+253 bestanden und sieben optionale native GPU-Fälle übersprungen. Historische
+Linien-/Rahmen-/Einpasshilfen-Fixtures normalisieren den späteren Einzel-Linien-
+Patch. GPU-/Live-Nachweis und physische Sichtabnahme des neuen Patches noch offen.
+
+## Dünnere Linie außen auf Boden und innen auf Tabletop — vorbereitet 2026-10-27
+
+Johannes verlangt halbe bisherige Stärke und getrennte Lage: Boden außerhalb
+ursprünglicher Zielfläche, damit die Linie bei hypothetisch deckungsgleichem Tisch
+nicht mitmaskiert wird; Tabletop weiter innen. Erstentwurf 0,3 cm (vorher 0,6),
+Bodenlinie als SDF-Abstandslinie 1 cm außerhalb der ursprünglichen Rundkontur.
+Dadurch liegt auch die geglättete Linie außerhalb der unveränderten Source-
+Kantenmaske. Äußere Rundungen ergeben sich aus derselben kanonischen SDF.
+Weiße Bodenfüllung wieder vollständig, keine innere Bodenlinie. Tabletop-Linie
+10 cm innen, gleicher kanonischer Rundungsradius, ebenfalls 0,3 cm breit.
+
+Keine Änderung an physischen Masken, deren Reihenfolge, Homographien, Weltmaßstab,
+Footprints, Zielposen, Runtime, Chairs oder Revision. Nur grafische Bodenlinie
+erweitert den dargestellten Außenbereich. Erfolg und Ausblendung bleiben wie
+vorher; der geometrische GPU-Prüffall erzwingt weiterhin Führungsphase, damit
+Maskierung und Erfolgsausblendung unabhängig geprüft werden. Keine permanente
+Markierung nach Erfolg hinzugefügt.
+
+`update_motion_target_surface_lines.py`: bekannter Drei-Linien- oder einzelner
+0,6-cm-Vorgänger als Einstieg, eigener Probe und eigene Hash-Sicherung. Letzter
+Einzellinien-Installationsbericht wurde nicht geliefert; beide bekannten Pfade
+werden ohne Überschreiben unbekannter lokaler Varianten unterstützt. GPU vor
+Einbau: 0/33/90 Grad, Bodenlinie vollständig außerhalb, Tabletop-Linie vollständig
+innerhalb, keine innere Bodenlinie mehr, Außenlinie bei deckungsgleichem Source/
+Ziel von Source-Maske unbeschnitten, dünnere Tabletop-Linie, Erfolg/Fade erhalten.
+Außenbereichschutz schließt ausschließlich die nun ausdrücklich gewünschte neue
+Bodenlinie aus; Maskenschutz bleibt unverändert. Eigene Rücknahme zuerst ausführen.
+
+Sieben neue Schutz-/Dispatchtests und gesamte Motion-Suite bestanden: 267 Fälle,
+260 bestanden und sieben optionale native GPU-Fälle übersprungen. Historische
+Linien-/Rahmen-/Einpasshilfen-Fixtures normalisieren späteren Oberflächenpatch.
+TD-GPU-Nachweis, Installation, aktive Live-Prüfung und physische Sichtabnahme
+noch offen; keine automatische Speicherung.
+
+## 4-cm-Rahmenstreifen mit weißer Innenfläche — vorbereitet 2026-10-27
+
+Johannes klärt die Rückfrage: Innenfläche bleibt weiß mit feiner Trennlinie.
+Es geht um 4 cm weißen Rahmenstreifen, nicht um eine 0,3-cm-Strichstärke.
+Missverstandenen Oberflächen-Linienentwurf im Repository zurückgenommen und
+gezielten Folgepatch vorbereitet. Tatsächlicher TD-Vorgänger wird beim Vorbereiten
+gelesen und nur bei bekannter Struktur ersetzt; kein pauschaler Reset.
+
+Boden: weiße Fläche bis 4 cm außerhalb der ursprünglichen Rundkontur erweitert,
+feine transparente Trennlinie bei ursprünglichem Außenrand. Der weiße Streifen
+liegt somit außen und bleibt bei deckungsgleicher Source-Maske sichtbar.
+Tabletop: ursprünglicher Außenumriss bleibt, Trennlinie bei 4 cm nach innen;
+weiße Innenfläche beibehalten. Feine Trennlinienbreite wieder 0,6 cm. SDF-
+Konstantabstände gewährleisten gleichmäßige 4-cm-Streifen und saubere Rundungen
+(außen Radius um 4 cm größer, innen entsprechend kleiner), dieselbe kanonische
+Geometriefunktion. Keine zusätzliche 1-cm-Versetzung aus dem Fehlentwurf.
+
+`update_motion_target_frame_strip.py` korrigiert bekannten 8-cm-Rahmen,
+Drei-Linien-/Einzellinienzustand oder missverstandenen 0,3-cm-Außenlinienzustand.
+Unbekannte lokale Varianten und Teiländerungen werden verweigert. Eigene Probe
+und Hash-Sicherung; Rücknahme stellt tatsächlich vorgefundenen Zustand wieder her.
+Physische Masken, Kalibrierung, Zielpose/Chairs/Revision, Runtime und Erfolg
+unverändert. GPU-Nachweis vor Einbau: 0/33/90 Grad, 4-cm-Außenrahmen bleibt bei
+deckungsgleichen Posen im hypothetischen Führungszustand unmaskiert, Weißfüllung/
+Trennlinie an richtigen Grenzen, Tabletop-Erfolg und Wiedereinblendung erhalten.
+Bestehende Erfolgsausblendung bleibt; keine permanente Erfolgsmarkierung eingeführt.
+
+Acht neue Schutz-/Dispatchtests bestanden; gesamte Motion-Suite 275 Fälle,
+268 bestanden und sieben optionale native GPU-Fälle übersprungen. Historische
+Fixturen normalisieren die neueste Korrektur. Noch keine TD-Installation oder
+Speicherung; GPU-/Live-Nachweis und physische Sichtabnahme offen.
+
+## Gleiche weiße/transparenten Streifen — vorbereitet 2026-10-27
+
+Johannes ersetzt die vorherigen Maße: transparente Trennung und weißer Streifen
+gleich breit, beide wie Ausrichtungshilfen. Ausrichtungshilfen in bekanntem
+Shader haben 2,5 cm Stärke; neuer Helfer verweigert lokal abweichende Breite.
+Boden: weißer Streifen außerhalb ursprünglicher Kontur von Abstand 0 bis +2,5 cm,
+transparente Trennung innen zwischen 0 und −2,5 cm, danach weißer Kern.
+Tabletop: weißer Streifen zwischen 0 und −2,5 cm, transparente Trennung zwischen
+−2,5 und −5 cm, danach weißer Kern. So verbraucht eine zentrierte Trennlinie
+nicht die Hälfte des weißen Streifens. Alle Grenzen als Konstantabstände der
+kanonischen Rundkontur; klare Nominalbreiten mit geglätteten Kanten.
+
+`update_motion_target_equal_bands.py` normalisiert bekannte Vorgänger und patcht
+gezielt neue Bänder, eigene Probe/Hash-Sicherung. Keine Änderung von physischen
+Masken, Runtime, OSC, Zielen/Chairs/Revision oder Erfolgsablauf. GPU soll drei
+Drehungen, gleiche Breiten, weißen Kern, unmaskierten Außenstreifen bei
+hypothetisch deckungsgleichen Posen sowie Erfolg/Fade prüfen. Sechs neue
+Schutz-/Dispatchtests bestanden, gesamte Motion-Suite 281 Fälle: 274 bestanden,
+sieben optionale native GPU-Fälle übersprungen. TD-GPU-/Live-Prüfung und physische
+Abnahme offen. Kein separater Installationsbericht für vorherigen 4-cm-Entwurf
+geliefert; keine entsprechende Installation behauptet.
+
+Vor Live-Einbau ist außerdem der gemeldete Verdeckungsfall zu prüfen: Kamera
+4748→7164, Adapter 4232→13376, Controller 22004→14244 und übrige Dienste laufen
+unverändert weiter. Szene Frame 58531 enthält `table_01`, frühere aktive
+Layoutbindung war `table_00`, Session 2610399/Revision 2. Nicht als Prozesscrash
+bezeichnen und IDs nicht still umhängen. Ausgabefreigaben manuell ausschalten,
+aktuellen TD-Stream lesen und neue Bindung erst nach bewusster Aktivierung und
+Maskenabgleich freigeben. Keine automatische Prozess-/Layoutänderung ausgeführt.
+
+## Gleiche 2,5-cm-Streifen installiert und GPU-geprüft — 2026-10-27
+
+Johannes liefert `target_equal_bands.install(op)` mit `passed: true` zurück.
+Acht GPU-Prüfungen bestanden: gleiche weiße/transparente Streifen bei 0/33/90
+Grad, Außenrahmen überlebt hypothetisch deckungsgleiche Source-Maske bei allen
+drei Drehungen, Nominalbreite entspricht Ausrichtungshilfen, Tabletop-Erfolg
+und Wiedereinblendung erhalten. Muster-Floatfehler bei 0/33/90 Grad:
+6,306171417236328e-05 / 8,147954940795898e-05 / 6,127357482910156e-05;
+maximale RGBA8-Stufendifferenzen 1/1/0. Dies betrifft unabhängigen geglätteten
+Diagnose-/Produktionsvergleich; keine exakte Rastergleichheit behauptet.
+
+Engine nicht zurückgesetzt, Ziele und Masken unverändert. Eigene Rücknahmesicherung
+vorhanden; frühere Grafikentwürfe durch diesen Stand abgelöst, nicht erneut
+installieren. Freigaben weiter aus; vor Live-Ausgabe frischen Originalmasken-
+abgleich für Session 2610399/Revision 3/`table_01` prüfen, danach kontrolliert
+freigeben und separat aktiv verifizieren. Physische Sichtabnahme dieses Grafik-
+stands noch offen. Keine neue Layoutaktivierung oder automatische Speicherung.
+
+## Dünne innere Trennlinie ohne zusätzlichen Bodenrahmen — vorbereitet 2026-10-27
+
+Johannes verlangt einen letzten Gestaltungsversuch: Trennlinie 0,4 cm und auf
+dem Boden kein zusätzlicher Außenrahmen; Linie wie auf dem Tabletop nach innen.
+Weißer Randstreifen bleibt nominal 2,5 cm breit; transparente Trennlinie beginnt
+bei 2,5 cm und endet bei 2,9 cm innen, Mittellinie bei 2,7 cm. Formel über
+ursprüngliche kanonische Rundkontur, saubere Rundungen. Weiße Innenfläche bleibt.
+Boden-Grunddarstellung verwendet wieder `targetFill` wie Tabletop; zusätzliche
+äußere SDF-Fläche/-Streifen entfallen vollständig. Bestehende Bodenpfeile sind
+unverändert; Aussage „kein Außenrahmen“ bezieht sich auf die Zielgrunddarstellung.
+
+`update_motion_target_inner_divider.py` patcht nur bekannte 2,5-cm-Bänderfunktion
+und Floor-Grunddarstellung. Eigene Probe/Hash-Sicherung; Rücknahme stellt letzte
+breite Bänder wieder her. Keine Runtime-/Masken-/Kalibrierungs-/OSC-/Layoutänderung.
+GPU-Prüfung vor Einbau: 0/33/90 Grad, Füllmuster mit dünner innerer Linie,
+ursprünglicher Footprint erhalten und alter Außenrahmenbereich leer, auch bei
+hypothetisch deckungsgleichen Source-/Zielposen; weiße Rand-/Innenbereiche,
+Tabletop-Erfolg und Wiedereinblendung erhalten. Frühere Kantenvergleichsregel
+unverändert, sechs neue Schutz-/Dispatchtests bestanden.
+
+Gesamte Motion-Suite 287 Fälle: 280 bestanden, sieben optionale native GPU-Fälle
+übersprungen. Historische Shader-Fixtures normalisieren neueste Präzisierung.
+Noch keine TD-Installation oder Speicherung; tatsächlicher GPU-/Live-Nachweis
+und physische Sichtabnahme offen. Keine erneute Vorschlagsaktivierung nötig.
+
+## Innere 0,4-cm-Trennlinie installiert, Außenrahmen entfernt — 2026-10-27
+
+Johannes liefert `target_inner_divider.install(op)` mit `passed: true` zurück.
+Fünf GPU-Prüfgruppen bestanden: Innenlinie ohne zusätzlichen Außenrahmen bei
+0/33/90 Grad, Tabletop-Innenlinie und weißer Kern, Tabletop-Erfolg und
+Wiedereinblendung erhalten. Muster-Floatfehler bei 0/33/90 Grad:
+6,127357482910156e-05 / 7,510185241699219e-05 / 6,109476089477539e-05;
+maximale RGBA8-Stufendifferenzen 0/1/0. Vergleich betrifft unabhängige geglättete
+GPU-Auswertungen; keine bitgleichen Diagnosebilder behauptet.
+
+Engine nicht zurückgesetzt, Ziele/Masken unverändert, eigene Rücknahmesicherung
+vorhanden. Keine neue Vorschlagsaktivierung, nichts gespeichert. Separate aktive
+`live_output.verify(op)`-Prüfung und Johannes’ physischer Sichtbefund der dünnen
+Innenlinie auf beiden Oberflächen ohne zusätzlichen Boden-Außenrahmen noch offen.
+
+## Vergleich ohne Trennstrich als Standard abgenommen — 2026-10-27
+
+Johannes bestätigt: „ohne Trennstrich ist es viel besser“ und beauftragt,
+diesen Stand wieder zum Standard zu machen. Alle heutigen Rahmen-/Trennlinien-
+Varianten sind damit gestalterisch abgelöst, nicht erneut installieren.
+Repository-Shader setzt `targetLines` auf null mit explizitem Standardmarker.
+Dies entspricht in der Darstellung der zuvor temporär ausgeblendeten Fassung;
+keine zusätzliche Geometrie-/Maskenänderung. Navigation, Feedback, Schatten,
+Source-Striche und mittige Zielschablone/-striche bleiben eigenständig erhalten.
+
+Vergleichshelfer um `adopt_as_default(op)` ergänzt: bekannte sichtbare Fassung
+oder hash-gesicherte Vergleichsansicht akzeptieren, tatsächliche lokale Texte
+bewahren, temporäre Sitzung schließen und eigene Standard-Rücknahmesicherung
+mit vorherigem sichtbaren Linienstand/Hashes speichern. Kompilierfehler stellen
+vorherige Ansicht wieder her. Renderer und Engine/Reader/Revision geprüft,
+keine automatische Speicherung. Explizite spätere Rücknahme über
+`restore_previous_divider(op)`; normale `show(op)`-Vergleichssitzung ist nach
+Standardübernahme geschlossen, damit Linien nicht versehentlich wiederkehren.
+
+Sieben neue Tests für Übernahme aus Vergleich/normaler Fassung, lokale Folge-
+änderungen, Kompilierfehler, Idempotenz und gesicherte Rücknahme bestanden.
+Motion-Suite 294 Fälle: 287 bestanden, sieben optionale native GPU-Fälle
+übersprungen. Historische Testfixtures normalisieren Standardmarker vor ihren
+Upgradepfadtests. Physische Gestaltungsabnahme ohne Trennstrich durch Johannes
+vorhanden; tatsächlicher Standardübernahme-Aufruf im laufenden TD, separate
+abschließende `live_output.verify(op)`-Ausgabe und manuelle Speicherung noch offen.
+
+## Zielringschablone mit gemeinsamem Nähe-Fade — vorbereitet 2026-10-27
+
+Johannes wünscht den Kreis im Mittelpunkt der Zielkontur wie die Ausrichtungshilfen
+erst bei Nähe eingeblendet. Einziger Eingriff: `templateRing *= guides`, bestehende
+Distanzkurve 45→15 cm und Erfolgsfade dadurch gemeinsam. Keine neue Kurve,
+keine andere Kreisgröße oder Position. Source-Navigationskreis bleibt unverändert;
+solide Zielfläche ohne Trennstrich bleibt Standard. Keine Runtime-/OSC-/Masken-/
+Layoutaktivierung oder Revision-/Chairänderung.
+
+`update_motion_target_template_fade.py`: gezielter Patch der bekannten lokalen
+Kreiszeile, eigener Probe/Hash-Backup. Noch offener temporärer Trennlinienvergleich
+wird erkannt und vor Folgepatch zur Standardübernahme aufgefordert; keine
+stille Invalidierung seiner Rücknahmesicherung. GPU-Prüfung vor Einbau:
+Kreis bei 15 cm vollständig, bei 30 cm halb, ab 45 cm unsichtbar; nahe Fassung
+bei 0/33/90 Grad unverändert, Erfolg/Wiedereinblendung und Bodenausgabe erhalten.
+Sechs neue Schutz-/Dispatchtests bestanden; Motion-Suite 300 Fälle, 293 bestanden,
+sieben optionale native GPU-Fälle übersprungen. Historische Einpasshilfen-Fixture
+normalisiert spätere Fade-Ergänzung. TD-GPU-Nachweis, Installation und aktive/
+physische Abnahme noch offen. Keine automatische Speicherung.
+
+## Zielkreis-Nähe-Fade installiert und GPU-geprüft — 2026-10-27
+
+Johannes liefert `target_template_fade.install(op)` mit `passed: true` zurück.
+Sieben GPU-Prüfgruppen bestanden: Zielkreis bei 15 cm vollständig sichtbar,
+bei 30 cm halb und ab 45 cm ausgeblendet; erwartete Hintergrundalphas
+0/0,5/1/1 bei 15/30/45/60 cm exakt erreicht. Nahe Darstellung bei 0/33/90 Grad,
+Erfolg und Wiedereinblendung erhalten. Boden RGBA8-pixelgleich, Floatfehler 0.
+Engine nicht zurückgesetzt, Ziele und Masken unverändert. Eigene Rücknahmesicherung
+vorhanden, nichts gespeichert. Separate aktive `live_output.verify(op)`-Ausgabe
+inzwischen bestanden: Session 2610399/Revision 3, `table_01`, drei Chairs,
+Main-/Chair-Frame 114756, Maskenprüf-Frame 114742, Indizes 1/1/0/1.
+Originalmaske aktiv, sechs doppelte Maskenreferenzen erhalten, Kantenfehler
+0,0000153 cm; beide Masken je 204490 beleuchtete Pixel und keine Pixel außerhalb
+der Ein-Pixel-Grenze. Physischer Sichtbefund des gemeinsamen Nähe-Fades noch offen.
 
 ## Referenzen und Bearbeitungsstand
 

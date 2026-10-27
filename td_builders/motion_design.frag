@@ -78,6 +78,27 @@ float alignmentBars(vec2 local, float radius) {
                 segment(local,vec2(-offset-5.0,0),vec2(-offset+5.0,0)));
     return coverage(d-1.25);
 }
+float targetDividers(vec2 local, vec2 halfSize, float corner) {
+    // White rim: 2.5 cm. Divider: 0.4 cm, entirely inside the original target.
+    float distance=roundedRect(local,halfSize,corner);
+    return coverage(abs(distance+2.7)-.2);
+}
+float successPop(float age) {
+    // Ease-out-back: grow from zero, overshoot slightly, settle after 0.32 s.
+    float x=clamp(age/.32,0.0,1.0)-1.0;
+    return max(0.0,1.0+2.70158*x*x*x+1.70158*x*x);
+}
+float successCheck(vec2 offset, vec3 target) {
+    // Readable from the long side facing the ROI center. Local +Y faces reader.
+    // Use the frozen target orientation, avoiding flips from tracking jitter.
+    vec2 normal=rotate2(vec2(0,1),target.z);
+    vec2 toCenter=vec2(250)-target.xy;
+    float side=dot(toCenter,normal)<-0.001?-1.0:1.0;
+    vec2 q=rotate2(offset,-target.z)*side;
+    float d=min(segment(q,vec2(-9,0),vec2(-2,7)),
+                segment(q,vec2(-2,7),vec2(11,-8)));
+    return coverage(d-1.5);
+}
 float targetEdge(vec2 direction, float rotation, vec2 halfSize, float corner) {
     vec2 d = rotate2(direction,-rotation);
     float lo=0.0, hi=length(halfSize);
@@ -114,13 +135,15 @@ void main() {
         vec4 layer=vec4(0);
         if(target.w>.5 && state.w<1.5) {
             float targetMask=coverage(roundedRect(rotate2(p-target.xy,-target.z),halfSize,shape.z));
+            float targetLines=0.0; // Accepted default: solid target surface without divider.
+            float targetFill=targetMask*(1.0-targetLines);
             vec2 delta=target.xy-source.xy;
             float distance=length(delta);
             // atan(0,0) is undefined in GLSL. The reference fixes near-target
             // orientation at zero, including while rotation is still outside tolerance.
             float angle=distance<3.0?0.0:degrees(atan(delta.y,delta.x));
             vec2 direction=distance>.001?delta/distance:vec2(1,0);
-            vec4 f=white(targetMask);
+            vec4 f=white(targetFill);
             if(distance>.001) {
                 float edge=targetEdge(-direction,target.z,halfSize,shape.z);
                 float arrows=0.0;
@@ -140,7 +163,7 @@ void main() {
             float guides=(1.0-smoothstep(15.0,45.0,distance))
                 *(success?1.0-smoothstep(0.0,.18,pulse.z):1.0);
             vec2 targetLocal=rotate2(p-target.xy,-target.z);
-            float templateRing=coverage(abs(length(targetLocal)-13.0)-1.5)*targetMask;
+            float templateRing=coverage(abs(length(targetLocal)-13.0)-1.5)*targetMask*guides;
             float targetBars=alignmentBars(targetLocal,14.5)*guides*targetMask;
             layer=white(success?0.0:targetMask);
             float navRadius=29.0*state.x;
@@ -151,8 +174,12 @@ void main() {
                 float ga=feedbackHalo(p-source.xy,angle,state.z,t,distance)
                     *smoothstep(0.0,1.0,state.y)*targetMask;
                 layer=over(vec4(vec3(0.0,1.0,110.0/255.0)*ga,ga),layer);
-                // Knock out target template before drawing the source navigation circle.
-                layer*=1.0-max(templateRing,targetBars);
+                // Dividing lines stay transparent through feedback; navigation draws above them.
+                layer*=1.0-targetLines;
+                // Target guides cut out on white, and remain white where a dividing line crosses.
+                float targetGuides=max(templateRing,targetBars);
+                layer*=1.0-targetGuides*targetFill;
+                layer=over(white(targetGuides*(1.0-targetFill)),layer);
                 float ring=softRing(pulse.x,centerDistance)*pulse.y;
                 float nav=state.x>0.0?coverage(centerDistance-navRadius):0.0;
                 layer*=1.0-navigationShadow(p-source.xy,navRadius,state.x,nav);
@@ -176,6 +203,14 @@ void main() {
             // The success circle contracts as a disk, independently of the green dissolve.
             if(success && state.x>0.0)
                 layer=over(white(coverage(centerDistance-navRadius)*sourceMask*released),layer);
+        }
+        // Keep the entrance pop; reverse it after one second, without fading.
+        if(target.w>.5 && state.w>.5 && pulse.z<1.32) {
+            float checkScale=pulse.z<=1.0?successPop(pulse.z)
+                :successPop(max(0.0,1.32-pulse.z));
+            if(checkScale>.0001)
+                layer=over(white(successCheck((p-source.xy)/checkScale,target.xyz)
+                    *sourceMask*released),layer);
         }
         // The global wave also passes over stationary/inactive captured tables.
         layer=over(white(waveAlpha*sourceMask),layer);

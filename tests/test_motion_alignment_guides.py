@@ -8,11 +8,36 @@ from td_builders import update_motion_alignment_guides as guides
 from td_builders import update_motion_distance_navigation as distance_navigation
 from td_builders import update_motion_alignment_timing as timing
 from td_builders import update_motion_feedback_response as response
+from td_builders import update_motion_target_outline as outline
+from td_builders import update_motion_target_divisions as divisions
+from td_builders import update_motion_target_single_line as single_line
+from td_builders import update_motion_target_surface_lines as surface_lines
+from td_builders import update_motion_target_frame_strip as frame_strip
+from td_builders import update_motion_target_equal_bands as equal_bands
+from td_builders import update_motion_target_inner_divider as inner_divider
+from td_builders import compare_motion_target_divider as divider_compare
+from td_builders import update_motion_target_template_fade as template_fade
+from td_builders import update_motion_success_check as success_check
+from td_builders import update_motion_success_pop as success_pop
+from td_builders import update_motion_success_pop_out as success_pop_out
 
 
 class AlignmentGuidesTests(unittest.TestCase):
     def original(self):
-        return (Path('td_builders/motion_design.frag').read_text(encoding='utf-8')
+        source=Path('td_builders/motion_design.frag').read_text(encoding='utf-8')
+        for old,new in success_pop_out.PAIRS: source=source.replace(new,old)
+        for old,new in success_pop.PAIRS: source=source.replace(new,old)
+        for old,new in success_check.PAIRS: source=source.replace(new,old)
+        source=source.replace(template_fade.NEW,template_fade.OLD)
+        source=source.replace(divider_compare.DEFAULT,divider_compare.VISIBLE)
+        source=source.replace(inner_divider.HELPER,inner_divider.bands.HELPER).replace(inner_divider.FLOOR,inner_divider.bands.FLOOR)
+        source=source.replace(equal_bands.HELPER,frame_strip.HELPER).replace(equal_bands.FLOOR,frame_strip.FLOOR)
+        source=source.replace(frame_strip.HELPER,surface_lines.NEW_HELPER).replace(frame_strip.FLOOR,surface_lines.FLOOR_NEW)
+        source=source.replace(surface_lines.NEW_HELPER,single_line.NEW).replace(surface_lines.FLOOR_NEW,surface_lines.FLOOR_OLD)
+        source=source.replace(single_line.NEW,single_line.OLD)
+        for original,new in divisions.PAIRS: source=source.replace(new,original)
+        for original,new in outline.PAIRS: source=source.replace(new,original)
+        return (source
                 .replace(response.NEW_RADIUS,response.OLD_RADIUS).replace(response.NEW_BARS,response.OLD_BARS)
                 .replace(response.NEW_COMMENT,response.OLD_COMMENT)
                 .replace(timing.NEW_RADIUS,timing.OLD_RADIUS).replace(timing.NEW_GUIDES,timing.OLD_GUIDES)
