@@ -8,6 +8,14 @@ float rect(vec2 p,vec2 size,float corner) {
 }
 void main() {
     vec4 clock=datum(0,5);
+    vec4 visualReveal=datum(1,5);
+    if(visualReveal.z>.5) {
+        if(visualReveal.y<.5) {
+            fragColor=TDOutputSwizzle(vec4(0));
+            return;
+        }
+        clock.y=visualReveal.x;
+    }
     vec2 p=vec2(vUV.x,1.0-vUV.y)*500.0;
     float a=0.0;
     if(clock.z>.5) {

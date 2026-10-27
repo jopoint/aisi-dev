@@ -9,6 +9,7 @@ Geometrie.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from copy import deepcopy
 from functools import lru_cache
 import itertools
 import math
@@ -77,6 +78,7 @@ def solve_rect_groupwork_prototype(
     cluster_sizes: tuple[int, ...] | None = None,
     candidate_filter: Callable[[PrototypeResult], bool] | None = None,
     disjoint_regions: bool = False,
+    option_cache: dict | None = None,
 ) -> PrototypeResult:
     """Return the best local Rect Groupwork candidate for counts two through five.
 
@@ -100,25 +102,41 @@ def solve_rect_groupwork_prototype(
     candidates: list[PrototypeResult] = []
     option_geometry = {}
     option_compatibility = {}
+    local_option_sets = option_cache if option_cache is not None else {}
+    if option_cache is not None:
+        context = (tuple((t.table_id,t.x,t.y,t.rot_deg,t.width,t.height,t.confidence,t.table_type) for t in tables),
+                   (scene_state.roi.x_min,scene_state.roi.y_min,scene_state.roi.x_max,scene_state.roi.y_max))
+        # Different seating profiles test the same geometric island pairs.
+        # Reuse their exact canonical verdicts only within this request/context.
+        option_geometry, option_compatibility = option_cache.setdefault(('geometry',context),({},{}))
+
+    def local_options(group, index, refined, limit):
+        # One solve has fixed sources/ROI/shapes. Repeated partitions request
+        # identical islands; do not regenerate and refit their full option sets.
+        rotations = tuple(t.rot_deg for t in tables) if selection == 'source_movement' else ()
+        key = (tuple((t.table_id,t.x,t.y,t.rot_deg,t.width,t.height,t.confidence,t.table_type) for t in group),
+               (scene_state.roi.x_min,scene_state.roi.y_min,scene_state.roi.x_max,scene_state.roi.y_max),
+               index if len(group)>1 else None, refined, limit, cluster_sizes is not None, rotations)
+        if key not in local_option_sets:
+            options = tuple(_fit_option_to_roi(scene_state, option)
+                for option in _group_options(group, pair_index=index, refined=refined,
+                    expanded_singletons=cluster_sizes is not None,
+                    singleton_rotations=rotations))
+            local_option_sets[key] = _select_local_options(scene_state, options, limit=limit)
+        # TableTarget is mutable: each partition keeps its original isolation.
+        return deepcopy(local_option_sets[key])
+
     filtered_best_key = None
     for refined in (False, True):
         partitions = (enumerate_pair_partitions(tables) if cluster_sizes is None
                       else enumerate_cluster_partitions(tables, cluster_sizes))
         for partition in partitions:
             option_sets = [
-                _select_local_options(
-                    scene_state,
-                    tuple(
-                        _fit_option_to_roi(scene_state, option)
-                        for option in _group_options(group, pair_index=index, refined=refined,
-                                                     expanded_singletons=cluster_sizes is not None,
-                                                     singleton_rotations=(tuple(t.rot_deg for t in tables)
-                                                        if selection == 'source_movement' else ()))
-                    ),
+                local_options(group, index, refined,
                     # Twelve representatives preserve source-oriented outward
                     # candidates for every local island without expanding the
                     # exhaustive cross-product to the full raw option set.
-                    limit=(8 if len(partition) >= 4 else 12) if refined else None,
+                    (8 if len(partition) >= 4 else 12) if refined else None,
                 )
                 for index, group in enumerate(partition)
             ]

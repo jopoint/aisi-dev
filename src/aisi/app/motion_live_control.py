@@ -37,6 +37,14 @@ class MotionLiveSession:
         self.frame=0
         self.revision=1
         self.proposal=None
+        self.requires_activation=False
+
+    def reconnect_camera(self):
+        """Retain last valid proposal, but never emit it against restarted IDs."""
+        calibration=self.adapter._calibration
+        self.adapter.reset_stream()
+        self.adapter._calibration=calibration
+        self.requires_activation=True
 
     def commit(self,proposal,now):
         from td_builders.motion_osc import MAX_COUNTER
@@ -53,6 +61,7 @@ class MotionLiveSession:
         revision=self.revision+1
         self.adapter.activate(revision,targets,active,now)
         self.proposal,self.revision=proposal,revision
+        self.requires_activation=False
 
     def values(self,now):
         from td_builders.motion_osc import MAX_COUNTER,frame_values
@@ -64,9 +73,11 @@ class MotionLiveSession:
             self.frame=1
         rows=[(identity,content_pose(source),content_pose(target),valid,active)
               for identity,source,target,valid,active in snap['rows']]
+        if self.requires_activation:
+            rows=[]
         chairs=()
         visible=False
-        if self.proposal is not None:
+        if self.proposal is not None and not self.requires_activation:
             chairs=tuple((*content_pose((x,y,0))[:2],r,identity)
                          for x,y,r,identity in self.proposal.chairs)
             visible=self.proposal.show_chairs and snap['fresh']
@@ -93,7 +104,10 @@ def main():
     parser.add_argument('--port',type=int,default=9000)
     args=parser.parse_args()
     client=None
+    sender_lock=None
     if args.send:
+        from aisi.app.motion_sender_lock import MotionSenderLock
+        sender_lock=MotionSenderLock()
         from pythonosc.udp_client import UDPClient
         client=UDPClient(args.host,args.port)
     controller=MotionLiveSession()
@@ -164,7 +178,11 @@ def main():
         root.after(50,tick)
 
     root.after(0,tick)
-    root.mainloop()
+    try:
+        root.mainloop()
+    finally:
+        if sender_lock is not None:
+            sender_lock.close()
 
 
 if __name__=='__main__':

@@ -331,7 +331,7 @@ def _attach_clusters(state, targets, islands, profile, sizes, bound_clusters=Non
     return None
 
 
-def _solve_profile(active_state, profile, sizes, bound_clusters=None, seating_cache=None, *, angle_fallback=True, check_floor_contours=False):
+def _solve_profile(active_state, profile, sizes, bound_clusters=None, seating_cache=None, *, angle_fallback=True, check_floor_contours=False, option_cache=None):
     cluster_sizes = tuple(sorted(descriptor[1] for descriptor in profile))
     if len(cluster_sizes) >= 4 and all(n == 1 for n in cluster_sizes):
         plan = _repair_singleton_profile(active_state,profile,sizes,bound_clusters)
@@ -357,7 +357,8 @@ def _solve_profile(active_state, profile, sizes, bound_clusters=None, seating_ca
         return True
     try:
         result = solve_rect_groupwork_prototype(active_state,selection='source_movement',
-                    cluster_sizes=cluster_sizes,candidate_filter=accept,disjoint_regions=True)
+                    cluster_sizes=cluster_sizes,candidate_filter=accept,disjoint_regions=True,
+                    option_cache=option_cache)
     except ValueError:
         plan = _repair_singleton_profile(active_state,profile,sizes,bound_clusters)
         if plan is not None or not angle_fallback or cluster_sizes != (1,1,1,2):
@@ -372,7 +373,8 @@ def _solve_profile(active_state, profile, sizes, bound_clusters=None, seating_ca
                 rot_deg=t.rot_deg+fraction*((axis-t.rot_deg+90.) % 180.-90.))
                 for t in active_state.tables],'groupwork')
             plan = _solve_profile(relaxed,profile,sizes,bound_clusters,seating_cache,
-                                  angle_fallback=False,check_floor_contours=check_floor_contours)
+                                  angle_fallback=False,check_floor_contours=check_floor_contours,
+                                  option_cache=option_cache)
             if plan is not None:
                 for target in plan.targets:
                     target.source_rot_deg = originals[target.table_id].rot_deg
@@ -603,6 +605,7 @@ def _cached_plan(roi,key,participants,number_of_groups,policy):
             profiles.add(profile)
     ordered = sorted(profiles,key=lambda profile:_profile_key(profile,policy))
     seating_cache = OrderedDict()
+    option_cache = {}
     best = None;best_rank = None
     seen_single_cluster_profiles = set()
     for profile in ordered:
@@ -619,7 +622,7 @@ def _cached_plan(roi,key,participants,number_of_groups,policy):
         required = sum(n for _,n,_ in profile)
         for active in combinations(state.tables,required):
             active_state = SceneState(state.roi,list(active),'groupwork')
-            plan = _solve_profile(active_state,profile,sizes,seating_cache=seating_cache)
+            plan = _solve_profile(active_state,profile,sizes,seating_cache=seating_cache,option_cache=option_cache)
             if plan is None:
                 continue
             plan = _complete_parking(state,plan)
@@ -639,7 +642,8 @@ def _cached_plan(roi,key,participants,number_of_groups,policy):
         # then checks floor contours before the source-movement winner is chosen.
         active_ids={tid for c in best[1].clusters for tid in c.table_ids}
         active_state=SceneState(state.roi,[t for t in state.tables if t.table_id in active_ids],'groupwork')
-        retry=_solve_profile(active_state,best[2],sizes,seating_cache=seating_cache,check_floor_contours=True)
+        retry=_solve_profile(active_state,best[2],sizes,seating_cache=seating_cache,check_floor_contours=True,
+                             option_cache=option_cache)
         if retry is not None:
             retry=_complete_parking(state,retry)
             if retry is not None:

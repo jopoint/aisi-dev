@@ -370,11 +370,31 @@ def build_html(
 </html>"""
 
 
+def build_page(state, motion=False):
+    if motion:
+        from aisi.app.learning_format_ui import build_motion_html
+        return build_motion_html(state)
+    return build_html(str(state['learning_format']), bool(state['show_persons']),
+                      bool(state['show_chairs']), float(state['transformation_strength']),
+                      int(state['participants']), int(state['number_of_groups']),
+                      state['presentation_side'], bool(state['adaptive_layout_preview']))
+
+
 class LearningFormatHandler(BaseHTTPRequestHandler):
     """Handle the simple HTML page and form submissions."""
 
     def do_GET(self) -> None:
         """Return the HTML page."""
+        motion = getattr(self.server, 'motion', None)
+        if urlparse(self.path).path == '/motion-status' and motion is not None:
+            payload = json.dumps(motion.status(read_state()), ensure_ascii=False).encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.send_header('Cache-Control', 'no-store')
+            self.send_header('Content-Length', str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+            return
         if urlparse(self.path).path == "/layout-status":
             payload = json.dumps(read_status(read_state()), ensure_ascii=False).encode("utf-8")
             self.send_response(200)
@@ -389,16 +409,10 @@ class LearningFormatHandler(BaseHTTPRequestHandler):
             return
 
         state = read_state()
-        html = build_html(
-            str(state["learning_format"]),
-            bool(state["show_persons"]),
-            bool(state["show_chairs"]),
-            float(state["transformation_strength"]),
-            int(state["participants"]), int(state["number_of_groups"]), state["presentation_side"],
-            bool(state["adaptive_layout_preview"]),
-        ).encode("utf-8")
+        html = build_page(state, motion is not None).encode('utf-8')
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header('Cache-Control', 'no-store')
         self.send_header("Content-Length", str(len(html)))
         self.end_headers()
         self.wfile.write(html)
@@ -413,6 +427,7 @@ class LearningFormatHandler(BaseHTTPRequestHandler):
         content_length = int(self.headers.get("Content-Length", "0"))
         body = self.rfile.read(content_length).decode("utf-8")
         form_data = parse_qs(body, keep_blank_values=True)
+        motion = getattr(self.server, 'motion', None)
         selected = form_data.get("learning_format", [""])[0]
         toggle = form_data.get("toggle", [""])[0]
         transformation_strength_raw = form_data.get("transformation_strength", [""])[0]
@@ -424,7 +439,7 @@ class LearningFormatHandler(BaseHTTPRequestHandler):
         state = read_state()
         changed = False
 
-        if form_data.get('action', [''])[0] == 'regenerate':
+        if form_data.get('action', [''])[0] == 'regenerate' and motion is None:
             state['layout_revision'] = request_revision(state) + 1
             changed = True
 
@@ -466,16 +481,26 @@ class LearningFormatHandler(BaseHTTPRequestHandler):
         if changed:
             write_state(state)
 
-        html = build_html(
-            str(state["learning_format"]),
-            bool(state["show_persons"]),
-            bool(state["show_chairs"]),
-            float(state["transformation_strength"]),
-            int(state["participants"]), int(state["number_of_groups"]), state["presentation_side"],
-            bool(state["adaptive_layout_preview"]),
-        ).encode("utf-8")
+        if motion is not None:
+            action = form_data.get('action', [''])[0]
+            if action == 'activate_motion':
+                motion.activate(state)
+            elif action == 'reconnect_motion' and form_data.get('outputs_off', [''])[0] == 'yes':
+                motion.reconnect()
+
+        if motion is not None and 'application/json' in self.headers.get('Accept', ''):
+            payload = json.dumps(dict(settings=state, motion=motion.status(state)), ensure_ascii=False).encode('utf-8')
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json; charset=utf-8')
+            self.send_header('Cache-Control', 'no-store')
+            self.send_header('Content-Length', str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+            return
+        html = build_page(state, motion is not None).encode('utf-8')
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header('Cache-Control', 'no-store')
         self.send_header("Content-Length", str(len(html)))
         self.end_headers()
         self.wfile.write(html)
@@ -488,6 +513,8 @@ class LearningFormatHandler(BaseHTTPRequestHandler):
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description="Run the AISI learning format server.")
+    parser.add_argument('--motion', action='store_true', help='Motion-Steuerung in die UI integrieren.')
+    parser.add_argument('--send', action='store_true', help='Motion-OSC senden (nur mit --motion).')
     parser.add_argument(
         "--port",
         type=int,
@@ -504,6 +531,21 @@ def main() -> None:
 
     local_ip = get_local_ip()
     server = HTTPServer(("0.0.0.0", args.port), LearningFormatHandler)
+    motion = None
+    sender_lock = None
+    if args.send and not args.motion:
+        server.server_close()
+        raise ValueError('--send benötigt --motion')
+    if args.motion:
+        from aisi.app.motion_web_runtime import MotionWebRuntime
+        client = None
+        if args.send:
+            from aisi.app.motion_sender_lock import MotionSenderLock
+            sender_lock = MotionSenderLock()
+            from pythonosc.udp_client import UDPClient
+            client = UDPClient('127.0.0.1', 9000)
+        motion = server.motion = MotionWebRuntime(client=client)
+        motion.start()
 
     print(f"Learning format server running at http://127.0.0.1:{args.port}")
     print(f"Open this URL on a tablet in the same network: http://{local_ip}:{args.port}")
@@ -513,6 +555,10 @@ def main() -> None:
     except KeyboardInterrupt:
         print("\nServer stopped.")
     finally:
+        if motion is not None:
+            motion.close()
+        if sender_lock is not None:
+            sender_lock.close()
         server.server_close()
 
 

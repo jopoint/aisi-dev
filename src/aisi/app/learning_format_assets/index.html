@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>AISI · Learning Format</title>
+  <style>{{STYLE}}</style>
+</head>
+<body>
+<main class="workspace">
+  <header class="masthead">
+    <a class="brand" href="/" aria-label="AISI Learning Format"><span class="brand-mark" aria-hidden="true">ai</span><span>AISI<span class="brand-caption">Learning Format</span></span></a>
+    <span class="connection" id="connection"><i aria-hidden="true"></i><span id="connection-label">Verbinden</span></span>
+  </header>
+
+  <div class="page-heading"><p class="eyebrow">RAUM & LERNEN</p><h1>Wie lernen wir jetzt?</h1></div>
+
+  <section aria-labelledby="format-heading">
+    <h2 id="format-heading">Lernformat</h2>
+    <form class="formats" method="post" action="/set" id="format-form">
+      <button class="format-card" name="learning_format" value="input" type="submit" aria-pressed="false">
+        <span class="format-title">Input<span class="selection-check" aria-hidden="true">✓</span></span><span class="format-description">Gemeinsam zuhören</span>
+      </button>
+      <button class="format-card" name="learning_format" value="groupwork" type="submit" aria-pressed="false">
+        <span class="format-title">Groupwork<span class="selection-check" aria-hidden="true">✓</span></span><span class="format-description">In Gruppen arbeiten</span>
+      </button>
+      <button class="format-card" name="learning_format" value="discussion" type="submit" aria-pressed="false">
+        <span class="format-title">Discussion<span class="selection-check" aria-hidden="true">✓</span></span><span class="format-description">Miteinander diskutieren</span>
+      </button>
+    </form>
+  </section>
+
+  <section class="settings-panel" aria-labelledby="settings-heading">
+    <div class="section-heading"><h2 id="settings-heading">Einstellungen</h2><span id="table-count" class="muted">Tische werden erkannt</span></div>
+    <form id="settings-form" method="post" action="/set" class="fields">
+      <div class="field"><label for="participants">Teilnehmende</label><div class="stepper"><button type="button" data-step="-1" data-for="participants" aria-label="Eine Person weniger">−</button><input id="participants" name="participants" type="number" min="1" max="99" inputmode="numeric" value="1"><button type="button" data-step="1" data-for="participants" aria-label="Eine Person mehr">+</button></div></div>
+      <div class="field" id="groupwork-parameters" hidden><label for="number_of_groups">Gruppen</label><div class="stepper"><button type="button" data-step="-1" data-for="number_of_groups" aria-label="Eine Gruppe weniger">−</button><input id="number_of_groups" name="number_of_groups" type="number" min="1" max="99" inputmode="numeric" value="1"><button type="button" data-step="1" data-for="number_of_groups" aria-label="Eine Gruppe mehr">+</button></div></div>
+      <div class="field" id="input-parameters" hidden><label for="presentation_side">Präsentationsseite</label><select id="presentation_side" name="presentation_side"><option value="">Automatisch</option><option value="north">Nord</option><option value="east">Ost</option><option value="south">Süd</option><option value="west">West</option></select></div>
+    </form>
+    <div class="display-row"><span class="muted">Einblenden</span><form id="display-form" method="post" action="/set" class="display-controls"><button class="display-toggle" name="toggle" value="chairs" type="submit" aria-pressed="false">Stühle <span id="chairs-label">Aus</span></button><button class="display-toggle" name="toggle" value="persons" type="submit" aria-pressed="false">Personen <span id="persons-label">Aus</span></button></form></div>
+  </section>
+
+  <section class="activation-panel" aria-label="Layout aktivieren">
+    <div class="layout-status" role="status" aria-live="polite"><span class="status-dot" aria-hidden="true"></span><div><strong id="status-title">Status wird geladen</strong><p id="status-description">Verbindung zum Raum wird hergestellt.</p></div></div>
+    <form method="post" action="/set" id="activation-form"><button class="primary-button" id="motion-activate" name="action" value="activate_motion" type="submit" disabled><span id="activation-label">Vorschlag aktivieren</span><span aria-hidden="true">↗</span></button></form>
+  </section>
+  <p class="error-message" id="request-error" role="alert" hidden></p>
+
+  <details class="diagnostics"><summary>Diagnose & erweiterte Einstellungen</summary><div class="diagnostics-content"><dl id="diagnostics-data"></dl><form id="advanced-form" method="post" action="/set"><label class="advanced-toggle"><input type="checkbox" name="adaptive_layout_preview" id="adaptive_layout_preview"> Raumlayout-Generator verwenden</label></form></div></details>
+</main>
+<script type="application/json" id="ui-state">{{STATE}}</script>
+<script>{{SCRIPT}}</script>
+</body>
+</html>

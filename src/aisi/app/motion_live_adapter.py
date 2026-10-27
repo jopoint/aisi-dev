@@ -54,6 +54,7 @@ class MotionLiveAdapter:
         self._confirmed=False
         self._healthy=False
         self._requires_reset=False
+        self.reset_reason=None
         self._calibration=None
         self._sources={}
         self._last_sources={}
@@ -93,10 +94,12 @@ class MotionLiveAdapter:
                      for identity,t in tables.items()}
             if self._calibration is not None and calibration!=self._calibration:
                 self._requires_reset=True
+                self.reset_reason='calibration'
                 raise ValueError('Calibration changed; reset and reactivate explicitly')
             if self._frame_id is not None:
                 if frame.frame_id<self._frame_id or captured<self._captured:
                     self._requires_reset=True
+                    self.reset_reason='producer_restart'
                     raise ValueError('Camera frame rollback; reset explicitly')
                 if frame.frame_id==self._frame_id:
                     if captured!=self._captured or sources!=self._sources:

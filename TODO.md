@@ -2,6 +2,379 @@
 
 Stand: 2026-10-27
 
+## Systemtestabschluss und Sicherung — 2026-10-27
+
+- [x] Johannes meldet sämtliche Systemtests abgeschlossen. Gesamtabschluss als
+  manuelle Nutzerbestätigung übernehmen; fehlende Einzelmesswerte nicht erfinden.
+  Frühere offene Testschritte unten sind historische Zwischenstände.
+- [x] Konsolidierte Übergabe in `docs/MOTION_CHECKPOINT_20261027.md` festhalten:
+  Betriebs-/Grafikstand, tatsächlicher TD-Graph, Schutzregeln, Pausen und Grenzen
+  der Git-Sicherung. Untertisch bleibt pausiert, keine `.toe` automatisch speichern.
+- [x] Code/Tests/Übergabe für gezielte Git-Sicherung zusammengestellt;
+  485 Tests bestanden, sieben optionale GPU-Fälle übersprungen. Laufzeit-/Debug-/
+  Kalibrierungsdaten bleiben außerhalb des Commits. Commit-/Remote-Stand über
+  Git prüfen. Nächster unabhängiger Block: Motion als regulären AISI-Standard
+  konsolidieren, heute keine neue Umstellung.
+
+## Groupwork ein Tisch bestanden, zwei Tische vorbereiten — 2026-10-27
+
+- [x] Johannes bestätigt Eintischfall mit drei Teilnehmenden/einer Gruppe:
+  drei Chairs/eine Welle, Source/Feedback folgen; Änderung auf zwei ohne
+  Aktivierung erhält Ziele/drei Chairs. Berechnungsdauer nicht gemeldet.
+- [ ] Zwei erkannte Rect-Tische, sechs Teilnehmende/zwei Gruppen aktivieren;
+  sechs Chairs/eine Welle, Zuordnung auch bei gleichzeitiger Bewegung und
+  feste Ziele/Chairs prüfen. Gruppenzahl danach nur auf eins vormerken:
+  keine neue Revision/Neuberechnung. Ein-Gruppen-Pairfall erst anschließend.
+  Letzter Webstatus zeigt noch fünf IDs/Input, kein Nachweis des alten Falls;
+  vor nächstem Versuch genau zwei erkannte Tische sicherstellen.
+
+## Systemprüfung nach Konturabnahme fortsetzen — 2026-10-27
+
+- [x] Johannes bestätigt Kontur-/Chair-Installation `passed: true` und Sichtbefund;
+  akzeptiert. Keine neue Speicherbestätigung. Lesender Webstatus: fünf frische
+  IDs, Groupwork/15 Chairs, Sitzung 2730811/Revision 5, TD freigegeben.
+- [x] Groupwork, ein erkannter Rect-Tisch, drei Teilnehmende,
+  eine Gruppe. Einmal aktivieren, drei Chairs/eine Welle, ID-Bindung und feste
+  Ziele prüfen. Danach Teilnehmende auf zwei nur vormerken: Ziele/drei Chairs/
+  Revision bleiben. Bei Entfernen weiterer Tische ist die AISI-Sperre bis zum
+  neuen gültigen Vorschlag erwartet. Groupwork 2–4, Discussion und Formatwechsel
+  bleiben offen; Input 1–5 und Groupwork 5/15/drei Gruppen bereits positiv.
+  Eintisch-Sichtbefund inzwischen bestätigt; nächster Fall oben.
+
+## Durchgängige Zielkontur und gleich starke Chair-Kreise — 2026-10-27
+
+- [x] Rücknehmbaren Doppel-Shader-Trial `update_motion_continuous_contours.py`
+  vorbereitet: gestricheltes 5-cm-Innenband durch kontinuierliches identisches
+  Band auf Boden/Tabletop ersetzen; Chair-Striche von 2,5 auf 5 cm nach innen
+  verbreitern. Tisch-/Chair-Außenmaße, Ziel-/Chair-Positionen, Revision, Reveal,
+  Source-/Zielhilfen und Maskierung erhalten. Kein neuer Layoutvorschlag nötig.
+- [x] Sieben fokussierte Patch-/Geometrie-/Transaktionstests bestanden;
+  isolierter Float32-WebGL-Vergleich bei 0/33/90 Grad bestätigt Kontur, breitere
+  Chair-Ringe und unverändertes Feedback im getrennten Source-Prüffall.
+  Beide Shader erst nach GPU-Nachweis ändern, nur eigenen Chair-DAT-Hash
+  im bestehenden Schutzsnapshot aktualisieren; gemeinsamer Rückweg vorhanden.
+- [x] Native Installation `passed: true`; durchgängige Kontur und gleich starke
+  Chair-Kreise von Johannes im Raum akzeptiert. Keine neue Speicherung gemeldet.
+  Voriger Source-Strich-Farbpatch ohne eigene explizite Installationsbestätigung.
+
+## Source-Striche weiß, Zielhilfen transparent — 2026-10-27
+
+- [x] Präzisierung: Nur die zwei bewegten Source-Striche am Navigationskreis
+  weiß zeichnen; Zielkreis und beide Zielstriche bleiben Alpha-Aussparungen.
+  Rücknehmbarer Ein-Zeilen-Shader-Trial `update_motion_source_bars_white.py`,
+  Feedbackradius, gemeinsamer Hakenabschluss, Ziele/Chairs/Revision unverändert.
+- [x] 20 fokussierte Tests bestanden; Float32-WebGL bei 0/33/90 Grad zeigt
+  weiße Source-Striche, transparente Zielhilfen, pixelgleiche restliche
+  Tabletop-Darstellung und unveränderten Boden.
+- [ ] Native TD-GPU-Installation und physische Abnahme; nichts gespeichert.
+
+## Gemeinsamer Abschluss mit persistenten Haken — 2026-10-27
+
+- [x] Johannes bestätigt native Feedback-Installation (`passed: true`), Größe
+  und transparente Hilfen im Raum akzeptiert; keine neue Speicherbestätigung.
+- [x] Auf Folgeauftrag rücknehmbaren Runtime-/Shader-Trial
+  `update_motion_group_success.py` vorbereitet. Haken ab vollständigem Reveal,
+  frühe Ankünfte bleiben markiert; erfasst auch anfangs korrekt stehende,
+  als inaktiv transportierte Tische. Letzte Ankunft startet gemeinsame
+  Ein-Sekunden-Anzeige, danach synchroner Reverse-Pop (0,32 s).
+  Bestehende Ankunfts-/Wiederaufnahmegrenzen, Ziele/Chairs/Revision unverändert.
+  Tracking-/Freigabeausfall pausiert Anzeigezeit; fehlende/geänderte ID verhindert
+  Abschluss. Neues Layout setzt nur eigenen Anzeigezustand zurück.
+- [x] Zwölf fokussierte Zustands-/Runtime-/Transaktionstests bestanden;
+  isolierter Float32-WebGL-Vergleich mit zwei Haken, aktiven/inaktiven Tischen,
+  Ein-/Ausblendmaßstab und unverändertem Boden bestanden.
+- [x] Native Installation `passed: true`; Johannes bestätigt mit zwei Tischen:
+  erster Haken bleibt bis zum zweiten, beide verschwinden gemeinsam. Akzeptiert.
+- [ ] Anfangs richtig stehende Tische und Ausfall-/Wiederaufnahmefälle des neuen
+  Hakenpfads noch gesondert im Raum prüfen; keine neue TD-Speicherung gemeldet.
+
+## Feedback-Verlauf und transparente Hilfen präzisiert — 2026-10-27
+
+- [x] Separater rücknehmbarer Trial `update_motion_feedback_size_cutouts.py`:
+  bei 20 cm exakt 80 % des bisherigen Maximalradius (65,12 von 81,4 cm), weich
+  von 35 cm bei 80 cm Abstand bis Maximum bei 8 cm; Radius rein distanzabhängig.
+  Zielhilfen und Source-Striche als Alpha-Aussparungen statt weißer Auflage,
+  auch im offenen gestrichelten Ziel und durch grünes Feedback hindurch.
+  Überschreibt den vorherigen 100-%-bei-20-cm-Vorschlag fachlich, akzeptiert
+  dessen installierten Radiuscode oder den vorigen Stand. Ziele/Chairs/Revision,
+  Erfolgserkennung, Boden und Masken unverändert.
+- [x] Elf fokussierte Tests bestanden; isolierter WebGL-Vergleich bestätigt
+  transparente Hilfen bei 0/33/90 Grad, 80-%-Radius und pixelgleichen Boden.
+- [x] Native TD-Installation bestanden, Feedbackgröße und transparente Hilfen
+  von Johannes im Raum akzeptiert; keine neue Speicherung gemeldet.
+- [x] Erste native Installation vor Shaderwechsel an zu strenger Kantenprüfung
+  gestoppt. Float32-WebGL reproduziert bei 33 Grad: Maskendeckung 0,999967873,
+  korrektes Rest-RGBA 0,000031984; voller Kern exakt null. Prüfung unterscheidet
+  jetzt exakten Kern und antialiasierte Komplementkante; Shader unverändert.
+  Regression weist sowohl falsches Kern-Alpha als auch weiße Kanten zurück.
+  Erneute native Installation aus bestehendem Prüfzweig anschließend bestanden.
+
+## Feedback früher vergrößern — 2026-10-27
+
+- [x] Rücknehmbaren Shader-Patch `update_motion_feedback_proximity.py`
+  vorbereitet: bisheriges Wachstum bleibt Untergrenze; Distanz ergänzt weichen
+  Mindestzuwachs ab 80 cm, voller Radius 81,4 cm bereits bei 20 cm. Auch bei
+  geringer kontakt-/orientierungsabhängiger Progression vor Erfolg größer.
+  Kontaktblende, Erfolgsbedingungen/-animation, Ziel-Clipping und Boden erhalten.
+- [x] Zwölf fokussierte Tests einschließlich gestrichelter Zielkontur bestanden;
+  isolierter WebGL-Vergleich kompiliert, Boden pixelgleich und deutlich größerer
+  grüner Feedbackbereich bei 20 cm/geringem Fortschritt. Kein TD-Zugriff.
+- [ ] Separat im laufenden TD vorbereiten/GPU-prüfen/installieren und im Raum
+  abnehmen. Kontur-Trial zuerst abschließen, falls dort bereits vorbereitet;
+  jeder vorbereitete Shader-Prüfzweig erwartet seinen unveränderten Ausgangstext.
+
+## Zwischenauftrag: gestrichelte Zielkontur — 2026-10-27
+
+- [x] Johannes bestätigt schnelle Groupwork-Wiederholung mit fünf Tischen,
+  15 Teilnehmenden/drei Gruppen: Freigabe/Reveal/Darstellung passen, Ziele und
+  Chairs fest. Aktueller technischer Status: 2,028 s Berechnung, Freigabe aktiv.
+- [x] Auf Wunsch Shader-Trial `update_motion_target_dashes.py` vorbereitet:
+  5 cm breite gestrichelte weiße Kontur innen am unveränderten gerundeten
+  Ziel-Footprint, identisch auf Boden/Tabletop. 14 gleichmäßig entlang des
+  Umfangs verteilte Striche, 74 % Strichanteil. Grün weiterhin auf vollständigen
+  Ziel-Footprint begrenzt; keine Ziel-/Chair-/Revisions-/Maskenänderung.
+- [x] Vier fokussierte Patch-/Schutztests, isolierte WebGL-Kompilierung und
+  Code-Vorschau bestanden. Vollständige Motion-Prüfung: 396 bestanden, sieben
+  optionale GPU-Fälle übersprungen. Keine Bildschirmzugriffe oder TD-Mutationen.
+- [ ] Tatsächlichen TD-Shader passiv vorbereiten, separat GPU-prüfen/installieren,
+  Kontur und Feedback im Raum prüfen; bei Ablehnung eigener Rückweg. Noch keine
+  native TD-/Raumprüfung dieser Kontur oder manuelle Speicherung behauptet.
+
+## Groupwork-Latenz diagnostiziert und reduziert — 2026-10-27
+
+- [x] Direktfall fünf Tische/15 Teilnehmende/drei Gruppen auffällig: mindestens
+  eine Minute, UI „Vorschlag wird berechnet“. Kein TD-/Reveal-Engpass behauptet.
+  Nahe Aktivierung aufgezeichnete Posen offline mit 52,406 s reproduziert.
+- [x] Reine anfrageinterne Memoisierung im bestehenden Suchkern/Profile-Planner:
+  gleiche Optionen und kanonische Geometrieurteile wiederverwenden, vollständige
+  Quellen-/ROI-/Form-/Winkelkontexte beachten, mutable Targets getrennt kopieren.
+  Kandidatenmenge, Reihenfolge, Sitz-/ROI-/Kollisionsregeln und Ziele unverändert.
+  Derselbe Replay 10,162 s, alle Ziel-/Chair-Daten exakt gleich.
+- [x] 56 Groupwork-/Geometrie-/Cachetests bestanden; 392 Motion-Tests bestanden,
+  sieben optionale GPU-Fälle übersprungen. Berechnungsdauer nur unter Diagnose
+  ergänzt, auch bei fehlgeschlagener Planung. Controller kontrolliert aktualisiert,
+  echte TD-Sperre vorher bestätigt, keine Kamera-/Kalibrierungsänderung.
+- [ ] Fünftisch-Groupwork mit 15/drei Gruppen live erneut aktivieren und Dauer/
+  Raumverhalten melden. Kein allgemeines Latenzversprechen; kleinere Counts und
+  restlicher Systemtest bleiben offen. Untertisch bleibt pausiert.
+
+## Input mit zwei Tischen und Chair-Reveal bestanden — 2026-10-27
+
+- [x] Johannes bestätigt Input/sechs Chairs mit zwei realen Tischen: genau eine
+  Welle, richtige Source-/Feedback-Zuordnung, feste Ziele/Chairs, keine Vertauschung.
+  Technisch frische IDs `table_00`/`table_01`, Sitzung 511129/Revision 4,
+  automatische TD-Freigabe im lesenden Gegencheck bestätigt.
+- [x] Früh sichtbare Chairs diagnostiziert: Chair-Shader verwendet noch gemeinsame
+  alte Uhr. `update_motion_chair_reveal.py` vorbereitet, damit er denselben
+  visuellen Marker/Takt wie der Motion-Shader verwendet. Keine Positions-, Radius-,
+  Layout-/CPU-State- oder Maskenänderung. Exakt eigener Chair-DAT-Hash aktualisieren.
+- [x] Johannes bestätigt Chair-Reveal-Installation `passed: true` und Sichtbefund:
+  Chairs erst mit der Welle. Technischer Status: Revision 5 derselben Sitzung,
+  zwei frische IDs, sechs Chairs, automatische Freigabe.
+- [x] Johannes bestätigt Input-Dreitischfall: neun Chairs, eine Welle, keine
+  Vertauschung. Änderung auf acht ohne Aktivierung erhält Ziele und neun Chairs.
+- [x] Johannes bestätigt Input mit vier Tischen/zwölf Chairs: eine Welle,
+  keine Vertauschung auch bei zwei gleichzeitig bewegten Tischen; Ziele/Chairs fest.
+- [x] Johannes bestätigt Input mit fünf Tischen/15 Chairs: eine Welle, keine
+  Vertauschung. Kurze Verdeckung mit automatischer Rückkehr ohne neue Welle;
+  Ziele/Chairs fest. Input damit für Counts 1–5 im Raum abgenommen.
+- [ ] Groupwork separat abnehmen, Einstieg ein Tisch/drei Teilnehmende/eine
+  Gruppe. Vollständiger Systemtest und Speicherung des Chair-Reveal-Patches
+  noch offen. Untertisch bleibt pausiert.
+
+## Jetzt: reale Mehrtisch-Systemabnahme — 2026-10-27
+
+- [x] Johannes akzeptiert reduzierte UI ohne kleine Tischdarstellungen und
+  beauftragt reale Prüfung bis fünf Tische/Formatwechsel. Testplan aktualisiert,
+  alte Anschlusslücke als behoben markiert, eigenes Raumprotokoll angelegt.
+- [x] Aktuellen Backend-/Git-Stand lesend erfasst: Dienste ohne Doppelketten,
+  frische `table_00`, Input/drei Chairs, automatische TD-Freigabe. Basis
+  `a20a9ff`, Änderungen im Worktree erhalten, keine neuen Dienste gestartet.
+- [ ] Einstieg: zwei reale Rect-Tische, Input/sechs Teilnehmende, UI-Aktivierung
+  und eindeutige Bewegungs-/ID-Bindung im Raum prüfen. Danach Input 3/4/5,
+  Groupwork separat, Discussion separat, erst dann formatübergreifend wechseln.
+  Ergebnisse in `docs/MOTION_SYSTEMTEST_PROTOKOLL.md` festhalten.
+
+## Learning-Format-UI grafisch überarbeitet — 2026-10-27
+
+- [x] Johannes findet das neue Layout besser; auf Folgeauftrag die drei kleinen
+  Tischdarstellungen aus den Formatkarten entfernt und Karten kompakter gemacht.
+  Als Asset-Änderung direkt per Seitenneuladen verfügbar, kein Controllerneustart.
+
+- [x] Auf ausdrücklichen Wunsch neue reduzierte Motion-Oberfläche bereitgestellt:
+  helle ruhige Gestaltung, drei Formatkarten, passende Parameter, kompakte
+  Anzeige-Schalter, ein Aktivierungsbereich. Nur relevante Kurzstatusmeldungen;
+  IDs/Revision/technische Texte und Generatoroption eingeklappt unter Diagnose.
+- [x] Formularänderungen ohne Seitenneuladen über bestehendes `/set`, Anfragen
+  geordnet und explizite Aktivierung separat. Lernformat-/Generatorsemantik,
+  feste Ziele/Chairs und automatische TD-Freigabe unverändert.
+- [x] Desktop/Mobil im isolierten Headless-Browser geprüft, inklusive Format-
+  und Gruppenänderungen ohne Aktivierung, erhaltener Generatorwahl, genau einer
+  Aktivierung und gesperrtem Button bei Quellenverlust. Kein horizontaler
+  Überlauf bei 390 px, keine JavaScript-Fehler. 386 Motion-Tests bestanden,
+  sieben optionale GPU-Fälle übersprungen, sechs ergänzende UI-/Serverfälle bestanden.
+- [x] Neuen Webcontroller nach tatsächlich bestätigter automatischer TD-Sperre
+  gestartet. Vision/Scene/Study/Legacy-OSC erhalten. Tatsächliche neue Seite
+  lesend geladen/geprüft, frische Kamera, keine automatische Layoutaktivierung.
+- [ ] Johannes lädt neue UI und aktiviert einmal einen Vorschlag nach diesem
+  Controllerwechsel; gestalterischen Sichtbefund/Bedienung im Labor bestätigen.
+  Vollständige Mehrtisch-Systemabnahme bleibt unabhängig offen.
+
+## Vorbereitet: Reveal erst nach Freigabeprüfungen — 2026-10-27
+
+- [x] Johannes bestätigt Installation `passed: true` und Raumprüfung: Welle
+  startet nach Freigabe, ist vollständig/flüssig sichtbar, Ziele/Chairs bleiben
+  fest. Manuelle TD-Speicherung dieses Reveal-Patches nicht erneut bestätigt.
+
+- [x] Auf ausdrücklichen Auftrag visuelle Reveal-Uhr getrennt von Engine-/
+  Revisionszeit vorbereitet. Erst `phase: active` nach vollständiger
+  Ausgabekontrolle und passende Sitzung/Revision starten drei Sekunden Reveal.
+  Vorher Boden-/Tabletop-Content verborgen. Keine schwere automatische
+  Vollprüfung während der danach laufenden Welle im stabilen aktiven Zustand.
+- [x] Bestehenden globalen State-Takt vollständig erhalten, damit Chair-Shader
+  und Masken dieselben Eingänge wie zuvor lesen. Zusätzlicher freier State-Texel
+  enthält ausschließlich visuellen Takt/Marker. Ziele/Chairs/Engine/Revision
+  unverändert, kein Wiederholen bei kurzer Wiederfreigabe derselben Revision.
+- [x] Zehn fokussierte Tests bestanden: beliebig lange Prüfung verbraucht keine
+  Reveal-Zeit, spätere Freigabe, kein Wiederholen bei Quellen-/Modus-Rückkehr,
+  alte Freigabe bindet nicht neue Revision, State-/Engine-Erhalt und Rücknahme.
+- [ ] Actual-DAT-Patch in TD vorbereiten, separat GPU-prüfen/installieren;
+  danach eine neue Web-Aktivierung und vollständige flüssige Drei-Sekunden-Welle
+  im Raum prüfen. Keine automatische Speicherung oder neue Layoutrevision durch
+  Installation. GPU-/Raumnachweis noch offen, Untertisch bleibt pausiert.
+
+## Bestätigt: kein alter Grafik-Fallback im AISI-Modus — 2026-10-27
+
+- [x] Johannes bestätigt TD-Vorbereitung und Installation `passed: true`.
+  GPU: Boden/Tabletop/Chairs jeweils Originalzweig pixelgleich und Leerzweig
+  vollständig RGBA-null. Nur drei eigene Legacy-Select-Referenzen umgestellt;
+  Kalibrierung/Masken unverändert, Engine nicht zurückgesetzt, nicht gespeichert.
+- [x] Johannes bestätigt alle Raumprüfungen: bei Verdeckung Layoutgrafik aus,
+  automatische Motion-Rückkehr, Study/Tracking-only unverändert. TD manuell
+  gespeichert; neuer Arbeitsdateiname nicht genannt.
+- [ ] Reveal nach Aktivierung ruckelig/schlecht sichtbar: Codeanalyse zeigt
+  drei Sekunden Reveal ab Annahme der neuen Revision im State, während die
+  Ausgabe bis zum Maskennachweis gesperrt ist; nach Einschalten läuft nochmals
+  synchroner GPU-Readback-Verify. Zeitbudget der sichtbaren Animation wird
+  damit verkürzt und kann blockieren. Laufzeitanteile noch nicht gemessen;
+  visuellen Reveal-Takt erst nach Prüfungen starten, ohne neue Layoutrevision
+  oder Engine-Reset. Noch kein Korrekturpatch installiert.
+
+- [x] Ersten TD-Importfehler korrigiert: veralteter Isolations-Builder verweigert
+  bereits den Import bei vorhandenem TD-`op`. Diese Abhängigkeit vollständig
+  entfernt, vier transparente Constant-TOP-Kanäle lokal konfiguriert. Neuer
+  Regressionstest importiert in separatem Prozess mit TD-ähnlichem `builtins.op`
+  und verbietet jeden Graphzugriff. Neun fokussierte Tests bestanden. Alte
+  Rückbauanweisung nicht ausführen; tatsächliche Vorbereitung erneut offen.
+
+- [x] Auf ausdrücklichen Auftrag `motion_no_legacy_fallback.py` vorbereitet.
+  Zusätzlicher eigener Baustein liefert transparente Bilder für die drei
+  bisherigen Legacy-Quellen (Boden/Tabletop/Chairs) nur im normalen AISI-Modus.
+  Freigegebenes Motion, Study/Tracking-only und Kalibrierungsansichten erhalten.
+- [x] Bestehende Schalter-/Maskenreihenfolge, Projektorkette und Motion-Engine
+  unangetastet. Installation verändert nur drei konstante Select-TOP-Referenzen
+  und aktualisiert exakt diese drei Einträge im eigenen Live-Schutzsnapshot.
+  Ursprüngliche Testregistrierung und geschützte Kalibrierung bleiben unverändert.
+- [x] Acht fokussierte Offline-Fälle bestanden: passive Vorbereitung, Modusmatrix,
+  Pixelgleichheit von Study/Tracking und aktivem Motion, transparente AISI-Sperre,
+  strenge Registrierung, GPU-Fehler ohne Installation, Rücknahme/lokale Änderungen.
+- [ ] Im tatsächlichen TD vorbereiten, in separatem Frame GPU-prüfen/installieren,
+  AISI ohne Freigabe/Ausfall und Modi 0/1 sowie aktives Motion prüfen; danach
+  manuell speichern. Noch keine TD-/Raumabnahme dieses Patches. Untertisch pausiert.
+
+## Wiederanlauf auf einen UI-Schritt vereinfacht — 2026-10-27
+
+- [x] Auf Johannes' Einwand manuellen Wiederanlauf aus normaler UI entfernt.
+  Frame-Rücksprung führt bei gleicher Kalibrierung und nachgewiesener TD-Sperre
+  automatisch zur Stream-Neuverbindung. Nur Vorschlag explizit aktivieren;
+  keine alte ID-Zuordnung übernehmen, alten gültigen Vorschlag intern erhalten.
+- [x] 367 Motion-Tests bestanden, sieben optionale GPU-Fälle übersprungen.
+  Webcontroller aktualisiert, automatische TD-Sperre vor Neustart tatsächlich
+  bestätigt; Kamera/weitere Dienste erhalten, keine Textport-Bedienung benötigt.
+- [ ] Neuen Vorschlag nach diesem Update aktivieren; anschließend vollständigen
+  Kameraneustart im vereinfachten Weg live prüfen. Keine physische Abnahme
+  dieses neuen Wiederanlaufs behauptet, Untertisch bleibt pausiert.
+
+## Installiert: automatische TD-Freigabe — 2026-10-27
+
+- [x] Johannes bestätigt passive Vorbereitung im laufenden TD: eigener
+  `comp_aisi_motion_auto_approval` vorhanden, `armed: false`, produktive Ausgabe
+  und Kalibrierung unverändert, nicht gespeichert. Vor Webcontroller-Wechsel
+  beide Motion-Gatter ausschalten; danach Automatik separat installieren.
+
+- [x] Auf ausdrücklichen Auftrag separaten rücknehmbaren TD-Baustein vorbereitet:
+  vollständiger Masken-/Chair-Nachweis bei ausgeschalteter Ausgabe, Bestätigung
+  in späterem Frame, automatische Freigabe, separate Ausgabekontrolle;
+  Quellenverlust/neue Sitzung/Revision/ungeeigneter Modus sperren.
+- [x] Frischen sitzungsgebundenen TD-Status für Web-UI und Start ohne manuelle
+  Gatterbestätigung bei nachgewiesen ausgeschalteten Auto-Gattern implementiert.
+  D005a unverändert: ausschließlich explizite Web-Aktivierung plant neue Ziele.
+- [x] 364 Motion-Tests bestanden, sieben optionale GPU-Fälle übersprungen;
+  Python-3.9-Syntax und PowerShell-Parser geprüft.
+- [x] Eigener Baustein im laufenden TD installiert, Webprozess kontrolliert
+  aktualisiert. Johannes liefert `phase: active`, `approved: true`, beide
+  Ausgangsflags an für Sitzung 4012265/Revision 2/`table_01`, TD-Frame 620089.
+  Web-Gegencheck bestätigt dieselbe Sitzung/Revision und `td_approved: true`,
+  Input/drei Chairs, Quelle frisch. Automatische Erstfreigabe technisch bestanden.
+- [x] Johannes bestätigt passenden Sichtbefund und manuelle TD-Speicherung nach
+  automatischer Erstfreigabe; neuer Dateiname nicht gemeldet.
+- [x] Johannes bestätigt kurze Tisch-Occlusion: Freigabe aufgehoben und automatisch
+  wiederhergestellt, dieselbe ID/Revision, Ziele/Chairs erhalten, keine Reveal-Welle.
+- [ ] Echter Kamera-Prozessausfall: Vorschau mit `q` beenden, Sperre prüfen,
+  gemeinsamen Start verwenden; wegen Framezähler-/möglichem ID-Neustart bewusst
+  über Web neu verbinden und explizit aktivieren, danach automatische TD-Freigabe
+  prüfen. Rechner-Kaltstart weiterhin separat offen.
+  Anleitung: `docs/MOTION_BETRIEB.md`. Untertisch bleibt pausiert.
+
+## Aktuell: gemeinsamer Motion-Start und Web-Aktivierung — 2026-10-27
+
+- [x] Vollständigen Kaltstart einschließlich manuell geöffnetem TD, ausgeschalteten
+  Gattern, gemeinsamem Backend-Start, Web-Aktivierung, Maskenprüfung und
+  kontrollierter TD-Freigabe in `docs/MOTION_BETRIEB.md` dokumentiert.
+- [x] Wiederaufnahme technisch nachgewiesen: detaillierter Maskenabgleich und
+  anschließender Live-Verify nach manueller Freigabe bestanden; Sitzung 6233135,
+  Revision 4, `table_01`, drei Chairs, Originalmaske, Indizes 1/1/0/1. Kein
+  Vision-Neustart nötig; frühere Fehlerursache nicht eindeutig belegt.
+- [ ] Sichtbefund des neuen Web-Aktivierungspfads im Raum bestätigen, danach
+  Settings-ohne-Aktivierung und nächste explizite Aktivierung prüfen.
+
+- [x] Auf ausdrücklichen Folgeauftrag funktionalen Anschluss vorgezogen:
+  kombinierter Learning-Format-Webserver mit Headless-Motion, eigenem
+  Aktivierungsknopf, Kamera-/Layoutstatus und bewusstem Wiederanlauf.
+  Einstellungen aktivieren nichts; Fehler erhalten Ziele/Chairs/Revision.
+- [x] Gemeinsamer Start-/Status-Launcher übernimmt vorhandene Dienste und
+  startet fehlende ohne Doppelketten. Nach bestätigtem TD-Ausgang-Aus nur
+  alte UI/Tk-Motion ersetzt; echte Quelle frisch, noch kein Vorschlag.
+- [x] 352 Motion-Prüfungen bestanden, sieben optionale GPU-Fälle übersprungen;
+  ergänzende bestehende UI-/Status-/Launcher-Prüfungen bestanden.
+- [ ] Web-Aktivierung in TD und Raum prüfen, danach Mehrtisch-Systemtest.
+  Kein allgemeiner Motion-Standardwechsel und kein grafisches UI-Redesign
+  behauptet. [Betriebsanleitung und Wiederanlauf](docs/MOTION_BETRIEB.md).
+  Untertisch-Versuch bleibt pausiert.
+
+## Nächste Prioritäten: AISI-Systemtest → Motion-Standard → UI — 2026-10-27
+
+Verbindliche Reihenfolge von Johannes, Details im
+[Motion-Systemtestplan](docs/TOUCHDESIGNER_MOTION_SYSTEM_TEST_PLAN.md).
+
+1. [ ] Motion im aktuellen vollständigen AISI-System mit bis zu fünf realen
+   Tischen prüfen: Input, Groupwork und Discussion jeweils einzeln, danach
+   Formatwechsel über Learning-Format-UI; Source/IDs, Aktualität, feste Ziele/
+   Chairs, Masken, Fehlerfälle, Tracking-/Study-Modi und Neustart abnehmen.
+   Bekannte Anschlusslücke zuerst prüfen: Motion liest UI-Einstellungen bisher
+   nur beim separaten Tk-Aktivierungsknopf, Web-`regenerate` aktiviert Motion
+   nicht direkt. Diese Kopplung funktional klären/herstellen, ohne UI-Redesign
+   vorzuziehen oder Einstellungsänderungen automatisch zu aktivieren.
+2. [ ] Nach bestandener Systemabnahme Motion als regulären AISI-Standard im
+   Start-/Bedienpfad einrichten und neu prüfen; vorhandene Study-/Tracking-Modi
+   und Source-/Maskenprüfung erhalten, reversibel und ohne Masterdateiänderung.
+3. [ ] Danach Learning-Format-UI gestalterisch modernisieren: zeitgemäß,
+   übersichtlich und für Touch geeignet; aktives Layout und vorgemerkte
+   Einstellungen sowie Aktivierungs-/Fehlerstatus klar unterscheidbar machen.
+
+Aktuell nur Code-/Anschlussabgleich und Testplanung vorgenommen, kein neuer
+Raumtest oder Standardwechsel behauptet. Untertisch-Versuch bleibt pausiert.
+
 ## Pausiert auf Wunsch: Untertisch-Bodenzielgrafik — 2026-10-27
 
 Johannes möchte den Versuch wegen des Zeitaufwands vorerst zurückstellen.
